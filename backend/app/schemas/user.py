@@ -29,6 +29,7 @@ class UserResponse(BaseModel):
     splitwise_user_id: str | None
     email: str | None
     avatar_url: str | None
+    registration_status: str | None
     created_at: datetime
     updated_at: datetime
 

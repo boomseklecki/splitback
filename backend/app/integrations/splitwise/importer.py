@@ -45,6 +45,7 @@ async def _upsert_user(
     email: str | None = None,
     avatar_url: str | None = None,
     avatar_authoritative: bool = False,
+    registration_status: str | None = None,
 ) -> None:
     # On conflict, always link the splitwise_user_id, but only refresh display name + email + avatar
     # for Splitwise-sourced rows so we never clobber an app user's chosen profile (or downgrade their
@@ -58,6 +59,7 @@ async def _upsert_user(
         splitwise_user_id=splitwise_user_id,
         email=email,
         avatar_url=avatar_url,
+        registration_status=registration_status,
     )
     is_splitwise = User.source == UserSource.splitwise
     avatar_value = (
@@ -74,6 +76,10 @@ async def _upsert_user(
                 else_=User.email,
             ),
             "avatar_url": case((is_splitwise, avatar_value), else_=User.avatar_url),
+            "registration_status": case(
+                (is_splitwise, func.coalesce(stmt.excluded.registration_status, User.registration_status)),
+                else_=User.registration_status,
+            ),
         },
     )
     await session.execute(stmt)
@@ -159,6 +165,7 @@ async def run_import(
                 session, identifier, _full_name(member), member["user_id"],
                 email=member.get("email"), avatar_url=member.get("picture"),
                 avatar_authoritative=True,
+                registration_status=member.get("registration_status"),
             )
             seen_users.add(identifier)
             if our_group_id is not None:
@@ -173,6 +180,7 @@ async def run_import(
             await _upsert_user(
                 session, identifier, _full_name(participant), participant["user_id"],
                 email=participant.get("email"), avatar_url=participant.get("picture"),
+                registration_status=participant.get("registration_status"),
             )
             seen_users.add(identifier)
         mapped = mapper.map_expense(expense, user_map)

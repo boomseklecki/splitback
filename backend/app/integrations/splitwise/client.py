@@ -18,6 +18,13 @@ def make_client(access_token: str) -> Splitwise:
     return client
 
 
+def _registration_status(user) -> str | None:
+    """Splitwise registration_status ('confirmed' | 'invited' | 'dummy'), when the package exposes it."""
+    if hasattr(user, "getRegistrationStatus"):
+        return user.getRegistrationStatus()
+    return getattr(user, "registration_status", None)
+
+
 def _picture_url(user) -> str | None:
     """The medium avatar URL for a Splitwise user/member — but only a *custom* one.
 
@@ -54,6 +61,7 @@ def _normalize_group(group) -> dict:
             "last_name": m.getLastName() or "",
             "email": m.getEmail(),
             "picture": _picture_url(m),
+            "registration_status": _registration_status(m),
         }
         for m in (group.getMembers() or [])
     ]
@@ -70,6 +78,7 @@ def _normalize_expense(expense) -> dict:
             "last_name": u.getLastName() or "",
             "email": u.getEmail() if hasattr(u, "getEmail") else None,
             "picture": _picture_url(u),
+            "registration_status": _registration_status(u),
             "paid_share": u.getPaidShare() or "0",
             "owed_share": u.getOwedShare() or "0",
         }
