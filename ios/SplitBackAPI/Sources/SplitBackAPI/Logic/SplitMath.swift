@@ -28,6 +28,10 @@ enum SplitMath {
         abs(paidSum(splits) - amount) <= tolerance && abs(owedSum(splits) - amount) <= tolerance
     }
 
+    private static func paid(_ identifier: String, payer: String, amount: Decimal) -> Decimal {
+        identifier == payer ? amount : 0
+    }
+
     /// Equal split: `payer` paid the full amount; everyone (incl. the payer) owes an equal share.
     /// Remainder pennies are assigned to the earliest participants so owed sums to the amount exactly.
     static func equalSplit(amount: Decimal, payer: String, participants: [String]) -> [SplitDraft] {
@@ -40,9 +44,74 @@ enum SplitMath {
             let owedCents = base + (index < remainder ? 1 : 0)
             return SplitDraft(
                 userIdentifier: identifier,
-                paidShare: identifier == payer ? amount : 0,
+                paidShare: paid(identifier, payer: payer, amount: amount),
                 owedShare: money(owedCents)
             )
+        }
+    }
+
+    /// Distribute `amount` proportional to per-participant weights (percentages or share counts);
+    /// falls back to equal when all weights are zero. Rounding drift is spread so owed sums exactly.
+    static func weightedSplit(amount: Decimal, payer: String, participants: [String],
+                              weights: [String: Decimal]) -> [SplitDraft] {
+        let people = participants.isEmpty ? [payer] : participants
+        let ws = people.map { max(weights[$0] ?? 0, 0) }
+        let totalWeight = ws.reduce(Decimal(0), +)
+        guard totalWeight > 0 else { return equalSplit(amount: amount, payer: payer, participants: people) }
+        var owed = ws.map { cents(amount * $0 / totalWeight) }
+        var drift = cents(amount) - owed.reduce(0, +)
+        var i = 0
+        while drift != 0 && !owed.isEmpty {
+            owed[i % owed.count] += drift > 0 ? 1 : -1
+            drift += drift > 0 ? -1 : 1
+            i += 1
+        }
+        return people.enumerated().map { index, identifier in
+            SplitDraft(userIdentifier: identifier,
+                       paidShare: paid(identifier, payer: payer, amount: amount),
+                       owedShare: money(owed[index]))
+        }
+    }
+
+    /// Equal base split, then per-participant +/- adjustments (owed = base + adjustment).
+    static func adjustmentSplit(amount: Decimal, payer: String, participants: [String],
+                                adjustments: [String: Decimal]) -> [SplitDraft] {
+        let people = participants.isEmpty ? [payer] : participants
+        let totalAdj = people.reduce(Decimal(0)) { $0 + (adjustments[$1] ?? 0) }
+        let base = equalSplit(amount: amount - totalAdj, payer: payer, participants: people)
+        return people.map { identifier in
+            let baseOwed = base.first { $0.userIdentifier == identifier }?.owedShare ?? 0
+            return SplitDraft(userIdentifier: identifier,
+                              paidShare: paid(identifier, payer: payer, amount: amount),
+                              owedShare: baseOwed + (adjustments[identifier] ?? 0))
+        }
+    }
+
+    /// Reimbursement: `payer` is owed the full amount (owes nothing); the other participants split it
+    /// equally. With no other participants, the payer simply owes the whole amount.
+    static func reimbursementSplit(amount: Decimal, payer: String, participants: [String]) -> [SplitDraft] {
+        let others = participants.filter { $0 != payer }
+        guard !others.isEmpty else {
+            return [SplitDraft(userIdentifier: payer, paidShare: amount, owedShare: amount)]
+        }
+        let owers = equalSplit(amount: amount, payer: payer, participants: others).map {
+            SplitDraft(userIdentifier: $0.userIdentifier, paidShare: 0, owedShare: $0.owedShare)
+        }
+        return [SplitDraft(userIdentifier: payer, paidShare: amount, owedShare: 0)] + owers
+    }
+
+    /// Itemized: each person owes the sum of items assigned to them; any unassigned remainder
+    /// (e.g. tax/tip) is split equally.
+    static func itemizedSplit(amount: Decimal, payer: String, participants: [String],
+                              assigned: [String: Decimal]) -> [SplitDraft] {
+        let people = participants.isEmpty ? [payer] : participants
+        let assignedTotal = people.reduce(Decimal(0)) { $0 + (assigned[$1] ?? 0) }
+        let remainder = equalSplit(amount: amount - assignedTotal, payer: payer, participants: people)
+        return people.map { identifier in
+            let rem = remainder.first { $0.userIdentifier == identifier }?.owedShare ?? 0
+            return SplitDraft(userIdentifier: identifier,
+                              paidShare: paid(identifier, payer: payer, amount: amount),
+                              owedShare: (assigned[identifier] ?? 0) + rem)
         }
     }
 }

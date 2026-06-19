@@ -23,6 +23,57 @@ final class SplitMathTests: XCTestCase {
         XCTAssertTrue(SplitMath.isBalanced(amount: Decimal(string: "10.01")!, splits: splits))
     }
 
+    func testWeightedSplitPercentages() {
+        // 60/40 of $10 -> $6 / $4; both sum to amount.
+        let splits = SplitMath.weightedSplit(amount: 10, payer: "a", participants: ["a", "b"],
+                                             weights: ["a": 60, "b": 40])
+        XCTAssertEqual(splits.first { $0.userIdentifier == "a" }?.owedShare, 6)
+        XCTAssertEqual(splits.first { $0.userIdentifier == "b" }?.owedShare, 4)
+        XCTAssertTrue(SplitMath.isBalanced(amount: 10, splits: splits))
+    }
+
+    func testWeightedSplitSharesWithRounding() {
+        // 1:2 of $10 -> 3.33 / 6.67, sums exactly to 10.
+        let splits = SplitMath.weightedSplit(amount: 10, payer: "a", participants: ["a", "b"],
+                                             weights: ["a": 1, "b": 2])
+        XCTAssertEqual(SplitMath.owedSum(splits), 10)
+        XCTAssertTrue(SplitMath.isBalanced(amount: 10, splits: splits))
+    }
+
+    func testWeightedSplitZeroWeightsFallsBackToEqual() {
+        let splits = SplitMath.weightedSplit(amount: 10, payer: "a", participants: ["a", "b"],
+                                             weights: [:])
+        XCTAssertTrue(splits.allSatisfy { $0.owedShare == 5 })
+    }
+
+    func testAdjustmentSplit() {
+        // $20, +$4 for b: base on $16 -> $8 each, b owes $12, a owes $8.
+        let splits = SplitMath.adjustmentSplit(amount: 20, payer: "a", participants: ["a", "b"],
+                                               adjustments: ["b": 4])
+        XCTAssertEqual(splits.first { $0.userIdentifier == "a" }?.owedShare, 8)
+        XCTAssertEqual(splits.first { $0.userIdentifier == "b" }?.owedShare, 12)
+        XCTAssertTrue(SplitMath.isBalanced(amount: 20, splits: splits))
+    }
+
+    func testReimbursementSplit() {
+        // a is owed the full $30; b and c split it equally and owe; a owes nothing.
+        let splits = SplitMath.reimbursementSplit(amount: 30, payer: "a", participants: ["a", "b", "c"])
+        XCTAssertEqual(splits.first { $0.userIdentifier == "a" }?.paidShare, 30)
+        XCTAssertEqual(splits.first { $0.userIdentifier == "a" }?.owedShare, 0)
+        XCTAssertEqual(splits.first { $0.userIdentifier == "b" }?.owedShare, 15)
+        XCTAssertEqual(splits.first { $0.userIdentifier == "c" }?.owedShare, 15)
+        XCTAssertTrue(SplitMath.isBalanced(amount: 30, splits: splits))
+    }
+
+    func testItemizedSplitWithUnassignedRemainder() {
+        // $10 total, b assigned $4 of items; remaining $6 split equally ($3 each).
+        let splits = SplitMath.itemizedSplit(amount: 10, payer: "a", participants: ["a", "b"],
+                                             assigned: ["b": 4])
+        XCTAssertEqual(splits.first { $0.userIdentifier == "a" }?.owedShare, 3)
+        XCTAssertEqual(splits.first { $0.userIdentifier == "b" }?.owedShare, 7)
+        XCTAssertTrue(SplitMath.isBalanced(amount: 10, splits: splits))
+    }
+
     func testIsBalancedTolerance() {
         let off = [SplitDraft(userIdentifier: "a", paidShare: 10, owedShare: 9)]
         XCTAssertFalse(SplitMath.isBalanced(amount: 10, splits: off))
