@@ -1,7 +1,8 @@
 import SwiftUI
 import SwiftData
 
-/// Backend base URL, bearer-token entry (Keychain), Splitwise status + import, and the people roster.
+/// Account/session, backend base URL, bearer-token entry (Keychain), Splitwise status + import,
+/// linked banks (Plaid), and a drill-through to the people roster.
 struct SettingsView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.modelContext) private var context
@@ -12,11 +13,14 @@ struct SettingsView: View {
     @State private var splitwiseConnected: Bool?
     @State private var importing = false
     @State private var importSummary: String?
-    @State private var showingNewUser = false
-    @State private var newUserName = ""
     @State private var showingSplitwiseLogin = false
     @State private var showingSignIn = false
+    @State private var items: [Components.Schemas.PlaidItemResponse] = []
+    @State private var linkSession: LinkSession?
+    @State private var linking = false
     @State private var errorText: String?
+
+    struct LinkSession: Identifiable { let id = UUID(); let token: String }
 
     /// Connect Splitwise to *your* account. Requires a signed-in user (nil disables the button) so the
     /// Splitwise token is linked to the real identity from `/me`, not a hardcoded name.
@@ -34,7 +38,7 @@ struct SettingsView: View {
                 Section("Account") {
                     if let user = env.currentUser {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(user.displayName)
+                            Text(user.displayName.titleCased)
                             if let email = user.email {
                                 Text(email).font(.caption).foregroundStyle(.secondary)
                             }
@@ -43,6 +47,18 @@ struct SettingsView: View {
                     } else {
                         Text("Not signed in").foregroundStyle(.secondary)
                         Button("Sign In…") { showingSignIn = true }
+                    }
+                }
+
+                Section {
+                    NavigationLink {
+                        PeopleView()
+                    } label: {
+                        HStack {
+                            Label("People", systemImage: "person.2")
+                            Spacer()
+                            Text("\(users.count)").foregroundStyle(.secondary)
+                        }
                     }
                 }
 
@@ -82,31 +98,50 @@ struct SettingsView: View {
                     }
                 }
 
-                Section("People") {
-                    ForEach(users) { user in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(user.displayName)
-                            Text("\(user.identifier) · \(user.source.rawValue)")
-                                .font(.caption).foregroundStyle(.secondary)
+                Section("Linked Banks") {
+                    ForEach(items, id: \.id) { item in
+                        NavigationLink {
+                            LinkedBankView(item: item)
+                        } label: {
+                            let count = item.accounts?.count ?? 0
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.institution_name ?? "Bank")
+                                Text("\(count) account\(count == 1 ? "" : "s")")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
                         }
                     }
-                    Button("Add Person") { showingNewUser = true }
+                    .onDelete(perform: unlink)
+                    Button(action: linkBank) {
+                        Label(linking ? "Preparing…" : "Link Bank", systemImage: "building.columns")
+                    }
+                    .disabled(linking || env.currentUser == nil)
+                    if env.currentUser == nil {
+                        Text("Sign in to link a bank.").font(.caption).foregroundStyle(.secondary)
+                    }
                 }
             }
             .navigationTitle("Settings")
             .task {
                 baseURL = env.baseURLString
                 await loadStatus()
-            }
-            .alert("Add Person", isPresented: $showingNewUser) {
-                TextField("Display name", text: $newUserName)
-                Button("Add", action: addUser)
-                Button("Cancel", role: .cancel) { newUserName = "" }
+                await loadItems()
             }
             .sheet(isPresented: $showingSplitwiseLogin, onDismiss: { Task { await loadStatus() } }) {
                 if let url = splitwiseLoginURL { SafariView(url: url) }
             }
             .sheet(isPresented: $showingSignIn) { AuthGateView() }
+            .fullScreenCover(item: $linkSession) { session in
+                PlaidLinkView(
+                    linkToken: session.token,
+                    onSuccess: { publicToken in
+                        linkSession = nil
+                        Task { await exchange(publicToken) }
+                    },
+                    onExit: { linkSession = nil }
+                )
+                .ignoresSafeArea()
+            }
             .errorAlert($errorText)
         }
     }
@@ -116,10 +151,15 @@ struct SettingsView: View {
         catch { /* status is best-effort; leave nil */ }
     }
 
+    private func loadItems() async {
+        items = (try? await env.plaid(context).items()) ?? items
+    }
+
     private func reloadAfterConfigChange() async {
         do { try await env.refreshAll(context) }
         catch { errorText = errorMessage(error) }
         await loadStatus()
+        await loadItems()
     }
 
     private func runImport() {
@@ -134,13 +174,37 @@ struct SettingsView: View {
         }
     }
 
-    private func addUser() {
-        let name = newUserName.trimmingCharacters(in: .whitespaces)
-        newUserName = ""
-        guard !name.isEmpty else { return }
+    private func linkBank() {
+        guard let me = env.currentUser?.identifier else {
+            errorText = "Sign in to link a bank."
+            return
+        }
+        linking = true
         Task {
-            do { try await env.users(context).create(UserDraft(displayName: name)) }
+            defer { linking = false }
+            do { linkSession = LinkSession(token: try await env.plaid(context).linkToken(userIdentifier: me)) }
             catch { errorText = errorMessage(error) }
+        }
+    }
+
+    private func exchange(_ publicToken: String) async {
+        guard let me = env.currentUser?.identifier else {
+            errorText = "Sign in to link a bank."
+            return
+        }
+        do {
+            try await env.plaid(context).exchange(publicToken: publicToken, userIdentifier: me)
+            await loadItems()
+        } catch { errorText = errorMessage(error) }
+    }
+
+    private func unlink(_ offsets: IndexSet) {
+        let ids = offsets.compactMap { UUID(uuidString: items[$0].id) }
+        Task {
+            do {
+                for id in ids { try await env.plaid(context).deleteItem(id: id) }
+                await loadItems()
+            } catch { errorText = errorMessage(error) }
         }
     }
 }

@@ -1,7 +1,8 @@
 import SwiftUI
 import SwiftData
 
-/// The finance side: linked banks (Plaid), cached accounts, a sync action, and a link to transactions.
+/// The finance side: cached accounts (sortable), a sync action, and a link to transactions. Linking
+/// and managing banks lives in Settings → Linked Banks.
 struct AccountsView: View {
     enum SortMode: String, CaseIterable, Identifiable {
         case balance = "Balance"
@@ -16,16 +17,11 @@ struct AccountsView: View {
 
     @AppStorage("accounts.sortMode") private var sortModeRaw = SortMode.balance.rawValue
 
-    @State private var items: [Components.Schemas.PlaidItemResponse] = []
-    @State private var linkSession: LinkSession?
-    @State private var linking = false
     @State private var syncing = false
     @State private var errorText: String?
     /// Latest transaction date per account (account id → date), for the last-transaction sort. Loaded
     /// on demand with a `fetchLimit: 1` query per account.
     @State private var lastTransaction: [UUID: Date] = [:]
-
-    struct LinkSession: Identifiable { let id = UUID(); let token: String }
 
     private var sortMode: SortMode { SortMode(rawValue: sortModeRaw) ?? .balance }
 
@@ -46,7 +42,7 @@ struct AccountsView: View {
             List {
                 if accounts.isEmpty {
                     Section("Accounts") {
-                        Text("No accounts yet.").foregroundStyle(.secondary)
+                        Text("No accounts yet. Link a bank in Settings.").foregroundStyle(.secondary)
                     }
                 } else if sortMode == .type {
                     ForEach(Self.typeSections, id: \.title) { section in
@@ -67,25 +63,6 @@ struct AccountsView: View {
                 Section {
                     NavigationLink("All Transactions") { TransactionsView() }
                 }
-
-                Section("Linked Banks") {
-                    ForEach(items, id: \.id) { item in
-                        let count = item.accounts?.count ?? 0
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(item.institution_name ?? "Bank")
-                            Text("\(count) account\(count == 1 ? "" : "s")")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                    .onDelete(perform: unlink)
-                    Button(action: linkBank) {
-                        Label(linking ? "Preparing…" : "Link Bank", systemImage: "building.columns")
-                    }
-                    .disabled(linking || env.currentUser == nil)
-                    if env.currentUser == nil {
-                        Text("Sign in to link a bank.").font(.caption).foregroundStyle(.secondary)
-                    }
-                }
             }
             .navigationTitle("Accounts")
             .toolbar {
@@ -104,17 +81,6 @@ struct AccountsView: View {
                     }
                     .disabled(syncing)
                 }
-            }
-            .fullScreenCover(item: $linkSession) { session in
-                PlaidLinkView(
-                    linkToken: session.token,
-                    onSuccess: { publicToken in
-                        linkSession = nil
-                        Task { await exchange(publicToken) }
-                    },
-                    onExit: { linkSession = nil }
-                )
-                .ignoresSafeArea()
             }
             .refreshable { await reload() }
             .task { await reload() }
@@ -141,8 +107,10 @@ struct AccountsView: View {
         }
     }
 
+    /// Pull-to-refresh / on-appear: refresh cached accounts from the backend, then recompute the
+    /// last-transaction dates. The Sync button does the heavier Plaid round-trip.
     private func reload() async {
-        do { items = try await env.plaid(context).items() }
+        do { try await env.accounts(context).refreshAccounts() }
         catch { errorText = errorMessage(error) }
         loadLastTransactions()
     }
@@ -165,46 +133,12 @@ struct AccountsView: View {
         lastTransaction = result
     }
 
-    private func linkBank() {
-        guard let me = env.currentUser?.identifier else {
-            errorText = "Sign in to link a bank."
-            return
-        }
-        linking = true
-        Task {
-            defer { linking = false }
-            do { linkSession = LinkSession(token: try await env.plaid(context).linkToken(userIdentifier: me)) }
-            catch { errorText = errorMessage(error) }
-        }
-    }
-
-    private func exchange(_ publicToken: String) async {
-        guard let me = env.currentUser?.identifier else {
-            errorText = "Sign in to link a bank."
-            return
-        }
-        do {
-            try await env.plaid(context).exchange(publicToken: publicToken, userIdentifier: me)
-            await reload()
-        } catch { errorText = errorMessage(error) }
-    }
-
     private func sync() {
         syncing = true
         Task {
             defer { syncing = false }
             do { try await env.plaid(context).sync(); await reload() }
             catch { errorText = errorMessage(error) }
-        }
-    }
-
-    private func unlink(_ offsets: IndexSet) {
-        let ids = offsets.compactMap { UUID(uuidString: items[$0].id) }
-        Task {
-            do {
-                for id in ids { try await env.plaid(context).deleteItem(id: id) }
-                await reload()
-            } catch { errorText = errorMessage(error) }
         }
     }
 }
