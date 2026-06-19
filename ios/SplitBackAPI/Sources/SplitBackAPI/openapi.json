@@ -3432,6 +3432,10 @@
             "type": "string",
             "title": "Avatar Url"
           },
+          "registration_status": {
+            "type": "string",
+            "title": "Registration Status"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",

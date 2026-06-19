@@ -21,6 +21,12 @@ struct PeopleView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             HStack {
                                 Text(user.displayName.titleCased)
+                                if let badge = registrationBadge(user.registrationStatus) {
+                                    Text(badge.label)
+                                        .font(.caption2).foregroundStyle(badge.color)
+                                        .padding(.horizontal, 7).padding(.vertical, 2)
+                                        .background(badge.color.opacity(0.15), in: Capsule())
+                                }
                                 Spacer()
                                 Text(sourceLabel(user.source))
                                     .font(.caption2).foregroundStyle(.secondary)
@@ -63,6 +69,16 @@ struct PeopleView: View {
             }
         }
         .errorAlert($errorText)
+    }
+
+    /// A tag for Splitwise users who aren't fully registered. Confirmed (and non-Splitwise) users
+    /// get no badge.
+    private func registrationBadge(_ status: String?) -> (label: String, color: Color)? {
+        switch status?.lowercased() {
+        case "invited": return ("Invited", .orange)
+        case "dummy": return ("Placeholder", .gray)
+        default: return nil
+        }
     }
 
     private func sourceLabel(_ source: UserSource) -> String {

@@ -12,6 +12,8 @@ final class User {
     var splitwiseUserId: String?
     var email: String?
     var avatarURL: String?
+    /// Splitwise registration_status: "confirmed" | "invited" | "dummy" (nil for non-Splitwise users).
+    var registrationStatus: String?
     var createdAt: Date
     var updatedAt: Date
 
@@ -23,6 +25,7 @@ final class User {
         splitwiseUserId: String? = nil,
         email: String? = nil,
         avatarURL: String? = nil,
+        registrationStatus: String? = nil,
         createdAt: Date,
         updatedAt: Date
     ) {
@@ -33,6 +36,7 @@ final class User {
         self.splitwiseUserId = splitwiseUserId
         self.email = email
         self.avatarURL = avatarURL
+        self.registrationStatus = registrationStatus
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }

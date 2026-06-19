@@ -192,6 +192,7 @@ enum Mapping {
             splitwiseUserId: r.splitwise_user_id,
             email: r.email,
             avatarURL: r.avatar_url,
+            registrationStatus: r.registration_status,
             createdAt: r.created_at,
             updatedAt: r.updated_at
         )
