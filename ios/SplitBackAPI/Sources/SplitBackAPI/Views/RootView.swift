@@ -27,6 +27,7 @@ public struct RootView: View {
             guard !didInitialRefresh else { return }
             didInitialRefresh = true
             await env.refreshCurrentUser(context)
+            await env.refreshSplitwiseStatus()
             do { try await env.refreshAll(context) }
             catch { errorMessageText = errorMessage(error) }
         }

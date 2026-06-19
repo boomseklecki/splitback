@@ -121,7 +121,11 @@ struct GroupsListView: View {
                 }
             }
             .refreshable {
-                do { try await env.groups(context).reconcileAll() }
+                if env.splitwiseConnected {
+                    try? await env.splitwise.syncExpenses()
+                    try? await env.splitwise.syncGroups()
+                }
+                do { try await env.refreshAll(context) }
                 catch { errorText = errorMessage(error) }
                 await loadMyBalances()
                 loadLastExpenses()

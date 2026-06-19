@@ -18,6 +18,9 @@ public final class AppEnvironment {
     /// The signed-in user's profile from `GET /me` (nil in open mode / not signed in). Source of truth
     /// for "you" — no hardcoded identity.
     public private(set) var currentUser: CurrentUser?
+    /// Whether a Splitwise token is connected. Gates the scoped sync endpoints (which 400 without one)
+    /// so non-Splitwise instances don't call them on every pull-to-refresh.
+    public private(set) var splitwiseConnected = false
 
     public init() {
         let store = KeychainTokenStore()
@@ -35,6 +38,13 @@ public final class AppEnvironment {
     /// Refreshes the signed-in profile from `GET /me` (best-effort).
     func refreshCurrentUser(_ context: ModelContext) async {
         currentUser = try? await users(context).currentUser()
+    }
+
+    /// Refreshes whether Splitwise is connected (best-effort; leaves the prior value on failure).
+    func refreshSplitwiseStatus() async {
+        if let connected = try? await splitwise.status().connected {
+            splitwiseConnected = connected
+        }
     }
 
     /// Applies a session token issued after a provider sign-in, then loads the profile.

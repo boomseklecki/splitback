@@ -10,7 +10,6 @@ struct SettingsView: View {
 
     @State private var token = ""
     @State private var baseURL = ""
-    @State private var splitwiseConnected: Bool?
     @State private var importing = false
     @State private var importSummary: String?
     @State private var showingSplitwiseLogin = false
@@ -90,11 +89,9 @@ struct SettingsView: View {
                 Section("Splitwise") {
                     Button("Connect Splitwise", systemImage: "link") { showingSplitwiseLogin = true }
                         .disabled(splitwiseLoginURL == nil)
-                    if let connected = splitwiseConnected {
-                        Label(connected ? "Connected" : "Not connected",
-                              systemImage: connected ? "checkmark.circle.fill" : "xmark.circle")
-                            .foregroundStyle(connected ? .green : .secondary)
-                    }
+                    Label(env.splitwiseConnected ? "Connected" : "Not connected",
+                          systemImage: env.splitwiseConnected ? "checkmark.circle.fill" : "xmark.circle")
+                        .foregroundStyle(env.splitwiseConnected ? .green : .secondary)
                     Button("Run Import", action: runImport).disabled(importing)
                     if let importSummary {
                         Text(importSummary).font(.caption).foregroundStyle(.secondary)
@@ -127,10 +124,10 @@ struct SettingsView: View {
             .navigationTitle("Settings")
             .task {
                 baseURL = env.baseURLString
-                await loadStatus()
+                await env.refreshSplitwiseStatus()
                 await loadItems()
             }
-            .sheet(isPresented: $showingSplitwiseLogin, onDismiss: { Task { await loadStatus() } }) {
+            .sheet(isPresented: $showingSplitwiseLogin, onDismiss: { Task { await env.refreshSplitwiseStatus() } }) {
                 if let url = splitwiseLoginURL { SafariView(url: url) }
             }
             .sheet(isPresented: $showingSignIn) { AuthGateView() }
@@ -149,11 +146,6 @@ struct SettingsView: View {
         }
     }
 
-    private func loadStatus() async {
-        do { splitwiseConnected = try await env.splitwise.status().connected }
-        catch { /* status is best-effort; leave nil */ }
-    }
-
     private func loadItems() async {
         items = (try? await env.plaid(context).items()) ?? items
     }
@@ -161,7 +153,7 @@ struct SettingsView: View {
     private func reloadAfterConfigChange() async {
         do { try await env.refreshAll(context) }
         catch { errorText = errorMessage(error) }
-        await loadStatus()
+        await env.refreshSplitwiseStatus()
         await loadItems()
     }
 
@@ -172,6 +164,7 @@ struct SettingsView: View {
             do {
                 let count = try await env.splitwise.runImport()
                 importSummary = "Imported \(count.formatted()) expense\(count == 1 ? "" : "s")."
+                await env.refreshSplitwiseStatus()
                 try await env.refreshAll(context)
             } catch { errorText = errorMessage(error) }
         }

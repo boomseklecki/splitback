@@ -170,6 +170,9 @@ struct GroupDetailView: View {
     }
 
     private func reload() async {
+        if env.splitwiseConnected, group.backendType == .splitwise {
+            try? await env.splitwise.syncExpenses()
+        }
         do {
             try await env.expenses(context).reconcileAll(groupId: group.id)
             try await env.groups(context).refreshMembers(groupId: group.id)
