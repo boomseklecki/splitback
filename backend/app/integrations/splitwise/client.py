@@ -96,6 +96,19 @@ def _repayments(expense) -> list[dict]:
     return out
 
 
+def _user_ref(obj, getter: str) -> dict | None:
+    """Extract {user_id, first_name, last_name} from a related Splitwise user (e.g. created_by)."""
+    user = _method(obj, getter)
+    uid = _method(user, "getId") if user is not None else None
+    if uid is None:
+        return None
+    return {
+        "user_id": str(uid),
+        "first_name": _method(user, "getFirstName") or "",
+        "last_name": _method(user, "getLastName") or "",
+    }
+
+
 def _picture_url(user) -> str | None:
     """The medium avatar URL for a Splitwise user/member — but only a *custom* one.
 
@@ -170,6 +183,7 @@ def _normalize_expense(expense) -> dict:
         "deleted_at": expense.getDeletedAt(),
         "receipt_url": _receipt_url(expense),
         "repayments": _repayments(expense),
+        "created_by": _user_ref(expense, "getCreatedBy"),
         "users": users,
     }
 

@@ -126,6 +126,7 @@ async def _upsert_expense(session: AsyncSession, mapped: dict, group_id: UUID) -
         "currency": mapped["currency"],
         "date": mapped["date"],
         "category": mapped["category"],
+        "created_by": mapped.get("created_by"),
         "splitwise_receipt_url": mapped.get("splitwise_receipt_url"),
         "repayments": mapped.get("repayments"),
     }
@@ -286,6 +287,14 @@ async def sync_expenses(
                 email=participant.get("email"), avatar_url=participant.get("picture"),
                 registration_status=participant.get("registration_status"),
             )
+            seen_users.add(identifier)
+        # Ensure the creator is in the directory so "Added by" resolves to a name.
+        created_by = expense.get("created_by")
+        if created_by:
+            identifier = mapper.resolve_user_identifier(
+                created_by["user_id"], created_by.get("first_name", ""), user_map
+            )
+            await _upsert_user(session, identifier, _full_name(created_by), created_by["user_id"])
             seen_users.add(identifier)
         mapped = mapper.map_expense(expense, user_map)
         group_id = await _ensure_group(session, mapped["group_key"], group_cache)

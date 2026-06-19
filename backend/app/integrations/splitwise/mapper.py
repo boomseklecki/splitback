@@ -54,6 +54,11 @@ def build_group_rows(groups: list[dict], expenses: list[dict]) -> dict[str, str]
 def map_expense(expense: dict, user_map: dict[str, str]) -> dict:
     """Map one Splitwise expense to expense fields + splits. Caller resolves group FK."""
     category = SETTLEUP_CATEGORY if expense.get("payment") else expense.get("category")
+    created_by = expense.get("created_by")
+    created_by_identifier = (
+        resolve_user_identifier(created_by["user_id"], created_by.get("first_name", ""), user_map)
+        if created_by else None
+    )
     splits = [
         {
             "user_identifier": resolve_user_identifier(
@@ -72,6 +77,7 @@ def map_expense(expense: dict, user_map: dict[str, str]) -> dict:
         "currency": expense.get("currency_code", "USD"),
         "date": _parse_date(expense.get("date")),
         "category": category,
+        "created_by": created_by_identifier,
         "splitwise_receipt_url": expense.get("receipt_url"),
         "repayments": expense.get("repayments") or None,
         "splits": splits,

@@ -30,6 +30,8 @@ class Expense(UUIDMixin, TimestampMixin, Base):
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD")
     date: Mapped[date_type] = mapped_column(Date, nullable=False)
     category: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # Who added the expense (user_identifier, from Splitwise created_by); null for self-hosted.
+    created_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
     # Splitwise receipt image URL (remote, not our proxied bytes) + simplified repayments, both from import.
     splitwise_receipt_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     repayments: Mapped[list | None] = mapped_column(JSONB, nullable=True)
