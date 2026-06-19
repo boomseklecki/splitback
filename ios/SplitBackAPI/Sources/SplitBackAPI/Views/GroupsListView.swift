@@ -18,9 +18,6 @@ struct GroupsListView: View {
     @Query(filter: #Predicate<ExpenseGroup> { $0.archivedAt == nil && $0.hidden == false },
            sort: \ExpenseGroup.name)
     private var groups: [ExpenseGroup]
-    @Query(filter: #Predicate<Expense> { $0.archivedAt == nil },
-           sort: \Expense.date, order: .reverse)
-    private var expenses: [Expense]
 
     @AppStorage("expenses.sortMode") private var sortModeRaw = SortMode.activity.rawValue
     @AppStorage("expenses.showSettled") private var showSettled = false
@@ -30,6 +27,9 @@ struct GroupsListView: View {
     @State private var errorText: String?
     /// Your net balance per group (group id → net), keyed by the signed-in user from `/me`.
     @State private var myNets: [UUID: Decimal] = [:]
+    /// Latest-expense summary per group (date for activity sort, settle-up flag for hiding). Loaded on
+    /// demand with a `fetchLimit: 1` query per group rather than materializing every expense.
+    @State private var lastExpense: [UUID: (date: Date, isSettleUp: Bool)] = [:]
 
     private var sortMode: SortMode { SortMode(rawValue: sortModeRaw) ?? .activity }
 
@@ -38,20 +38,12 @@ struct GroupsListView: View {
         (env.currentUser.map { [$0.identifier] } ?? []) + groups.map(\.id.uuidString)
     }
 
-    /// Latest expense per group (the `expenses` query is date-descending, so the first match wins).
-    private var lastExpenseByGroup: [UUID: Expense] {
-        var result: [UUID: Expense] = [:]
-        for expense in expenses where result[expense.groupId] == nil {
-            result[expense.groupId] = expense
-        }
-        return result
-    }
-
     /// A group is "settled" (hidden by default) when your net is zero or its most recent expense is a
-    /// settle-up. Groups with an unknown balance (not signed in) are never auto-hidden.
+    /// settle-up. Groups with an unknown balance (not signed in) are never auto-hidden. The zero-net
+    /// check comes first so we never need a last-expense lookup for those.
     private func isSettled(_ group: ExpenseGroup) -> Bool {
-        if lastExpenseByGroup[group.id]?.category == SettleUp.category { return true }
         if let net = myNets[group.id], net == 0 { return true }
+        if lastExpense[group.id]?.isSettleUp == true { return true }
         return false
     }
 
@@ -62,7 +54,7 @@ struct GroupsListView: View {
         switch sortMode {
         case .activity:
             return shown.sorted {
-                (lastExpenseByGroup[$0.id]?.date ?? .distantPast) > (lastExpenseByGroup[$1.id]?.date ?? .distantPast)
+                (lastExpense[$0.id]?.date ?? .distantPast) > (lastExpense[$1.id]?.date ?? .distantPast)
             }
         case .balance:
             return shown.sorted { abs(myNets[$0.id] ?? 0) > abs(myNets[$1.id] ?? 0) }
@@ -128,8 +120,13 @@ struct GroupsListView: View {
                 do { try await env.groups(context).reconcileAll() }
                 catch { errorText = errorMessage(error) }
                 await loadMyBalances()
+                loadLastExpenses()
             }
-            .task(id: balanceKey) { await loadMyBalances() }
+            .task(id: balanceKey) {
+                await loadMyBalances()
+                loadLastExpenses()
+            }
+            .onChange(of: showSettled) { _, _ in loadLastExpenses() }
             .alert("New Group", isPresented: $showingNewGroup) {
                 TextField("Name", text: $newGroupName)
                 Button("Create", action: createGroup)
@@ -150,6 +147,26 @@ struct GroupsListView: View {
             }
         }
         myNets = result
+    }
+
+    /// Loads each group's most-recent expense (date + settle-up flag) with a single-row fetch per
+    /// group. Skips groups already hidden by a zero balance (unless settled groups are being shown),
+    /// so we don't pay for last-expense lookups on rows nobody sees.
+    private func loadLastExpenses() {
+        var result: [UUID: (date: Date, isSettleUp: Bool)] = [:]
+        for group in groups {
+            if !showSettled, let net = myNets[group.id], net == 0 { continue }
+            let gid = group.id
+            var descriptor = FetchDescriptor<Expense>(
+                predicate: #Predicate { $0.groupId == gid && $0.archivedAt == nil },
+                sortBy: [SortDescriptor(\.date, order: .reverse)]
+            )
+            descriptor.fetchLimit = 1
+            if let latest = try? context.fetch(descriptor).first {
+                result[group.id] = (latest.date, latest.category == SettleUp.category)
+            }
+        }
+        lastExpense = result
     }
 
     private func createGroup() {
