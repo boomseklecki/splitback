@@ -37,6 +37,17 @@ def _parse_date(value) -> date:
     return datetime.fromisoformat(text).date()
 
 
+def _parse_datetime(value) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
 def build_group_rows(groups: list[dict], expenses: list[dict]) -> dict[str, str]:
     """Return {splitwise_group_id: name} for every group referenced by an expense."""
     rows = {g["splitwise_id"]: g["name"] for g in groups}
@@ -59,6 +70,11 @@ def map_expense(expense: dict, user_map: dict[str, str]) -> dict:
         resolve_user_identifier(created_by["user_id"], created_by.get("first_name", ""), user_map)
         if created_by else None
     )
+    updated_by = expense.get("updated_by")
+    updated_by_identifier = (
+        resolve_user_identifier(updated_by["user_id"], updated_by.get("first_name", ""), user_map)
+        if updated_by else None
+    )
     splits = [
         {
             "user_identifier": resolve_user_identifier(
@@ -78,6 +94,16 @@ def map_expense(expense: dict, user_map: dict[str, str]) -> dict:
         "date": _parse_date(expense.get("date")),
         "category": category,
         "created_by": created_by_identifier,
+        "updated_by": updated_by_identifier,
+        "splitwise_created_at": _parse_datetime(expense.get("created_at")),
+        "splitwise_updated_at": _parse_datetime(expense.get("updated_at")),
+        "notes": expense.get("notes") or None,
+        "comments_count": expense.get("comments_count"),
+        "repeats": expense.get("repeats"),
+        "repeat_interval": expense.get("repeat_interval"),
+        "expense_bundle_id": (
+            str(expense["expense_bundle_id"]) if expense.get("expense_bundle_id") else None
+        ),
         "splitwise_receipt_url": expense.get("receipt_url"),
         "repayments": expense.get("repayments") or None,
         "splits": splits,

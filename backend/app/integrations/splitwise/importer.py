@@ -127,6 +127,14 @@ async def _upsert_expense(session: AsyncSession, mapped: dict, group_id: UUID) -
         "date": mapped["date"],
         "category": mapped["category"],
         "created_by": mapped.get("created_by"),
+        "updated_by": mapped.get("updated_by"),
+        "splitwise_created_at": mapped.get("splitwise_created_at"),
+        "splitwise_updated_at": mapped.get("splitwise_updated_at"),
+        "notes": mapped.get("notes"),
+        "comments_count": mapped.get("comments_count"),
+        "repeats": mapped.get("repeats"),
+        "repeat_interval": mapped.get("repeat_interval"),
+        "expense_bundle_id": mapped.get("expense_bundle_id"),
         "splitwise_receipt_url": mapped.get("splitwise_receipt_url"),
         "repayments": mapped.get("repayments"),
     }
@@ -288,14 +296,14 @@ async def sync_expenses(
                 registration_status=participant.get("registration_status"),
             )
             seen_users.add(identifier)
-        # Ensure the creator is in the directory so "Added by" resolves to a name.
-        created_by = expense.get("created_by")
-        if created_by:
-            identifier = mapper.resolve_user_identifier(
-                created_by["user_id"], created_by.get("first_name", ""), user_map
-            )
-            await _upsert_user(session, identifier, _full_name(created_by), created_by["user_id"])
-            seen_users.add(identifier)
+        # Ensure the creator/editor are in the directory so "Added by"/"Edited by" resolve to names.
+        for ref in (expense.get("created_by"), expense.get("updated_by")):
+            if ref:
+                identifier = mapper.resolve_user_identifier(
+                    ref["user_id"], ref.get("first_name", ""), user_map
+                )
+                await _upsert_user(session, identifier, _full_name(ref), ref["user_id"])
+                seen_users.add(identifier)
         mapped = mapper.map_expense(expense, user_map)
         group_id = await _ensure_group(session, mapped["group_key"], group_cache)
         await _upsert_expense(session, mapped, group_id)

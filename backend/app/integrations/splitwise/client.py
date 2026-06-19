@@ -184,6 +184,14 @@ def _normalize_expense(expense) -> dict:
         "receipt_url": _receipt_url(expense),
         "repayments": _repayments(expense),
         "created_by": _user_ref(expense, "getCreatedBy"),
+        "updated_by": _user_ref(expense, "getUpdatedBy"),
+        "created_at": _method(expense, "getCreatedAt"),
+        "updated_at": _method(expense, "getUpdatedAt"),
+        "notes": _method(expense, "getDetails"),
+        "comments_count": _method(expense, "getCommentsCount"),
+        "repeats": _method(expense, "getRepeats"),
+        "repeat_interval": _method(expense, "getRepeatInterval"),
+        "expense_bundle_id": _method(expense, "getExpenseBundleId"),
         "users": users,
     }
 

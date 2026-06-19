@@ -3,7 +3,7 @@ from datetime import date as date_type
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Date, DateTime, ForeignKey, Numeric, String
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -30,8 +30,18 @@ class Expense(UUIDMixin, TimestampMixin, Base):
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD")
     date: Mapped[date_type] = mapped_column(Date, nullable=False)
     category: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    # Who added the expense (user_identifier, from Splitwise created_by); null for self-hosted.
+    # Provenance from Splitwise (user_identifiers + the real added/edited timestamps, distinct from our
+    # row's created_at/updated_at which track import time); null for self-hosted.
     created_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    updated_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    splitwise_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    splitwise_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    comments_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Recurrence/bundle (display labels only — each occurrence still arrives as its own expense).
+    repeats: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    repeat_interval: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    expense_bundle_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Splitwise receipt image URL (remote, not our proxied bytes) + simplified repayments, both from import.
     splitwise_receipt_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     repayments: Mapped[list | None] = mapped_column(JSONB, nullable=True)

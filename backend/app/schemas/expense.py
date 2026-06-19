@@ -77,6 +77,14 @@ class ExpenseResponse(BaseModel):
     date: date_type
     category: str | None
     created_by: str | None
+    updated_by: str | None
+    splitwise_created_at: datetime | None
+    splitwise_updated_at: datetime | None
+    notes: str | None
+    comments_count: int | None
+    repeats: bool | None
+    repeat_interval: str | None
+    expense_bundle_id: str | None
     splitwise_receipt_url: str | None
     repayments: list | None
     archived_at: datetime | None
