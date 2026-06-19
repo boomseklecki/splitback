@@ -38,13 +38,8 @@ struct GroupsListView: View {
         (env.currentUser.map { [$0.identifier] } ?? []) + groups.map(\.id.uuidString)
     }
 
-    /// A group is "settled" (hidden by default) when your net is zero or its most recent expense is a
-    /// settle-up. Groups with an unknown balance (not signed in) are never auto-hidden. The zero-net
-    /// check comes first so we never need a last-expense lookup for those.
     private func isSettled(_ group: ExpenseGroup) -> Bool {
-        if let net = myNets[group.id], net == 0 { return true }
-        if lastExpense[group.id]?.isSettleUp == true { return true }
-        return false
+        GroupSummary.isSettled(group, myNets: myNets, lastExpense: lastExpense)
     }
 
     private var hiddenCount: Int { groups.filter(isSettled).count }
@@ -53,9 +48,7 @@ struct GroupsListView: View {
         let shown = showSettled ? groups : groups.filter { !isSettled($0) }
         switch sortMode {
         case .activity:
-            return shown.sorted {
-                (lastExpense[$0.id]?.date ?? .distantPast) > (lastExpense[$1.id]?.date ?? .distantPast)
-            }
+            return GroupSummary.byActivity(shown, lastExpense: lastExpense)
         case .balance:
             return shown.sorted { abs(myNets[$0.id] ?? 0) > abs(myNets[$1.id] ?? 0) }
         case .name:
@@ -136,37 +129,12 @@ struct GroupsListView: View {
         }
     }
 
-    /// Loads your net balance for each group. No-op (clears) when not signed in, so nothing is shown
-    /// rather than guessing an identity.
     private func loadMyBalances() async {
-        guard let me = env.currentUser?.identifier else { myNets = [:]; return }
-        var result: [UUID: Decimal] = [:]
-        for group in groups {
-            if let net = try? await env.balances.forGroup(group.id).first(where: { $0.identifier == me })?.net {
-                result[group.id] = net
-            }
-        }
-        myNets = result
+        myNets = await GroupSummary.myNets(groups, me: env.currentUser?.identifier, balances: env.balances)
     }
 
-    /// Loads each group's most-recent expense (date + settle-up flag) with a single-row fetch per
-    /// group. Skips groups already hidden by a zero balance (unless settled groups are being shown),
-    /// so we don't pay for last-expense lookups on rows nobody sees.
     private func loadLastExpenses() {
-        var result: [UUID: (date: Date, isSettleUp: Bool)] = [:]
-        for group in groups {
-            if !showSettled, let net = myNets[group.id], net == 0 { continue }
-            let gid = group.id
-            var descriptor = FetchDescriptor<Expense>(
-                predicate: #Predicate { $0.groupId == gid && $0.archivedAt == nil },
-                sortBy: [SortDescriptor(\.date, order: .reverse)]
-            )
-            descriptor.fetchLimit = 1
-            if let latest = try? context.fetch(descriptor).first {
-                result[group.id] = (latest.date, latest.category == SettleUp.category)
-            }
-        }
-        lastExpense = result
+        lastExpense = GroupSummary.lastExpenses(groups, myNets: myNets, includeSettled: showSettled, context: context)
     }
 
     private func createGroup() {

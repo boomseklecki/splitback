@@ -117,9 +117,12 @@ private struct ManualTransactionView: View {
 }
 
 /// Pick a group, then open the expense editor prefilled from the transaction (links via transaction_id).
+/// The group list hides settled groups and sorts by recent activity, matching the Expenses tab.
 private struct NewExpenseFromTransactionView: View {
     let transaction: Transaction
 
+    @Environment(AppEnvironment.self) private var env
+    @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     @Query(filter: #Predicate<ExpenseGroup> { $0.archivedAt == nil && $0.hidden == false },
            sort: \ExpenseGroup.name)
@@ -127,10 +130,22 @@ private struct NewExpenseFromTransactionView: View {
     @Query private var members: [GroupMember]
     @State private var selectedGroupId: UUID?
     @State private var showingEditor = false
+    @State private var showSettled = false
+    @State private var myNets: [UUID: Decimal] = [:]
+    @State private var lastExpense: [UUID: GroupSummary.Last] = [:]
 
     private var selectedGroup: ExpenseGroup? { groups.first { $0.id == selectedGroupId } }
     private var memberIdentifiers: [String] {
         members.filter { $0.groupId == selectedGroupId }.map(\.userIdentifier)
+    }
+
+    private var hiddenCount: Int {
+        groups.filter { GroupSummary.isSettled($0, myNets: myNets, lastExpense: lastExpense) }.count
+    }
+    private var visibleGroups: [ExpenseGroup] {
+        let shown = showSettled ? groups
+            : groups.filter { !GroupSummary.isSettled($0, myNets: myNets, lastExpense: lastExpense) }
+        return GroupSummary.byActivity(shown, lastExpense: lastExpense)
     }
 
     var body: some View {
@@ -139,7 +154,10 @@ private struct NewExpenseFromTransactionView: View {
                 Section("Group") {
                     Picker("Group", selection: $selectedGroupId) {
                         Text("Select a group").tag(UUID?.none)
-                        ForEach(groups) { Text($0.name).tag(UUID?.some($0.id)) }
+                        ForEach(visibleGroups) { Text($0.name).tag(UUID?.some($0.id)) }
+                    }
+                    if hiddenCount > 0 || showSettled {
+                        Toggle("Show settled groups", isOn: $showSettled)
                     }
                 }
                 Section("Transaction") {
@@ -154,6 +172,11 @@ private struct NewExpenseFromTransactionView: View {
             .navigationTitle("From Transaction")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+            .task {
+                myNets = await GroupSummary.myNets(groups, me: env.currentUser?.identifier, balances: env.balances)
+                loadLastExpenses()
+            }
+            .onChange(of: showSettled) { _, _ in loadLastExpenses() }
             .sheet(isPresented: $showingEditor) {
                 if let selectedGroup {
                     ExpenseEditView(group: selectedGroup, members: memberIdentifiers,
@@ -161,5 +184,9 @@ private struct NewExpenseFromTransactionView: View {
                 }
             }
         }
+    }
+
+    private func loadLastExpenses() {
+        lastExpense = GroupSummary.lastExpenses(groups, myNets: myNets, includeSettled: showSettled, context: context)
     }
 }

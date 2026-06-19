@@ -97,7 +97,7 @@ struct AccountsView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(account.name)
                     if let type = account.type {
-                        Text(type).font(.caption).foregroundStyle(.secondary)
+                        Text(type.capitalized).font(.caption).foregroundStyle(.secondary)
                     }
                 }
                 Spacer()
