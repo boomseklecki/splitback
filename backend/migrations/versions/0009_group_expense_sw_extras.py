@@ -1,6 +1,6 @@
 """group type/avatar/cover + expense receipt url/repayments from splitwise
 
-Revision ID: 0009_group_expense_splitwise_extras
+Revision ID: 0009_group_expense_sw_extras
 Revises: 0008_user_registration_status
 Create Date: 2026-06-19
 
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB
 
-revision: str = "0009_group_expense_splitwise_extras"
+revision: str = "0009_group_expense_sw_extras"
 down_revision: str | None = "0008_user_registration_status"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
