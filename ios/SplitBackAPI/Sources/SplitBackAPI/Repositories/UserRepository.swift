@@ -103,6 +103,7 @@ struct UserRepository {
                 existing.source = Mapping.userSource(r.source)
                 existing.splitwiseUserId = r.splitwise_user_id
                 existing.email = r.email
+                existing.avatarURL = r.avatar_url
                 existing.createdAt = r.created_at
                 existing.updatedAt = r.updated_at
             } else {

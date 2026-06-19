@@ -11,6 +11,7 @@ final class User {
     var source: UserSource
     var splitwiseUserId: String?
     var email: String?
+    var avatarURL: String?
     var createdAt: Date
     var updatedAt: Date
 
@@ -21,6 +22,7 @@ final class User {
         source: UserSource,
         splitwiseUserId: String? = nil,
         email: String? = nil,
+        avatarURL: String? = nil,
         createdAt: Date,
         updatedAt: Date
     ) {
@@ -30,6 +32,7 @@ final class User {
         self.source = source
         self.splitwiseUserId = splitwiseUserId
         self.email = email
+        self.avatarURL = avatarURL
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }

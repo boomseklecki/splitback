@@ -191,6 +191,7 @@ enum Mapping {
             source: userSource(r.source),
             splitwiseUserId: r.splitwise_user_id,
             email: r.email,
+            avatarURL: r.avatar_url,
             createdAt: r.created_at,
             updatedAt: r.updated_at
         )

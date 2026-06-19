@@ -18,16 +18,21 @@ def make_client(access_token: str) -> Splitwise:
     return client
 
 
+def _picture_url(user) -> str | None:
+    """The medium avatar URL for a Splitwise user/member, if they have one."""
+    picture = user.getPicture() if hasattr(user, "getPicture") else None
+    return picture.getMedium() if picture else None
+
+
 def get_current_user(client: Splitwise) -> dict:
     """The authenticated Splitwise user, normalized for sign-in/find-or-create."""
     user = client.getCurrentUser()
-    picture = user.getPicture()
     return {
         "splitwise_id": str(user.getId()),
         "first_name": user.getFirstName() or "",
         "last_name": user.getLastName() or "",
         "email": user.getEmail(),
-        "picture": picture.getMedium() if picture else None,
+        "picture": _picture_url(user),
     }
 
 
@@ -38,6 +43,7 @@ def _normalize_group(group) -> dict:
             "first_name": m.getFirstName() or "",
             "last_name": m.getLastName() or "",
             "email": m.getEmail(),
+            "picture": _picture_url(m),
         }
         for m in (group.getMembers() or [])
     ]
@@ -52,6 +58,8 @@ def _normalize_expense(expense) -> dict:
             "user_id": str(u.getId()),
             "first_name": u.getFirstName() or "",
             "last_name": u.getLastName() or "",
+            "email": u.getEmail() if hasattr(u, "getEmail") else None,
+            "picture": _picture_url(u),
             "paid_share": u.getPaidShare() or "0",
             "owed_share": u.getOwedShare() or "0",
         }

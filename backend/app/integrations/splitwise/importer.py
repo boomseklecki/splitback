@@ -43,16 +43,18 @@ async def _upsert_user(
     display_name: str,
     splitwise_user_id: str,
     email: str | None = None,
+    avatar_url: str | None = None,
 ) -> None:
-    # On conflict, always link the splitwise_user_id, but only refresh display name + email for
-    # Splitwise-sourced rows so we never clobber an app user's chosen name/email (or downgrade their
-    # source). Email is coalesced so a later record without one doesn't wipe a known address.
+    # On conflict, always link the splitwise_user_id, but only refresh display name + email + avatar
+    # for Splitwise-sourced rows so we never clobber an app user's chosen profile (or downgrade their
+    # source). Email/avatar are coalesced so a later record without them doesn't wipe known values.
     stmt = pg_insert(User).values(
         identifier=identifier,
         display_name=display_name or identifier,
         source=UserSource.splitwise,
         splitwise_user_id=splitwise_user_id,
         email=email,
+        avatar_url=avatar_url,
     )
     is_splitwise = User.source == UserSource.splitwise
     stmt = stmt.on_conflict_do_update(
@@ -63,6 +65,10 @@ async def _upsert_user(
             "email": case(
                 (is_splitwise, func.coalesce(stmt.excluded.email, User.email)),
                 else_=User.email,
+            ),
+            "avatar_url": case(
+                (is_splitwise, func.coalesce(stmt.excluded.avatar_url, User.avatar_url)),
+                else_=User.avatar_url,
             ),
         },
     )
@@ -147,7 +153,7 @@ async def run_import(
             )
             await _upsert_user(
                 session, identifier, _full_name(member), member["user_id"],
-                email=member.get("email"),
+                email=member.get("email"), avatar_url=member.get("picture"),
             )
             seen_users.add(identifier)
             if our_group_id is not None:
@@ -161,7 +167,7 @@ async def run_import(
             )
             await _upsert_user(
                 session, identifier, _full_name(participant), participant["user_id"],
-                email=participant.get("email"),
+                email=participant.get("email"), avatar_url=participant.get("picture"),
             )
             seen_users.add(identifier)
         mapped = mapper.map_expense(expense, user_map)

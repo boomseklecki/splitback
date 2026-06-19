@@ -37,10 +37,13 @@ struct SettingsView: View {
             Form {
                 Section("Account") {
                     if let user = env.currentUser {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(user.displayName.titleCased)
-                            if let email = user.email {
-                                Text(email).font(.caption).foregroundStyle(.secondary)
+                        HStack(spacing: 12) {
+                            AvatarView(url: user.avatarURL, name: user.displayName.titleCased, size: 44)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(user.displayName.titleCased)
+                                if let email = user.email {
+                                    Text(email).font(.caption).foregroundStyle(.secondary)
+                                }
                             }
                         }
                         Button("Sign Out", role: .destructive) { env.signOut() }

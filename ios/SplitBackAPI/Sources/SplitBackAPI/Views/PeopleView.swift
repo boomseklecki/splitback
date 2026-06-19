@@ -16,25 +16,28 @@ struct PeopleView: View {
         List {
             Section {
                 ForEach(users) { user in
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Text(user.displayName.titleCased)
-                            Spacer()
-                            Text(sourceLabel(user.source))
-                                .font(.caption2).foregroundStyle(.secondary)
-                                .padding(.horizontal, 7).padding(.vertical, 2)
-                                .background(.quaternary, in: Capsule())
+                    HStack(alignment: .top, spacing: 12) {
+                        AvatarView(url: user.avatarURL, name: user.displayName.titleCased)
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text(user.displayName.titleCased)
+                                Spacer()
+                                Text(sourceLabel(user.source))
+                                    .font(.caption2).foregroundStyle(.secondary)
+                                    .padding(.horizontal, 7).padding(.vertical, 2)
+                                    .background(.quaternary, in: Capsule())
+                            }
+                            if let email = user.email, !email.isEmpty {
+                                Label(email, systemImage: "envelope")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            if user.splitwiseUserId != nil {
+                                Label("Linked to Splitwise", systemImage: "link")
+                                    .font(.caption2).foregroundStyle(.secondary)
+                            }
+                            Text(user.identifier)
+                                .font(.caption2).foregroundStyle(.tertiary)
                         }
-                        if let email = user.email, !email.isEmpty {
-                            Label(email, systemImage: "envelope")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                        if user.splitwiseUserId != nil {
-                            Label("Linked to Splitwise", systemImage: "link")
-                                .font(.caption2).foregroundStyle(.secondary)
-                        }
-                        Text(user.identifier)
-                            .font(.caption2).foregroundStyle(.tertiary)
                     }
                     .padding(.vertical, 2)
                 }
