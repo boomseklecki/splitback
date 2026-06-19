@@ -2593,6 +2593,15 @@
             "type": "string",
             "title": "Category"
           },
+          "splitwise_receipt_url": {
+            "type": "string",
+            "title": "Splitwise Receipt Url"
+          },
+          "repayments": {
+            "items": {},
+            "type": "array",
+            "title": "Repayments"
+          },
           "archived_at": {
             "type": "string",
             "format": "date-time",
@@ -2785,6 +2794,18 @@
           "splitwise_group_id": {
             "type": "string",
             "title": "Splitwise Group Id"
+          },
+          "group_type": {
+            "type": "string",
+            "title": "Group Type"
+          },
+          "avatar_url": {
+            "type": "string",
+            "title": "Avatar Url"
+          },
+          "cover_photo_url": {
+            "type": "string",
+            "title": "Cover Photo Url"
           },
           "hidden": {
             "type": "boolean",

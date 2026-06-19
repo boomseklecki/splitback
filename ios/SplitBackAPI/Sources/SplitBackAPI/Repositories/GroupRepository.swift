@@ -162,6 +162,9 @@ struct GroupRepository {
                 existing.name = r.name
                 existing.backendType = Mapping.backendType(r.backend_type)
                 existing.splitwiseGroupId = r.splitwise_group_id
+                existing.groupType = r.group_type
+                existing.avatarURL = r.avatar_url
+                existing.coverPhotoURL = r.cover_photo_url
                 existing.hidden = r.hidden
                 existing.archivedAt = r.archived_at
                 existing.createdAt = r.created_at

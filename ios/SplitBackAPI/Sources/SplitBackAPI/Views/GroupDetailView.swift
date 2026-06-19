@@ -43,6 +43,20 @@ struct GroupDetailView: View {
 
     var body: some View {
         List {
+            if group.avatarURL != nil || group.groupType != nil {
+                Section {
+                    HStack(spacing: 12) {
+                        AvatarView(url: group.avatarURL, name: group.name, size: 48)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(group.name).font(.headline)
+                            if let type = group.groupType, !type.isEmpty {
+                                Text(type.capitalized).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+
             if !balances.isEmpty {
                 Section("Balances") {
                     ForEach(balances) { entry in

@@ -90,12 +90,22 @@ enum Mapping {
 
     // MARK: Models
 
+    /// Encodes a value (e.g. the untyped Splitwise repayments array) to a compact JSON string for
+    /// raw persistence. Returns nil for nil input or on failure.
+    static func jsonString<T: Encodable>(_ value: T?) -> String? {
+        guard let value else { return nil }
+        return (try? JSONEncoder().encode(value)).flatMap { String(data: $0, encoding: .utf8) }
+    }
+
     static func group(_ r: Components.Schemas.GroupResponse) throws -> Group {
         Group(
             id: try uuid(r.id, field: "Group.id"),
             name: r.name,
             backendType: backendType(r.backend_type),
             splitwiseGroupId: r.splitwise_group_id,
+            groupType: r.group_type,
+            avatarURL: r.avatar_url,
+            coverPhotoURL: r.cover_photo_url,
             hidden: r.hidden,
             archivedAt: r.archived_at,
             createdAt: r.created_at,
@@ -174,6 +184,8 @@ enum Mapping {
             currency: r.currency,
             date: try dateOnly(r.date, field: "Expense.date"),
             category: r.category,
+            splitwiseReceiptURL: r.splitwise_receipt_url,
+            splitwiseRepayments: jsonString(r.repayments),
             archivedAt: r.archived_at,
             createdAt: r.created_at,
             updatedAt: r.updated_at,

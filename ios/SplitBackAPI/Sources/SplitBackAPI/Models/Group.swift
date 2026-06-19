@@ -13,6 +13,10 @@ final class Group {
     var name: String
     var backendType: BackendType
     var splitwiseGroupId: String?
+    /// Splitwise group metadata (nil for self-hosted): type (apartment/trip/…), avatar + cover image URLs.
+    var groupType: String?
+    var avatarURL: String?
+    var coverPhotoURL: String?
     var hidden: Bool
     var archivedAt: Date?
     var createdAt: Date
@@ -23,6 +27,9 @@ final class Group {
         name: String,
         backendType: BackendType,
         splitwiseGroupId: String? = nil,
+        groupType: String? = nil,
+        avatarURL: String? = nil,
+        coverPhotoURL: String? = nil,
         hidden: Bool = false,
         archivedAt: Date? = nil,
         createdAt: Date,
@@ -32,6 +39,9 @@ final class Group {
         self.name = name
         self.backendType = backendType
         self.splitwiseGroupId = splitwiseGroupId
+        self.groupType = groupType
+        self.avatarURL = avatarURL
+        self.coverPhotoURL = coverPhotoURL
         self.hidden = hidden
         self.archivedAt = archivedAt
         self.createdAt = createdAt

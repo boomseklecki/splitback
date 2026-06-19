@@ -15,6 +15,9 @@ final class Expense {
     var currency: String
     var date: Date
     var category: String?
+    /// Splitwise receipt image URL (remote) + the simplified repayments as a raw JSON string, from import.
+    var splitwiseReceiptURL: String?
+    var splitwiseRepayments: String?
     /// Soft-delete marker; null = active. Archived expenses are excluded from the list endpoint
     /// and from balances, but still fetchable by id.
     var archivedAt: Date?
@@ -38,6 +41,8 @@ final class Expense {
         currency: String,
         date: Date,
         category: String? = nil,
+        splitwiseReceiptURL: String? = nil,
+        splitwiseRepayments: String? = nil,
         archivedAt: Date? = nil,
         createdAt: Date,
         updatedAt: Date,
@@ -54,6 +59,8 @@ final class Expense {
         self.currency = currency
         self.date = date
         self.category = category
+        self.splitwiseReceiptURL = splitwiseReceiptURL
+        self.splitwiseRepayments = splitwiseRepayments
         self.archivedAt = archivedAt
         self.createdAt = createdAt
         self.updatedAt = updatedAt

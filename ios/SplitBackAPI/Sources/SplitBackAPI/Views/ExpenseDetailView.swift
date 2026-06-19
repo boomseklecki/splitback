@@ -66,6 +66,21 @@ struct ExpenseDetailView: View {
                 }
             }
 
+            if let urlString = expense.splitwiseReceiptURL, let url = URL(string: urlString) {
+                Section("Splitwise Receipt") {
+                    AsyncImage(url: url) { phase in
+                        if let image = phase.image {
+                            image.resizable().scaledToFit()
+                        } else if phase.error != nil {
+                            Label("Couldn't load receipt", systemImage: "exclamationmark.triangle")
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ProgressView().frame(maxWidth: .infinity)
+                        }
+                    }
+                }
+            }
+
             Section("Receipts") {
                 if !expense.receipts.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {

@@ -42,6 +42,15 @@ struct GroupsListView: View {
         GroupSummary.isSettled(group, myNets: myNets, lastExpense: lastExpense)
     }
 
+    /// "Trip · Splitwise" when a Splitwise group_type is known, else just the backend label.
+    private func subtitle(_ group: ExpenseGroup) -> String {
+        let backend = group.backendType == .splitwise ? "Splitwise" : "Self-hosted"
+        if let type = group.groupType, !type.isEmpty {
+            return "\(type.capitalized) · \(backend)"
+        }
+        return backend
+    }
+
     private var hiddenCount: Int { groups.filter(isSettled).count }
 
     private var visibleGroups: [ExpenseGroup] {
@@ -62,10 +71,11 @@ struct GroupsListView: View {
                 Section("Groups") {
                     ForEach(visibleGroups) { group in
                         NavigationLink(value: group) {
-                            HStack {
+                            HStack(spacing: 12) {
+                                AvatarView(url: group.avatarURL, name: group.name, size: 36)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(group.name)
-                                    Text(group.backendType == .splitwise ? "Splitwise" : "Self-hosted")
+                                    Text(subtitle(group))
                                         .font(.caption).foregroundStyle(.secondary)
                                 }
                                 Spacer()
