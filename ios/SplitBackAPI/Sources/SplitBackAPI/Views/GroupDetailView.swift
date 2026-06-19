@@ -46,7 +46,8 @@ struct GroupDetailView: View {
             if group.avatarURL != nil || group.groupType != nil {
                 Section {
                     HStack(spacing: 12) {
-                        AvatarView(url: group.avatarURL, name: group.name, size: 48)
+                        AvatarView(url: group.avatarURL, name: group.name, size: 48,
+                                   systemImage: group.typeSymbol)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(group.name).font(.headline)
                             if let type = group.groupType, !type.isEmpty {

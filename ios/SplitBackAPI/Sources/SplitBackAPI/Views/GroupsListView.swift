@@ -72,7 +72,8 @@ struct GroupsListView: View {
                     ForEach(visibleGroups) { group in
                         NavigationLink(value: group) {
                             HStack(spacing: 12) {
-                                AvatarView(url: group.avatarURL, name: group.name, size: 36)
+                                AvatarView(url: group.avatarURL, name: group.name, size: 36,
+                                           systemImage: group.typeSymbol)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(group.name)
                                     Text(subtitle(group))

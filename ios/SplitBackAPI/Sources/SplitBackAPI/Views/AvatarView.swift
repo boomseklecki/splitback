@@ -6,6 +6,8 @@ struct AvatarView: View {
     let url: String?
     let name: String
     var size: CGFloat = 36
+    /// When there's no remote image, show this SF Symbol instead of initials (e.g. a group-type icon).
+    var systemImage: String? = nil
 
     var body: some View {
         SwiftUI.Group {
@@ -30,11 +32,17 @@ struct AvatarView: View {
     private var placeholder: some View {
         Circle()
             .fill(.quaternary)
-            .overlay(
-                Text(initials)
-                    .font(.system(size: size * 0.4, weight: .semibold))
-                    .foregroundStyle(.secondary)
-            )
+            .overlay {
+                if let systemImage {
+                    Image(systemName: systemImage)
+                        .font(.system(size: size * 0.42))
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(initials)
+                        .font(.system(size: size * 0.4, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+            }
     }
 
     private var initials: String {
