@@ -1,0 +1,73 @@
+name: SplitBack
+options:
+  bundleIdPrefix: com.splitback
+  createIntermediateGroups: true
+  deploymentTarget:
+    iOS: "26.0"
+
+packages:
+  SplitBackAPI:
+    path: SplitBackAPI
+
+targets:
+  SplitBack:
+    type: application
+    platform: iOS
+    sources:
+      - SplitBack
+    dependencies:
+      - package: SplitBackAPI
+    info:
+      path: SplitBack/Info.plist
+      properties:
+        # Base URL for the backend. Simulator reaches a host-local backend at localhost;
+        # a physical device needs the LAN IP or the Cloudflare tunnel hostname.
+        API_BASE_URL: http://localhost:8000
+        # Allow cleartext HTTP to local-network hosts (self-hosted backend on the LAN / *.local).
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        NSLocalNetworkUsageDescription: SplitBack connects to your self-hosted backend on the local network.
+        NSCameraUsageDescription: Scan receipts with the camera.
+        # Plaid Link app-to-app handoff to bank apps during OAuth.
+        LSApplicationQueriesSchemes:
+          - plaidlink
+        # Custom scheme for the Splitwise OAuth callback (backend 302s to splitback://auth?token=…).
+        CFBundleURLTypes:
+          - CFBundleURLSchemes:
+              - splitback
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.splitback.app
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SWIFT_EMIT_LOC_STRINGS: YES
+
+  # Logic tests for the data layer. Depends only on the SplitBackAPI library (no app host), so the
+  # library and its transitive runtime deps link cleanly; uses `@testable import SplitBackAPI`.
+  SplitBackTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - SplitBackTests
+    dependencies:
+      - package: SplitBackAPI
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.splitback.tests
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "5.0"
+
+schemes:
+  SplitBack:
+    build:
+      targets:
+        SplitBack: all
+        SplitBackTests: [test]
+    test:
+      targets:
+        - SplitBackTests

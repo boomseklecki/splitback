@@ -1,0 +1,85 @@
+services:
+  db:
+    image: postgres:16
+    pull_policy: never
+    environment:
+      POSTGRES_USER: splitback
+      POSTGRES_PASSWORD: splitback
+      POSTGRES_DB: splitback
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U splitback"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    pull_policy: never
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: splitback
+      MINIO_ROOT_PASSWORD: splitback-secret
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: ./backend
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    ports:
+      - "8000:8000"
+
+  # --- Isolated test stack (profile: test) ---
+  # An ephemeral Postgres + a second API pointed at it, so the integration suite always runs
+  # against a clean DB regardless of the real data in `db`. Started only with `--profile test`.
+  db-test:
+    image: postgres:16
+    pull_policy: never
+    profiles: ["test"]
+    environment:
+      POSTGRES_USER: splitback
+      POSTGRES_PASSWORD: splitback
+      POSTGRES_DB: splitback
+    tmpfs:
+      - /var/lib/postgresql/data   # ephemeral: wiped on container removal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U splitback"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api-test:
+    build: ./backend
+    pull_policy: never
+    profiles: ["test"]
+    env_file:
+      - .env
+    environment:
+      # Override only the DB target; reuse the shared MinIO + all other settings from .env.
+      DATABASE_URL: postgresql+asyncpg://splitback:splitback@db-test:5432/splitback
+    depends_on:
+      db-test:
+        condition: service_healthy
+      minio:
+        condition: service_started
+
+volumes:
+  db_data:
+  minio_data:

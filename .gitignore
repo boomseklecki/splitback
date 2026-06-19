@@ -1,0 +1,20 @@
+# Secrets
+.env
+
+# Local Claude Code settings (machine-local permissions)
+.claude/settings.local.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.ruff_cache/
+.pytest_cache/
+
+# uv
+uv.lock
+
+# OS
+.DS_Store

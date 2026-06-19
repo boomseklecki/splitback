@@ -1,0 +1,242 @@
+"""CRUD + behavior tests for groups and expenses against the running api.
+
+HTTP via urllib; Splitwise groups and hard-delete are exercised directly against
+the DB/storage since the api process runs with hard-delete disabled.
+"""
+import asyncio
+import json
+import urllib.error
+import urllib.request
+from datetime import date
+from decimal import Decimal
+from io import BytesIO
+
+from sqlalchemy import delete
+
+from app.config import settings
+from app.db import async_session
+from app.models import BackendType, Expense, Group, Receipt
+
+API = "http://localhost:8000"
+
+
+def _req(method, path, data=None):
+    headers = {}
+    body = None
+    if data is not None:
+        body = json.dumps(data).encode()
+        headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(API + path, data=body, method=method, headers=headers)
+    try:
+        resp = urllib.request.urlopen(req)
+        return resp.status, resp.read()
+    except urllib.error.HTTPError as e:
+        return e.code, e.read()
+
+
+def _create_group(name):
+    status, body = _req("POST", "/groups", {"name": name})
+    assert status == 201, (status, body)
+    return json.loads(body)["id"]
+
+
+async def _purge(*group_ids):
+    async with async_session() as session:
+        for gid in group_ids:
+            await session.execute(delete(Group).where(Group.id == gid))
+        await session.commit()
+
+
+async def _make_splitwise_group(splitwise_id):
+    async with async_session() as session:
+        group = Group(
+            name="sw-test",
+            backend_type=BackendType.splitwise,
+            splitwise_group_id=splitwise_id,
+        )
+        session.add(group)
+        await session.commit()
+        return str(group.id)
+
+
+def _balanced_splits():
+    return [
+        {"user_identifier": "matt", "paid_share": "40.00", "owed_share": "20.00"},
+        {"user_identifier": "nikki", "paid_share": "0.00", "owed_share": "20.00"},
+    ]
+
+
+async def test_group_lifecycle_and_archive():
+    gid = _create_group("lifecycle")
+    try:
+        status, body = _req("GET", "/groups")
+        assert status == 200
+        assert any(g["id"] == gid for g in json.loads(body))
+
+        # soft-delete (archive)
+        status, _ = _req("DELETE", f"/groups/{gid}")
+        assert status == 204
+
+        # hidden from default list, visible with include_archived
+        assert not any(g["id"] == gid for g in json.loads(_req("GET", "/groups")[1]))
+        shown = json.loads(_req("GET", "/groups?include_archived=true")[1])
+        archived = next(g for g in shown if g["id"] == gid)
+        assert archived["archived_at"] is not None
+    finally:
+        await _purge(gid)
+
+
+async def test_backend_type_filter_and_splitwise_delete_409():
+    self_id = _create_group("filter-self")
+    sw_id = await _make_splitwise_group("test-sw-filter")
+    try:
+        self_only = json.loads(_req("GET", "/groups?backend_type=self_hosted")[1])
+        assert any(g["id"] == self_id for g in self_only)
+        assert not any(g["id"] == sw_id for g in self_only)
+
+        sw_only = json.loads(_req("GET", "/groups?backend_type=splitwise")[1])
+        assert any(g["id"] == sw_id for g in sw_only)
+        assert not any(g["id"] == self_id for g in sw_only)
+
+        # Splitwise groups may not be archived/deleted via the API
+        status, _ = _req("DELETE", f"/groups/{sw_id}")
+        assert status == 409
+    finally:
+        await _purge(self_id, sw_id)
+
+
+async def test_hide_flag_on_splitwise_group():
+    sw_id = await _make_splitwise_group("test-sw-hide")
+    try:
+        status, body = _req("PATCH", f"/groups/{sw_id}", {"hidden": True})
+        assert status == 200 and json.loads(body)["hidden"] is True
+
+        assert not any(g["id"] == sw_id for g in json.loads(_req("GET", "/groups")[1]))
+        shown = json.loads(_req("GET", "/groups?include_hidden=true")[1])
+        assert any(g["id"] == sw_id for g in shown)
+    finally:
+        await _purge(sw_id)
+
+
+async def test_expense_validation():
+    gid = _create_group("validation")
+    sw_id = await _make_splitwise_group("test-sw-validation")
+    try:
+        # balanced -> 201, nested splits + item returned
+        payload = {
+            "group_id": gid,
+            "description": "Dinner",
+            "amount": "40.00",
+            "date": "2023-05-01",
+            "splits": _balanced_splits(),
+            "items": [{"name": "Pizza", "price": "40.00", "quantity": "1"}],
+        }
+        status, body = _req("POST", "/expenses", payload)
+        assert status == 201, (status, body)
+        created = json.loads(body)
+        assert len(created["splits"]) == 2 and len(created["items"]) == 1
+        assert sum(Decimal(str(s["owed_share"])) for s in created["splits"]) == Decimal("40.00")
+
+        # unbalanced -> 422
+        bad = dict(payload)
+        bad["splits"] = [
+            {"user_identifier": "matt", "paid_share": "40.00", "owed_share": "10.00"},
+            {"user_identifier": "nikki", "paid_share": "0.00", "owed_share": "20.00"},
+        ]
+        status, _ = _req("POST", "/expenses", bad)
+        assert status == 422
+
+        # Splitwise group skips local validation (else this unbalanced payload would
+        # 422); instead it proceeds to the Splitwise push, which 409s with no token.
+        sw_payload = dict(bad)
+        sw_payload["group_id"] = sw_id
+        status, body = _req("POST", "/expenses", sw_payload)
+        assert status == 409, (status, body)
+    finally:
+        await _purge(gid, sw_id)
+
+
+async def test_expense_detail_patch_and_archived_hidden():
+    gid = _create_group("detail")
+    try:
+        status, body = _req(
+            "POST", "/expenses",
+            {
+                "group_id": gid,
+                "description": "Groceries",
+                "amount": "40.00",
+                "date": "2023-05-02",
+                "splits": _balanced_splits(),
+            },
+        )
+        assert status == 201
+        eid = json.loads(body)["id"]
+
+        # detail
+        status, body = _req("GET", f"/expenses/{eid}")
+        assert status == 200 and len(json.loads(body)["splits"]) == 2
+
+        # patch replaces splits wholesale
+        status, body = _req(
+            "PATCH", f"/expenses/{eid}",
+            {"splits": [{"user_identifier": "matt", "paid_share": "40.00", "owed_share": "40.00"}]},
+        )
+        assert status == 200
+        patched = json.loads(body)
+        assert len(patched["splits"]) == 1
+        assert patched["splits"][0]["user_identifier"] == "matt"
+
+        # archived group's expenses drop out of the default list
+        assert _req("DELETE", f"/groups/{gid}")[0] == 204
+        listed = json.loads(_req("GET", f"/expenses?group_id={gid}")[1])
+        assert listed == []
+        with_archived = json.loads(
+            _req("GET", f"/expenses?group_id={gid}&include_archived=true")[1]
+        )
+        assert any(e["id"] == eid for e in with_archived)
+    finally:
+        await _purge(gid)
+
+
+async def test_hard_delete_group_removes_objects_and_rows():
+    from app.integrations.storage import minio_client
+    from app.routers import groups as groups_router
+
+    async with async_session() as session:
+        group = Group(name="hard-delete", backend_type=BackendType.self_hosted)
+        session.add(group)
+        await session.flush()
+        expense = Expense(
+            group_id=group.id,
+            description="x",
+            amount=Decimal("1.00"),
+            currency="USD",
+            date=date(2023, 1, 1),
+        )
+        session.add(expense)
+        await session.flush()
+        key = f"{expense.id}/hard-delete.bin"
+        minio_client.ensure_bucket()
+        client = minio_client._internal_client()
+        data = b"object-bytes"
+        await asyncio.to_thread(
+            client.put_object, settings.minio_bucket, key, BytesIO(data), len(data)
+        )
+        session.add(Receipt(expense_id=expense.id, bucket=settings.minio_bucket, object_key=key))
+        await session.commit()
+        gid, eid = group.id, expense.id
+
+    async with async_session() as session:
+        group = await session.get(Group, gid)
+        await groups_router._hard_delete_group(session, group)
+
+    assert minio_client.object_exists(key) is False
+    async with async_session() as session:
+        assert await session.get(Group, gid) is None
+        assert await session.get(Expense, eid) is None
+
+
+if __name__ == "__main__":
+    from tests._runner import run
+
+    run(dict(globals()))
