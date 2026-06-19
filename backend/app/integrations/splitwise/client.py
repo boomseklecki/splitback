@@ -18,11 +18,31 @@ def make_client(access_token: str) -> Splitwise:
     return client
 
 
+def _method(obj, name: str):
+    """Call ``obj.name()`` only when it is a real callable method, else return None.
+
+    The `splitwise` SDK objects define ``__getattr__`` to return None for unknown attributes, so
+    ``hasattr(obj, "getWhatever")`` is always True and ``obj.getWhatever()`` raises
+    ``TypeError: 'NoneType' object is not callable`` for getters the package doesn't implement.
+    Guarding on ``callable()`` is the only safe check.
+    """
+    fn = getattr(obj, name, None)
+    return fn() if callable(fn) else None
+
+
+def _flag(obj, attr: str, getter: str):
+    """A bool-ish flag: prefer the data attribute, fall back to a real getter method."""
+    val = getattr(obj, attr, None)
+    return val if val is not None else _method(obj, getter)
+
+
+def _str_or_none(value) -> str | None:
+    return str(value) if value is not None else None
+
+
 def _registration_status(user) -> str | None:
     """Splitwise registration_status ('confirmed' | 'invited' | 'dummy'), when the package exposes it."""
-    if hasattr(user, "getRegistrationStatus"):
-        return user.getRegistrationStatus()
-    return getattr(user, "registration_status", None)
+    return _method(user, "getRegistrationStatus") or getattr(user, "registration_status", None)
 
 
 def _first_url(obj, getters: tuple[str, ...]) -> str | None:
@@ -30,47 +50,39 @@ def _first_url(obj, getters: tuple[str, ...]) -> str | None:
     if obj is None:
         return None
     for getter in getters:
-        if hasattr(obj, getter):
-            url = getattr(obj, getter)()
-            if url:
-                return url
+        url = _method(obj, getter)
+        if url:
+            return url
     return None
 
 
 def _group_type(group) -> str | None:
-    if hasattr(group, "getGroupType"):
-        return group.getGroupType()
-    return getattr(group, "group_type", None)
+    return _method(group, "getGroupType") or getattr(group, "group_type", None)
 
 
 def _avatar_url(group) -> str | None:
     """Group avatar URL — only a *custom* one (Splitwise serves a generated default otherwise)."""
-    custom = group.getCustomAvatar() if hasattr(group, "getCustomAvatar") else getattr(group, "custom_avatar", None)
-    if custom is False:
+    if _flag(group, "custom_avatar", "getCustomAvatar") is False:
         return None
-    avatar = group.getAvatar() if hasattr(group, "getAvatar") else None
-    return _first_url(avatar, ("getMedium", "getLarge", "getOriginal"))
+    return _first_url(_method(group, "getAvatar"), ("getMedium", "getLarge", "getOriginal"))
 
 
 def _cover_photo_url(group) -> str | None:
-    cover = group.getCoverPhoto() if hasattr(group, "getCoverPhoto") else None
-    return _first_url(cover, ("getXxlarge", "getXlarge", "getOriginal"))
+    return _first_url(_method(group, "getCoverPhoto"), ("getXxlarge", "getXlarge", "getOriginal"))
 
 
 def _receipt_url(expense) -> str | None:
-    receipt = expense.getReceipt() if hasattr(expense, "getReceipt") else None
-    return _first_url(receipt, ("getLarge", "getOriginal"))
+    return _first_url(_method(expense, "getReceipt"), ("getLarge", "getOriginal"))
 
 
 def _repayments(expense) -> list[dict]:
     """Splitwise's simplified net transfers for an expense: [{from, to, amount}]."""
-    repayments = expense.getRepayments() if hasattr(expense, "getRepayments") else None
     out: list[dict] = []
-    for r in (repayments or []):
+    for r in (_method(expense, "getRepayments") or []):
         out.append({
-            "from": str(r.getFromUser()) if hasattr(r, "getFromUser") and r.getFromUser() is not None else None,
-            "to": str(r.getToUser()) if hasattr(r, "getToUser") and r.getToUser() is not None else None,
-            "amount": r.getAmount() if hasattr(r, "getAmount") else None,
+            "from": _str_or_none(_method(r, "getFromUser")),
+            "to": _str_or_none(_method(r, "getToUser")),
+            "amount": _method(r, "getAmount"),
         })
     return out
 
@@ -80,15 +92,11 @@ def _picture_url(user) -> str | None:
 
     Splitwise returns a generic placeholder picture for users who never set one; `custom_picture`
     is False for those, and we'd rather fall back to initials than show the placeholder. When the
-    flag isn't available (older package), we keep the picture so we never regress.
+    flag isn't available, we keep the picture so we never regress.
     """
-    custom = getattr(user, "custom_picture", None)
-    if custom is None and hasattr(user, "getCustomPicture"):
-        custom = user.getCustomPicture()
-    if custom is False:
+    if _flag(user, "custom_picture", "getCustomPicture") is False:
         return None
-    picture = user.getPicture() if hasattr(user, "getPicture") else None
-    return picture.getMedium() if picture else None
+    return _first_url(_method(user, "getPicture"), ("getMedium", "getLarge", "getOriginal"))
 
 
 def get_current_user(client: Splitwise) -> dict:
@@ -133,7 +141,7 @@ def _normalize_expense(expense) -> dict:
             "user_id": str(u.getId()),
             "first_name": u.getFirstName() or "",
             "last_name": u.getLastName() or "",
-            "email": u.getEmail() if hasattr(u, "getEmail") else None,
+            "email": _method(u, "getEmail"),
             "picture": _picture_url(u),
             "registration_status": _registration_status(u),
             "paid_share": u.getPaidShare() or "0",
