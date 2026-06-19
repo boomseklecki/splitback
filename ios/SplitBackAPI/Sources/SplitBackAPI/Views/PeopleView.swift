@@ -53,7 +53,7 @@ struct PeopleView: View {
         }
         .navigationTitle("People")
         .refreshable {
-            if env.splitwiseConnected { try? await env.splitwise.syncUsers() }
+            if env.splitwiseConnected { _ = try? await env.splitwise.syncUsers() }
             do { try await env.users(context).refresh() }
             catch { errorText = errorMessage(error) }
         }

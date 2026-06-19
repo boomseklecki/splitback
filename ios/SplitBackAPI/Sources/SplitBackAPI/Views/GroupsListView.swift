@@ -127,8 +127,8 @@ struct GroupsListView: View {
             }
             .refreshable {
                 if env.splitwiseConnected {
-                    try? await env.splitwise.syncExpenses()
-                    try? await env.splitwise.syncGroups()
+                    _ = try? await env.splitwise.syncExpenses()
+                    _ = try? await env.splitwise.syncGroups()
                 }
                 do { try await env.refreshAll(context) }
                 catch { errorText = errorMessage(error) }
