@@ -19,7 +19,7 @@ struct MemberPickerView: View {
             List(candidates) { user in
                 Button { add(user.identifier) } label: {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(user.displayName)
+                        Text(user.displayName.titleCased)
                         Text(user.identifier).font(.caption).foregroundStyle(.secondary)
                     }
                 }

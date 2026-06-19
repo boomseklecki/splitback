@@ -11,6 +11,7 @@ struct ExpenseDetailView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
+    @Query private var users: [User]
 
     @State private var showingEdit = false
     @State private var confirmingDelete = false
@@ -41,7 +42,7 @@ struct ExpenseDetailView: View {
             Section("Splits") {
                 ForEach(expense.splits.sorted(by: { $0.userIdentifier < $1.userIdentifier })) { split in
                     HStack {
-                        Text(split.userIdentifier)
+                        Text(users.displayName(for: split.userIdentifier))
                         Spacer()
                         VStack(alignment: .trailing) {
                             Text("paid \(split.paidShare.formatted(.currency(code: expense.currency)))")

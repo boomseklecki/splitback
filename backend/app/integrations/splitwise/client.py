@@ -33,7 +33,12 @@ def get_current_user(client: Splitwise) -> dict:
 
 def _normalize_group(group) -> dict:
     members = [
-        {"user_id": str(m.getId()), "first_name": m.getFirstName() or ""}
+        {
+            "user_id": str(m.getId()),
+            "first_name": m.getFirstName() or "",
+            "last_name": m.getLastName() or "",
+            "email": m.getEmail(),
+        }
         for m in (group.getMembers() or [])
     ]
     return {"splitwise_id": str(group.getId()), "name": group.getName(), "members": members}
@@ -46,6 +51,7 @@ def _normalize_expense(expense) -> dict:
         {
             "user_id": str(u.getId()),
             "first_name": u.getFirstName() or "",
+            "last_name": u.getLastName() or "",
             "paid_share": u.getPaidShare() or "0",
             "owed_share": u.getOwedShare() or "0",
         }

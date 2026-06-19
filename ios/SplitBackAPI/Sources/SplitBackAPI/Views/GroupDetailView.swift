@@ -13,6 +13,7 @@ struct GroupDetailView: View {
 
     @Query private var expenses: [Expense]
     @Query private var members: [GroupMember]
+    @Query private var users: [User]
 
     @State private var balances: [Balance] = []
     @State private var showingNewExpense = false
@@ -46,7 +47,7 @@ struct GroupDetailView: View {
                 Section("Balances") {
                     ForEach(balances) { entry in
                         HStack {
-                            Text(entry.displayName ?? entry.identifier)
+                            Text(entry.displayName?.titleCased ?? users.displayName(for: entry.identifier))
                             Spacer()
                             Text(entry.net.formatted(.currency(code: "USD")))
                                 .foregroundStyle(entry.net >= 0 ? .green : .red)
@@ -57,7 +58,7 @@ struct GroupDetailView: View {
 
             Section("Members") {
                 ForEach(members) { member in
-                    Text(member.userIdentifier)
+                    Text(users.displayName(for: member.userIdentifier))
                 }
                 .onDelete(perform: removeMembers)
                 Button {

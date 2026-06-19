@@ -6,7 +6,7 @@ async DB session.
 import asyncio
 from uuid import UUID
 
-from sqlalchemy import delete, text
+from sqlalchemy import case, delete, func, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,22 +30,41 @@ async def _upsert_group(session: AsyncSession, splitwise_id: str, name: str) -> 
     return (await session.execute(stmt)).scalar_one()
 
 
+def _full_name(member: dict) -> str:
+    """Splitwise gives first + last separately; join into a display name (e.g. 'Nikki G')."""
+    first = (member.get("first_name") or "").strip()
+    last = (member.get("last_name") or "").strip()
+    return " ".join(part for part in (first, last) if part)
+
+
 async def _upsert_user(
-    session: AsyncSession, identifier: str, display_name: str, splitwise_user_id: str
+    session: AsyncSession,
+    identifier: str,
+    display_name: str,
+    splitwise_user_id: str,
+    email: str | None = None,
 ) -> None:
-    # Set splitwise_user_id on conflict but never downgrade an existing (e.g. app) user.
-    stmt = (
-        pg_insert(User)
-        .values(
-            identifier=identifier,
-            display_name=display_name or identifier,
-            source=UserSource.splitwise,
-            splitwise_user_id=splitwise_user_id,
-        )
-        .on_conflict_do_update(
-            index_elements=[User.identifier],
-            set_={"splitwise_user_id": splitwise_user_id},
-        )
+    # On conflict, always link the splitwise_user_id, but only refresh display name + email for
+    # Splitwise-sourced rows so we never clobber an app user's chosen name/email (or downgrade their
+    # source). Email is coalesced so a later record without one doesn't wipe a known address.
+    stmt = pg_insert(User).values(
+        identifier=identifier,
+        display_name=display_name or identifier,
+        source=UserSource.splitwise,
+        splitwise_user_id=splitwise_user_id,
+        email=email,
+    )
+    is_splitwise = User.source == UserSource.splitwise
+    stmt = stmt.on_conflict_do_update(
+        index_elements=[User.identifier],
+        set_={
+            "splitwise_user_id": splitwise_user_id,
+            "display_name": case((is_splitwise, stmt.excluded.display_name), else_=User.display_name),
+            "email": case(
+                (is_splitwise, func.coalesce(stmt.excluded.email, User.email)),
+                else_=User.email,
+            ),
+        },
     )
     await session.execute(stmt)
 
@@ -126,7 +145,10 @@ async def run_import(
             identifier = mapper.resolve_user_identifier(
                 member["user_id"], member["first_name"], user_map
             )
-            await _upsert_user(session, identifier, member["first_name"], member["user_id"])
+            await _upsert_user(
+                session, identifier, _full_name(member), member["user_id"],
+                email=member.get("email"),
+            )
             seen_users.add(identifier)
             if our_group_id is not None:
                 await _upsert_group_member(session, our_group_id, identifier)
@@ -138,7 +160,8 @@ async def run_import(
                 participant["user_id"], participant.get("first_name", ""), user_map
             )
             await _upsert_user(
-                session, identifier, participant.get("first_name", ""), participant["user_id"]
+                session, identifier, _full_name(participant), participant["user_id"],
+                email=participant.get("email"),
             )
             seen_users.add(identifier)
         mapped = mapper.map_expense(expense, user_map)
