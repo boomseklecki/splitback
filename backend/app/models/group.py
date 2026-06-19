@@ -17,6 +17,10 @@ class Group(UUIDMixin, TimestampMixin, Base):
     )
     # Set only when backend_type == splitwise
     splitwise_group_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Splitwise group metadata (null for self-hosted / unknown). group_type: apartment/house/trip/etc.
+    group_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    avatar_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    cover_photo_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     # Soft-delete marker (self-hosted only); null = active
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Cosmetic visibility toggle (any backend type)

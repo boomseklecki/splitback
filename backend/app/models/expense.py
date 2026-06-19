@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import Date, DateTime, ForeignKey, Numeric, String
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -30,6 +30,9 @@ class Expense(UUIDMixin, TimestampMixin, Base):
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD")
     date: Mapped[date_type] = mapped_column(Date, nullable=False)
     category: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # Splitwise receipt image URL (remote, not our proxied bytes) + simplified repayments, both from import.
+    splitwise_receipt_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    repayments: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     # Soft-delete marker; null = active (DELETE archives unless hard-delete is enabled)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

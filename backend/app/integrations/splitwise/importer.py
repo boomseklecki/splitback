@@ -16,14 +16,36 @@ from app.models import BackendType, Expense, Group, GroupMember, Split, User
 from app.models.enums import UserSource
 
 
-async def _upsert_group(session: AsyncSession, splitwise_id: str, name: str) -> UUID:
+async def _upsert_group(
+    session: AsyncSession,
+    splitwise_id: str,
+    name: str,
+    group_type: str | None = None,
+    avatar_url: str | None = None,
+    cover_photo_url: str | None = None,
+) -> UUID:
+    # Group metadata comes authoritatively from getGroups, so set it directly on conflict (a removed
+    # or default avatar clears). Synthesized expense-only groups pass None and leave fields blank.
+    values = {
+        "name": name,
+        "backend_type": BackendType.splitwise,
+        "splitwise_group_id": splitwise_id,
+        "group_type": group_type,
+        "avatar_url": avatar_url,
+        "cover_photo_url": cover_photo_url,
+    }
     stmt = (
         pg_insert(Group)
-        .values(name=name, backend_type=BackendType.splitwise, splitwise_group_id=splitwise_id)
+        .values(**values)
         .on_conflict_do_update(
             index_elements=[Group.splitwise_group_id],
             index_where=text("splitwise_group_id IS NOT NULL"),
-            set_={"name": name},
+            set_={
+                "name": name,
+                "group_type": group_type,
+                "avatar_url": avatar_url,
+                "cover_photo_url": cover_photo_url,
+            },
         )
         .returning(Group.id)
     )
@@ -104,6 +126,8 @@ async def _upsert_expense(session: AsyncSession, mapped: dict, group_id: UUID) -
         "currency": mapped["currency"],
         "date": mapped["date"],
         "category": mapped["category"],
+        "splitwise_receipt_url": mapped.get("splitwise_receipt_url"),
+        "repayments": mapped.get("repayments"),
     }
     stmt = (
         pg_insert(Expense)
@@ -149,9 +173,16 @@ async def run_import(
     if dry_run:
         return stats
 
+    group_meta = {g["splitwise_id"]: g for g in groups}
     group_id_map: dict[str, UUID] = {}
     for splitwise_id, name in group_rows.items():
-        group_id_map[splitwise_id] = await _upsert_group(session, splitwise_id, name)
+        meta = group_meta.get(splitwise_id)
+        group_id_map[splitwise_id] = await _upsert_group(
+            session, splitwise_id, name,
+            group_type=meta.get("group_type") if meta else None,
+            avatar_url=meta.get("avatar_url") if meta else None,
+            cover_photo_url=meta.get("cover_photo_url") if meta else None,
+        )
 
     # Splitwise members -> users directory + group memberships
     seen_users: set[str] = set()

@@ -76,6 +76,8 @@ class ExpenseResponse(BaseModel):
     currency: str
     date: date_type
     category: str | None
+    splitwise_receipt_url: str | None
+    repayments: list | None
     archived_at: datetime | None
     created_at: datetime
     updated_at: datetime

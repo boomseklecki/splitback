@@ -72,5 +72,7 @@ def map_expense(expense: dict, user_map: dict[str, str]) -> dict:
         "currency": expense.get("currency_code", "USD"),
         "date": _parse_date(expense.get("date")),
         "category": category,
+        "splitwise_receipt_url": expense.get("receipt_url"),
+        "repayments": expense.get("repayments") or None,
         "splits": splits,
     }

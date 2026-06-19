@@ -22,6 +22,9 @@ class GroupResponse(BaseModel):
     name: str
     backend_type: BackendType
     splitwise_group_id: str | None
+    group_type: str | None
+    avatar_url: str | None
+    cover_photo_url: str | None
     hidden: bool
     archived_at: datetime | None
     created_at: datetime

@@ -25,6 +25,56 @@ def _registration_status(user) -> str | None:
     return getattr(user, "registration_status", None)
 
 
+def _first_url(obj, getters: tuple[str, ...]) -> str | None:
+    """First non-empty URL from an image object (avatar/cover/receipt) across the given getters."""
+    if obj is None:
+        return None
+    for getter in getters:
+        if hasattr(obj, getter):
+            url = getattr(obj, getter)()
+            if url:
+                return url
+    return None
+
+
+def _group_type(group) -> str | None:
+    if hasattr(group, "getGroupType"):
+        return group.getGroupType()
+    return getattr(group, "group_type", None)
+
+
+def _avatar_url(group) -> str | None:
+    """Group avatar URL — only a *custom* one (Splitwise serves a generated default otherwise)."""
+    custom = group.getCustomAvatar() if hasattr(group, "getCustomAvatar") else getattr(group, "custom_avatar", None)
+    if custom is False:
+        return None
+    avatar = group.getAvatar() if hasattr(group, "getAvatar") else None
+    return _first_url(avatar, ("getMedium", "getLarge", "getOriginal"))
+
+
+def _cover_photo_url(group) -> str | None:
+    cover = group.getCoverPhoto() if hasattr(group, "getCoverPhoto") else None
+    return _first_url(cover, ("getXxlarge", "getXlarge", "getOriginal"))
+
+
+def _receipt_url(expense) -> str | None:
+    receipt = expense.getReceipt() if hasattr(expense, "getReceipt") else None
+    return _first_url(receipt, ("getLarge", "getOriginal"))
+
+
+def _repayments(expense) -> list[dict]:
+    """Splitwise's simplified net transfers for an expense: [{from, to, amount}]."""
+    repayments = expense.getRepayments() if hasattr(expense, "getRepayments") else None
+    out: list[dict] = []
+    for r in (repayments or []):
+        out.append({
+            "from": str(r.getFromUser()) if hasattr(r, "getFromUser") and r.getFromUser() is not None else None,
+            "to": str(r.getToUser()) if hasattr(r, "getToUser") and r.getToUser() is not None else None,
+            "amount": r.getAmount() if hasattr(r, "getAmount") else None,
+        })
+    return out
+
+
 def _picture_url(user) -> str | None:
     """The medium avatar URL for a Splitwise user/member — but only a *custom* one.
 
@@ -65,7 +115,14 @@ def _normalize_group(group) -> dict:
         }
         for m in (group.getMembers() or [])
     ]
-    return {"splitwise_id": str(group.getId()), "name": group.getName(), "members": members}
+    return {
+        "splitwise_id": str(group.getId()),
+        "name": group.getName(),
+        "group_type": _group_type(group),
+        "avatar_url": _avatar_url(group),
+        "cover_photo_url": _cover_photo_url(group),
+        "members": members,
+    }
 
 
 def _normalize_expense(expense) -> dict:
@@ -94,6 +151,8 @@ def _normalize_expense(expense) -> dict:
         "category": category.getName() if category else None,
         "payment": bool(expense.getPayment()),
         "deleted_at": expense.getDeletedAt(),
+        "receipt_url": _receipt_url(expense),
+        "repayments": _repayments(expense),
         "users": users,
     }
 
