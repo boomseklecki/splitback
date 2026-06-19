@@ -44,10 +44,13 @@ async def _upsert_user(
     splitwise_user_id: str,
     email: str | None = None,
     avatar_url: str | None = None,
+    avatar_authoritative: bool = False,
 ) -> None:
     # On conflict, always link the splitwise_user_id, but only refresh display name + email + avatar
     # for Splitwise-sourced rows so we never clobber an app user's chosen profile (or downgrade their
-    # source). Email/avatar are coalesced so a later record without them doesn't wipe known values.
+    # source). Email is coalesced so a later record without one doesn't wipe a known address. Avatar is
+    # set directly from an authoritative source (group members) so dropping a placeholder clears it,
+    # but coalesced from secondary sources (expense participants) so they can't wipe a known avatar.
     stmt = pg_insert(User).values(
         identifier=identifier,
         display_name=display_name or identifier,
@@ -57,6 +60,10 @@ async def _upsert_user(
         avatar_url=avatar_url,
     )
     is_splitwise = User.source == UserSource.splitwise
+    avatar_value = (
+        stmt.excluded.avatar_url if avatar_authoritative
+        else func.coalesce(stmt.excluded.avatar_url, User.avatar_url)
+    )
     stmt = stmt.on_conflict_do_update(
         index_elements=[User.identifier],
         set_={
@@ -66,10 +73,7 @@ async def _upsert_user(
                 (is_splitwise, func.coalesce(stmt.excluded.email, User.email)),
                 else_=User.email,
             ),
-            "avatar_url": case(
-                (is_splitwise, func.coalesce(stmt.excluded.avatar_url, User.avatar_url)),
-                else_=User.avatar_url,
-            ),
+            "avatar_url": case((is_splitwise, avatar_value), else_=User.avatar_url),
         },
     )
     await session.execute(stmt)
@@ -154,6 +158,7 @@ async def run_import(
             await _upsert_user(
                 session, identifier, _full_name(member), member["user_id"],
                 email=member.get("email"), avatar_url=member.get("picture"),
+                avatar_authoritative=True,
             )
             seen_users.add(identifier)
             if our_group_id is not None:

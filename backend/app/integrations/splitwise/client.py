@@ -19,7 +19,17 @@ def make_client(access_token: str) -> Splitwise:
 
 
 def _picture_url(user) -> str | None:
-    """The medium avatar URL for a Splitwise user/member, if they have one."""
+    """The medium avatar URL for a Splitwise user/member — but only a *custom* one.
+
+    Splitwise returns a generic placeholder picture for users who never set one; `custom_picture`
+    is False for those, and we'd rather fall back to initials than show the placeholder. When the
+    flag isn't available (older package), we keep the picture so we never regress.
+    """
+    custom = getattr(user, "custom_picture", None)
+    if custom is None and hasattr(user, "getCustomPicture"):
+        custom = user.getCustomPicture()
+    if custom is False:
+        return None
     picture = user.getPicture() if hasattr(user, "getPicture") else None
     return picture.getMedium() if picture else None
 
