@@ -26,9 +26,17 @@
 				<string>splitback</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.641757666154-5qbvnhhlplobp7tdc4cnbv901q0jjf23</string>
+			</array>
+		</dict>
 	</array>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>GIDClientID</key>
+	<string>641757666154-5qbvnhhlplobp7tdc4cnbv901q0jjf23.apps.googleusercontent.com</string>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
 		<string>plaidlink</string>
