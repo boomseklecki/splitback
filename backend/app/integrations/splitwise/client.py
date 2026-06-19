@@ -3,6 +3,8 @@
 Keeping the read layer dict-based decouples the mapper from the package and makes
 both independently testable.
 """
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+
 import requests
 from splitwise import Splitwise
 from splitwise.expense import Expense as SplitwiseExpense
@@ -25,6 +27,20 @@ def fetch_receipt_bytes(access_token: str, url: str) -> tuple[bytes, str]:
     resp = requests.get(url, headers={"Authorization": f"Bearer {access_token}"}, timeout=30)
     resp.raise_for_status()
     return resp.content, resp.headers.get("content-type") or "image/jpeg"
+
+
+_RECEIPT_SIZES = {"small", "medium", "large", "original"}
+
+
+def receipt_url_with_size(url: str, size: str | None) -> str:
+    """Rewrite the `size` query param on a Splitwise receipt URL (large/original/…). Unknown sizes
+    leave the URL unchanged."""
+    if size not in _RECEIPT_SIZES:
+        return url
+    parts = urlparse(url)
+    query = parse_qs(parts.query)
+    query["size"] = [size]
+    return urlunparse(parts._replace(query=urlencode(query, doseq=True)))
 
 
 def _method(obj, name: str):

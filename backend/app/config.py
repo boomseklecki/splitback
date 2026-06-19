@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     minio_secret_key: str = "splitback-secret"
     minio_bucket: str = "receipts"
     minio_secure: bool = False
+    # When true, downloading original Splitwise receipt images into MinIO is enabled (convert-to-local
+    # auto-downloads them, and the /download-receipts flow works). Off by default (bandwidth/storage).
+    splitwise_receipt_download_enabled: bool = False
 
     # Plaid (server-side only)
     plaid_client_id: str = ""

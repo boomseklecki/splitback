@@ -17,6 +17,13 @@ class LocalImportRequest(BaseModel):
 class LocalImportResult(BaseModel):
     group: GroupResponse
     expenses_copied: int
+    receipts_downloaded: int = 0
+
+
+class ReceiptDownloadResult(BaseModel):
+    downloaded: int
+    skipped: int
+    enabled: bool
 
 
 class SplitwiseImportRequest(BaseModel):
