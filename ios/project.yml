@@ -31,10 +31,16 @@ targets:
         # Plaid Link app-to-app handoff to bank apps during OAuth.
         LSApplicationQueriesSchemes:
           - plaidlink
-        # Custom scheme for the Splitwise OAuth callback (backend 302s to splitback://auth?token=…).
+        # Google Sign-In iOS client id (public — ships in the app binary; backend verifies the
+        # id_token's audience against the same GOOGLE_CLIENT_ID).
+        GIDClientID: 641757666154-5qbvnhhlplobp7tdc4cnbv901q0jjf23.apps.googleusercontent.com
         CFBundleURLTypes:
+          # Custom scheme for the Splitwise OAuth callback (backend 302s to splitback://auth?token=…).
           - CFBundleURLSchemes:
               - splitback
+          # Google Sign-In reversed-client-id callback.
+          - CFBundleURLSchemes:
+              - com.googleusercontent.apps.641757666154-5qbvnhhlplobp7tdc4cnbv901q0jjf23
         UILaunchScreen: {}
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
