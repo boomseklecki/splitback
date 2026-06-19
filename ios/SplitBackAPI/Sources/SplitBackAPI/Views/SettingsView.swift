@@ -18,10 +18,13 @@ struct SettingsView: View {
     @State private var showingSignIn = false
     @State private var errorText: String?
 
+    /// Connect Splitwise to *your* account. Requires a signed-in user (nil disables the button) so the
+    /// Splitwise token is linked to the real identity from `/me`, not a hardcoded name.
     private var splitwiseLoginURL: URL? {
+        guard let me = env.currentUser?.identifier else { return nil }
         var components = URLComponents(url: APIConfig.baseURL.appendingPathComponent("auth/splitwise/login"),
                                        resolvingAgainstBaseURL: false)
-        components?.queryItems = [URLQueryItem(name: "user", value: "matt")]
+        components?.queryItems = [URLQueryItem(name: "user", value: me)]
         return components?.url
     }
 

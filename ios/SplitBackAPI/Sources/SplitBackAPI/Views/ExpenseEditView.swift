@@ -147,6 +147,12 @@ struct ExpenseEditView: View {
                 ToolbarItem(placement: .confirmationAction) { Button("Save", action: save).disabled(!canSave) }
             }
             .task {
+                // For a new expense, default "Paid by" to you (from /me) when you're a participant —
+                // otherwise fall back to the first member chosen in init. Set before any await so it
+                // lands before the user can interact.
+                if editing == nil, let me = env.currentUser?.identifier, participants.contains(me) {
+                    payer = me
+                }
                 categories = (try? await env.categories.list()) ?? []
             }
             .errorAlert($errorText)
