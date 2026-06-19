@@ -8,7 +8,7 @@ struct PlaidRepository {
     let client: Client
     let context: ModelContext
 
-    func linkToken(userIdentifier: String = "matt") async throws -> String {
+    func linkToken(userIdentifier: String) async throws -> String {
         let output = try await client.create_link_token_plaid_link_token_post(
             body: .json(.init(user_identifier: userIdentifier))
         )
@@ -20,7 +20,7 @@ struct PlaidRepository {
     }
 
     /// Exchanges the Plaid public token for an item + accounts, and caches the accounts.
-    func exchange(publicToken: String, userIdentifier: String = "matt", institutionName: String? = nil) async throws {
+    func exchange(publicToken: String, userIdentifier: String, institutionName: String? = nil) async throws {
         let output = try await client.exchange_plaid_exchange_post(
             body: .json(.init(public_token: publicToken, user_identifier: userIdentifier, institution_name: institutionName))
         )

@@ -57,7 +57,10 @@ struct AccountsView: View {
                     Button(action: linkBank) {
                         Label(linking ? "Preparing…" : "Link Bank", systemImage: "building.columns")
                     }
-                    .disabled(linking)
+                    .disabled(linking || env.currentUser == nil)
+                    if env.currentUser == nil {
+                        Text("Sign in to link a bank.").font(.caption).foregroundStyle(.secondary)
+                    }
                 }
             }
             .navigationTitle("Accounts")
@@ -92,17 +95,25 @@ struct AccountsView: View {
     }
 
     private func linkBank() {
+        guard let me = env.currentUser?.identifier else {
+            errorText = "Sign in to link a bank."
+            return
+        }
         linking = true
         Task {
             defer { linking = false }
-            do { linkSession = LinkSession(token: try await env.plaid(context).linkToken()) }
+            do { linkSession = LinkSession(token: try await env.plaid(context).linkToken(userIdentifier: me)) }
             catch { errorText = errorMessage(error) }
         }
     }
 
     private func exchange(_ publicToken: String) async {
+        guard let me = env.currentUser?.identifier else {
+            errorText = "Sign in to link a bank."
+            return
+        }
         do {
-            try await env.plaid(context).exchange(publicToken: publicToken)
+            try await env.plaid(context).exchange(publicToken: publicToken, userIdentifier: me)
             await reload()
         } catch { errorText = errorMessage(error) }
     }
