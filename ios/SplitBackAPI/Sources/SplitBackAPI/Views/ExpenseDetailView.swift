@@ -32,10 +32,15 @@ struct ExpenseDetailView: View {
     }
 
     /// Our backend proxy that fetches the Splitwise receipt with the OAuth token — the raw Splitwise
-    /// URL is auth-gated (HTTP 401) and can't be loaded directly by the app.
-    private var splitwiseReceiptProxyURL: URL? {
+    /// URL is auth-gated (HTTP 401) and can't be loaded directly by the app. `size` (e.g. "original")
+    /// requests a higher resolution for the full-screen view.
+    private func splitwiseReceiptProxyURL(size: String? = nil) -> URL? {
         guard expense.splitwiseReceiptURL != nil else { return nil }
-        return APIConfig.baseURL.appendingPathComponent("splitwise/expenses/\(expense.id.uuidString)/receipt")
+        var url = APIConfig.baseURL.appendingPathComponent("splitwise/expenses/\(expense.id.uuidString)/receipt")
+        if let size {
+            url.append(queryItems: [URLQueryItem(name: "size", value: size)])
+        }
+        return url
     }
 
     private func currency(_ value: Decimal) -> String { value.formatted(.currency(code: expense.currency)) }
@@ -144,7 +149,7 @@ struct ExpenseDetailView: View {
             }
         }
         .sheet(isPresented: $showingSplitwiseReceipt) {
-            if let url = splitwiseReceiptProxyURL {
+            if let url = splitwiseReceiptProxyURL(size: "original") {
                 NavigationStack {
                     AsyncImage(url: url) { phase in
                         switch phase {
@@ -227,7 +232,7 @@ struct ExpenseDetailView: View {
                 .frame(width: 48, height: 48)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .onTapGesture { viewingReceipt = receipt }
-        } else if let url = splitwiseReceiptProxyURL {
+        } else if let url = splitwiseReceiptProxyURL() {
             AsyncImage(url: url) { phase in
                 switch phase {
                 case let .success(image): image.resizable().scaledToFill()

@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime, timezone
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Response
@@ -46,21 +47,37 @@ async def _select_token(session: AsyncSession, as_user: str | None) -> Splitwise
     return tokens[0]
 
 
+_RECEIPT_SIZES = {"small", "medium", "large", "original"}
+
+
+def _receipt_url_with_size(url: str, size: str | None) -> str:
+    """Rewrite the `size` query param on a Splitwise receipt URL (large/original/…) so we can request
+    a higher-resolution image. Unknown sizes leave the URL unchanged."""
+    if size not in _RECEIPT_SIZES:
+        return url
+    parts = urlparse(url)
+    query = parse_qs(parts.query)
+    query["size"] = [size]
+    return urlunparse(parts._replace(query=urlencode(query, doseq=True)))
+
+
 @router.get("/expenses/{expense_id}/receipt")
 async def splitwise_receipt(
-    expense_id: UUID, session: AsyncSession = Depends(get_session)
+    expense_id: UUID, size: str | None = None, session: AsyncSession = Depends(get_session)
 ) -> Response:
     """Proxy a Splitwise expense's receipt image. Splitwise serves receipts from an authenticated API
-    endpoint, so we fetch with the stored OAuth token and stream the bytes back to the app."""
+    endpoint, so we fetch with the stored OAuth token and stream the bytes back to the app. `size`
+    (e.g. `original`) requests a higher resolution for the full-screen view."""
     expense = await session.get(Expense, expense_id)
     if expense is None or not expense.splitwise_receipt_url:
         raise HTTPException(status_code=404, detail="No Splitwise receipt for this expense")
     token = (await session.scalars(select(SplitwiseToken))).first()
     if token is None:
         raise HTTPException(status_code=400, detail="No Splitwise token")
+    url = _receipt_url_with_size(expense.splitwise_receipt_url, size)
     try:
         content, content_type = await asyncio.to_thread(
-            sw_client.fetch_receipt_bytes, token.access_token, expense.splitwise_receipt_url
+            sw_client.fetch_receipt_bytes, token.access_token, url
         )
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail="Failed to fetch Splitwise receipt") from exc
