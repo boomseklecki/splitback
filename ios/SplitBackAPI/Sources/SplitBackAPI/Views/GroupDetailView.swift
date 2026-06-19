@@ -17,7 +17,7 @@ struct GroupDetailView: View {
 
     @State private var balances: [Balance] = []
     @State private var showingNewExpense = false
-    @State private var showingAddMember = false
+    @State private var showingMembers = false
     @State private var showCollapsed = false
     @State private var errorText: String?
     @State private var scan = ReceiptScanModel()
@@ -75,23 +75,12 @@ struct GroupDetailView: View {
                 }
             }
 
-            Section("Members") {
-                ForEach(members) { member in
-                    Text(users.displayName(for: member.userIdentifier))
-                }
-                .onDelete(perform: removeMembers)
-                Button {
-                    showingAddMember = true
-                } label: {
-                    Label("Add Member", systemImage: "person.badge.plus")
-                }
-            }
-
             Section("Expenses") {
                 let data = showCollapsed ? expenses : collapse.visible
                 ForEach(data) { expense in
                     NavigationLink(value: expense) {
-                        ExpenseRow(expense: expense)
+                        ExpenseRow(expense: expense, users: users,
+                                   meIdentifier: env.currentUser?.identifier)
                     }
                 }
                 if !showCollapsed && collapse.collapsed > 0 {
@@ -116,17 +105,22 @@ struct GroupDetailView: View {
                     Image(systemName: "plus")
                 }
             }
-            if group.backendType == .splitwise {
-                ToolbarItem(placement: .secondaryAction) {
-                    Button("Import as Local Group", systemImage: "square.and.arrow.down", action: importLocal)
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button("Members", systemImage: "person.2") { showingMembers = true }
+                    if group.backendType == .splitwise {
+                        Button("Import as Local Group", systemImage: "square.and.arrow.down", action: importLocal)
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
                 }
             }
         }
         .sheet(isPresented: $showingNewExpense) {
             ExpenseEditView(group: group, members: members.map(\.userIdentifier))
         }
-        .sheet(isPresented: $showingAddMember) {
-            MemberPickerView(group: group, existing: Set(members.map(\.userIdentifier)))
+        .sheet(isPresented: $showingMembers) {
+            GroupMembersView(group: group)
         }
         .sheet(isPresented: $showingReceiptScanner) {
             DocumentScannerView(
@@ -186,17 +180,6 @@ struct GroupDetailView: View {
         }
     }
 
-    private func removeMembers(_ offsets: IndexSet) {
-        let identifiers = offsets.map { members[$0].userIdentifier }
-        Task {
-            do {
-                for identifier in identifiers {
-                    try await env.groups(context).removeMember(groupId: group.id, userIdentifier: identifier)
-                }
-            } catch { errorText = errorMessage(error) }
-        }
-    }
-
     private func importLocal() {
         Task {
             do {
@@ -207,23 +190,55 @@ struct GroupDetailView: View {
     }
 }
 
-/// A compact expense row: description, date, amount, and a settle-up marker.
+/// An expense row: category icon, description, a "who paid what" subtitle, and your share as a
+/// "you owe / you are owed" amount (falls back to the total when you're not a participant).
 struct ExpenseRow: View {
     let expense: Expense
+    let users: [User]
+    let meIdentifier: String?
+
+    /// "Matt paid $100" for a single payer, "N people paid" otherwise.
+    private var payerSubtitle: String {
+        let payers = expense.splits.filter { $0.paidShare > 0 }
+        guard let first = payers.first else { return "" }
+        if payers.count == 1 {
+            return "\(users.displayName(for: first.userIdentifier)) paid "
+                + first.paidShare.formatted(.currency(code: expense.currency))
+        }
+        return "\(payers.count) people paid"
+    }
+
+    /// Your net on this expense (paid − owed), or nil when you're not a participant.
+    private var myNet: Decimal? {
+        guard let me = meIdentifier,
+              let split = expense.splits.first(where: { $0.userIdentifier == me }) else { return nil }
+        return split.paidShare - split.owedShare
+    }
 
     var body: some View {
-        HStack {
+        HStack(spacing: 12) {
+            Image(systemName: categorySymbol(expense.category))
+                .font(.title3)
+                .foregroundStyle(.secondary)
+                .frame(width: 30)
             VStack(alignment: .leading, spacing: 2) {
                 Text(expense.details)
-                Text(expense.date.formatted(date: .abbreviated, time: .omitted))
-                    .font(.caption).foregroundStyle(.secondary)
+                if !payerSubtitle.isEmpty {
+                    Text(payerSubtitle).font(.caption).foregroundStyle(.secondary)
+                }
             }
             Spacer()
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(expense.amount.formatted(.currency(code: expense.currency)))
-                if expense.category == SettleUp.category {
-                    Text("Settle-up").font(.caption2).foregroundStyle(.secondary)
+            if let net = myNet {
+                let phrase = BalancePhrase.mine(net, code: expense.currency)
+                VStack(alignment: .trailing, spacing: 1) {
+                    Text(phrase.label).font(.caption2).foregroundStyle(.secondary)
+                    if let amount = phrase.amount {
+                        Text(amount).fontWeight(.medium).foregroundStyle(phrase.color).monospacedDigit()
+                    }
                 }
+            } else {
+                Text(expense.amount.formatted(.currency(code: expense.currency)))
+                    .foregroundStyle(.secondary)
             }
         }
     }
