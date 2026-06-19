@@ -87,17 +87,11 @@ enum SplitMath {
         }
     }
 
-    /// Reimbursement: `payer` is owed the full amount (owes nothing); the other participants split it
-    /// equally. With no other participants, the payer simply owes the whole amount.
+    /// Reimbursement: the reimbursed person (`payer`) fronts the full amount, which is then split
+    /// equally among all participants (each owes amount / member count, the payer included) — so the
+    /// payer is reimbursed their share by everyone else.
     static func reimbursementSplit(amount: Decimal, payer: String, participants: [String]) -> [SplitDraft] {
-        let others = participants.filter { $0 != payer }
-        guard !others.isEmpty else {
-            return [SplitDraft(userIdentifier: payer, paidShare: amount, owedShare: amount)]
-        }
-        let owers = equalSplit(amount: amount, payer: payer, participants: others).map {
-            SplitDraft(userIdentifier: $0.userIdentifier, paidShare: 0, owedShare: $0.owedShare)
-        }
-        return [SplitDraft(userIdentifier: payer, paidShare: amount, owedShare: 0)] + owers
+        equalSplit(amount: amount, payer: payer, participants: participants)
     }
 
     /// Itemized: each person owes the sum of items assigned to them; any unassigned remainder

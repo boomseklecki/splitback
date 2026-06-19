@@ -56,12 +56,10 @@ final class SplitMathTests: XCTestCase {
     }
 
     func testReimbursementSplit() {
-        // a is owed the full $30; b and c split it equally and owe; a owes nothing.
+        // a fronts $30; split equally among all 3 -> each owes $10 (a included), so a nets +$20.
         let splits = SplitMath.reimbursementSplit(amount: 30, payer: "a", participants: ["a", "b", "c"])
         XCTAssertEqual(splits.first { $0.userIdentifier == "a" }?.paidShare, 30)
-        XCTAssertEqual(splits.first { $0.userIdentifier == "a" }?.owedShare, 0)
-        XCTAssertEqual(splits.first { $0.userIdentifier == "b" }?.owedShare, 15)
-        XCTAssertEqual(splits.first { $0.userIdentifier == "c" }?.owedShare, 15)
+        XCTAssertTrue(splits.allSatisfy { $0.owedShare == 10 })
         XCTAssertTrue(SplitMath.isBalanced(amount: 30, splits: splits))
     }
 

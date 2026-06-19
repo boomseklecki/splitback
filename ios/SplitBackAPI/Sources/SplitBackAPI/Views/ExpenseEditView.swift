@@ -212,7 +212,7 @@ struct ExpenseEditView: View {
                     }
 
                     if mode == .reimbursement {
-                        Text("\(payer) is owed the full amount; the others split it equally.")
+                        Text("\(payer) fronts the full amount; it's split equally among everyone, so \(payer) is reimbursed their share.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
 
