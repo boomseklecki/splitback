@@ -18,7 +18,7 @@ struct GroupDetailView: View {
     @State private var balances: [Balance] = []
     @State private var showingNewExpense = false
     @State private var showingMembers = false
-    @State private var showCollapsed = false
+    @AppStorage("groupDetail.showSettled") private var showSettled = false
     @State private var errorText: String?
     @State private var scan = ReceiptScanModel()
     @State private var showingReceiptScanner = false
@@ -39,23 +39,6 @@ struct GroupDetailView: View {
 
     private var collapse: (visible: [Expense], collapsed: Int) {
         SettleUp.collapseOlder(expenses)
-    }
-
-    /// Groups date-descending expenses into month buckets with a "June 2026" label, newest month
-    /// first, preserving the date order within each month.
-    private func monthGroups(_ expenses: [Expense]) -> [(id: String, label: String, expenses: [Expense])] {
-        let calendar = Calendar.current
-        let buckets = Dictionary(grouping: expenses) {
-            calendar.dateComponents([.year, .month], from: $0.date)
-        }
-        return buckets.keys
-            .sorted { (calendar.date(from: $0) ?? .distantPast) > (calendar.date(from: $1) ?? .distantPast) }
-            .map { key in
-                let date = calendar.date(from: key) ?? .now
-                return ("\(key.year ?? 0)-\(key.month ?? 0)",
-                        date.formatted(.dateTime.month(.wide).year()),
-                        buckets[key] ?? [])
-            }
     }
 
     var body: some View {
@@ -92,8 +75,8 @@ struct GroupDetailView: View {
                 }
             }
 
-            let data = showCollapsed ? expenses : collapse.visible
-            ForEach(monthGroups(data), id: \.id) { month in
+            let data = showSettled ? expenses : collapse.visible
+            ForEach(expenseMonthGroups(data), id: \.id) { month in
                 Section {
                     ForEach(month.expenses) { expense in
                         NavigationLink(value: expense) {
@@ -107,12 +90,6 @@ struct GroupDetailView: View {
             }
             if expenses.isEmpty {
                 Section { Text("No expenses yet.").foregroundStyle(.secondary) }
-            } else if !showCollapsed && collapse.collapsed > 0 {
-                Section {
-                    Button("Show \(collapse.collapsed) older expense\(collapse.collapsed == 1 ? "" : "s")") {
-                        showCollapsed = true
-                    }
-                }
             }
         }
         .navigationTitle(group.name)
@@ -129,6 +106,11 @@ struct GroupDetailView: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
+                    if collapse.collapsed > 0 || showSettled {
+                        Toggle(isOn: $showSettled) {
+                            Label("Show settled (\(collapse.collapsed))", systemImage: "eye")
+                        }
+                    }
                     Button("Members", systemImage: "person.2") { showingMembers = true }
                     if group.backendType == .splitwise {
                         Button("Import as Local Group", systemImage: "square.and.arrow.down", action: importLocal)
@@ -212,22 +194,41 @@ struct GroupDetailView: View {
     }
 }
 
-/// An expense row: category icon, description, a "who paid what" subtitle, and your share as a
-/// "you owe / you are owed" amount (falls back to the total when you're not a participant).
+/// An expense row: stacked date, category icon, description, a "who paid what" subtitle, and your
+/// share as a "you owe / you are owed" amount. Settle-ups read "Matt paid Nikki" with a neutral
+/// amount (no owe/owed). `groupName` is shown in the subtitle on cross-group lists (All Expenses).
 struct ExpenseRow: View {
     let expense: Expense
     let users: [User]
     let meIdentifier: String?
+    var groupName: String? = nil
 
-    /// "Matt paid $100" for a single payer, "N people paid" otherwise.
-    private var payerSubtitle: String {
-        let payers = expense.splits.filter { $0.paidShare > 0 }
-        guard let first = payers.first else { return "" }
-        if payers.count == 1 {
-            return "\(users.displayName(for: first.userIdentifier)) paid "
-                + first.paidShare.formatted(.currency(code: expense.currency))
+    private var isSettleUp: Bool { expense.category == SettleUp.category }
+
+    private var subtitle: String {
+        var core: String
+        if isSettleUp, let payer = expense.splits.first(where: { $0.paidShare > 0 }) {
+            let payerName = users.displayName(for: payer.userIdentifier)
+            if let recipient = expense.splits.first(where: { $0.owedShare > 0 && $0.paidShare == 0 }) {
+                core = "\(payerName) paid \(users.displayName(for: recipient.userIdentifier))"
+            } else {
+                core = "\(payerName) paid"
+            }
+        } else {
+            let payers = expense.splits.filter { $0.paidShare > 0 }
+            if payers.count == 1, let first = payers.first {
+                core = "\(users.displayName(for: first.userIdentifier)) paid "
+                    + first.paidShare.formatted(.currency(code: expense.currency))
+            } else if payers.count > 1 {
+                core = "\(payers.count) people paid"
+            } else {
+                core = ""
+            }
         }
-        return "\(payers.count) people paid"
+        if let groupName {
+            return core.isEmpty ? groupName : "\(groupName) · \(core)"
+        }
+        return core
     }
 
     /// Your net on this expense (paid − owed), or nil when you're not a participant.
@@ -252,23 +253,32 @@ struct ExpenseRow: View {
                 .frame(width: 30)
             VStack(alignment: .leading, spacing: 2) {
                 Text(expense.details)
-                if !payerSubtitle.isEmpty {
-                    Text(payerSubtitle).font(.caption).foregroundStyle(.secondary)
+                if !subtitle.isEmpty {
+                    Text(subtitle).font(.caption).foregroundStyle(.secondary)
                 }
             }
             Spacer()
-            if let net = myNet {
-                let phrase = BalancePhrase.mine(net, code: expense.currency)
-                VStack(alignment: .trailing, spacing: 1) {
-                    Text(phrase.label).font(.caption2).foregroundStyle(.secondary)
-                    if let amount = phrase.amount {
-                        Text(amount).fontWeight(.medium).foregroundStyle(phrase.color).monospacedDigit()
-                    }
+            trailing
+        }
+    }
+
+    @ViewBuilder
+    private var trailing: some View {
+        if isSettleUp {
+            // Settle-up: neutral amount, no "you owe / you are owed".
+            Text(expense.amount.formatted(.currency(code: expense.currency)))
+                .foregroundStyle(.secondary).monospacedDigit()
+        } else if let net = myNet {
+            let phrase = BalancePhrase.mine(net, code: expense.currency)
+            VStack(alignment: .trailing, spacing: 1) {
+                Text(phrase.label).font(.caption2).foregroundStyle(.secondary)
+                if let amount = phrase.amount {
+                    Text(amount).fontWeight(.medium).foregroundStyle(phrase.color).monospacedDigit()
                 }
-            } else {
-                Text(expense.amount.formatted(.currency(code: expense.currency)))
-                    .foregroundStyle(.secondary)
             }
+        } else {
+            Text(expense.amount.formatted(.currency(code: expense.currency)))
+                .foregroundStyle(.secondary)
         }
     }
 }
