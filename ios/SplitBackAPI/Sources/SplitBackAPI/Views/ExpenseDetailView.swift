@@ -43,13 +43,25 @@ struct ExpenseDetailView: View {
         return url
     }
 
-    /// "Added by Matt on Jun 19" when the creator is known, else just the date.
+    /// "Added by Matt on Jun 19" using the real Splitwise added-on date (falling back to our import
+    /// time when unknown).
     private var addedText: String {
-        let date = expense.createdAt.formatted(date: .abbreviated, time: .omitted)
+        let date = (expense.splitwiseCreatedAt ?? expense.createdAt).formatted(date: .abbreviated, time: .omitted)
         if let by = expense.createdByIdentifier {
             return "Added by \(users.displayName(for: by)) on \(date)"
         }
         return "Added \(date)"
+    }
+
+    /// "Edited by Nikki on Jun 20" when it was edited after creation; nil otherwise.
+    private var editedText: String? {
+        guard let updated = expense.splitwiseUpdatedAt else { return nil }
+        if let created = expense.splitwiseCreatedAt, abs(updated.timeIntervalSince(created)) < 1 { return nil }
+        let date = updated.formatted(date: .abbreviated, time: .omitted)
+        if let by = expense.updatedByIdentifier {
+            return "Edited by \(users.displayName(for: by)) on \(date)"
+        }
+        return "Edited \(date)"
     }
 
     private func currency(_ value: Decimal) -> String { value.formatted(.currency(code: expense.currency)) }
@@ -92,6 +104,10 @@ struct ExpenseDetailView: View {
                 }
             }
 
+            if let notes = expense.notes, !notes.isEmpty {
+                Section("Notes") { Text(notes) }
+            }
+
             if !expense.items.isEmpty {
                 Section("Items") {
                     ForEach(expense.items) { item in
@@ -130,6 +146,18 @@ struct ExpenseDetailView: View {
 
             Section {
                 Text(addedText).font(.caption).foregroundStyle(.secondary)
+                if let editedText {
+                    Text(editedText).font(.caption).foregroundStyle(.secondary)
+                }
+                if expense.repeats == true {
+                    Label(expense.repeatInterval.map { "Repeats \($0)" } ?? "Repeating",
+                          systemImage: "repeat")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if let count = expense.commentsCount, count > 0 {
+                    Text("\(count) comment\(count == 1 ? "" : "s") on Splitwise")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 if expense.splitwiseExpenseId != nil {
                     Text("From Splitwise").font(.caption).foregroundStyle(.secondary)
                 }

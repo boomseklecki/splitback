@@ -2795,6 +2795,40 @@
             "type": "string",
             "title": "Created By"
           },
+          "updated_by": {
+            "type": "string",
+            "title": "Updated By"
+          },
+          "splitwise_created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Splitwise Created At"
+          },
+          "splitwise_updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Splitwise Updated At"
+          },
+          "notes": {
+            "type": "string",
+            "title": "Notes"
+          },
+          "comments_count": {
+            "type": "integer",
+            "title": "Comments Count"
+          },
+          "repeats": {
+            "type": "boolean",
+            "title": "Repeats"
+          },
+          "repeat_interval": {
+            "type": "string",
+            "title": "Repeat Interval"
+          },
+          "expense_bundle_id": {
+            "type": "string",
+            "title": "Expense Bundle Id"
+          },
           "splitwise_receipt_url": {
             "type": "string",
             "title": "Splitwise Receipt Url"

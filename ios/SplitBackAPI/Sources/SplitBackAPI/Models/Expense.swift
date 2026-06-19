@@ -15,8 +15,17 @@ final class Expense {
     var currency: String
     var date: Date
     var category: String?
-    /// Who added the expense (user identifier, from Splitwise created_by); nil for self-hosted.
+    /// Splitwise provenance: who added/edited it and the real added/edited timestamps (distinct from
+    /// createdAt/updatedAt, which track when we imported the row). Plus notes, comments, recurrence.
     var createdByIdentifier: String?
+    var updatedByIdentifier: String?
+    var splitwiseCreatedAt: Date?
+    var splitwiseUpdatedAt: Date?
+    var notes: String?
+    var commentsCount: Int?
+    var repeats: Bool?
+    var repeatInterval: String?
+    var expenseBundleId: String?
     /// Splitwise receipt image URL (remote) + the simplified repayments as a raw JSON string, from import.
     var splitwiseReceiptURL: String?
     var splitwiseRepayments: String?
@@ -44,6 +53,14 @@ final class Expense {
         date: Date,
         category: String? = nil,
         createdByIdentifier: String? = nil,
+        updatedByIdentifier: String? = nil,
+        splitwiseCreatedAt: Date? = nil,
+        splitwiseUpdatedAt: Date? = nil,
+        notes: String? = nil,
+        commentsCount: Int? = nil,
+        repeats: Bool? = nil,
+        repeatInterval: String? = nil,
+        expenseBundleId: String? = nil,
         splitwiseReceiptURL: String? = nil,
         splitwiseRepayments: String? = nil,
         archivedAt: Date? = nil,
@@ -63,6 +80,14 @@ final class Expense {
         self.date = date
         self.category = category
         self.createdByIdentifier = createdByIdentifier
+        self.updatedByIdentifier = updatedByIdentifier
+        self.splitwiseCreatedAt = splitwiseCreatedAt
+        self.splitwiseUpdatedAt = splitwiseUpdatedAt
+        self.notes = notes
+        self.commentsCount = commentsCount
+        self.repeats = repeats
+        self.repeatInterval = repeatInterval
+        self.expenseBundleId = expenseBundleId
         self.splitwiseReceiptURL = splitwiseReceiptURL
         self.splitwiseRepayments = splitwiseRepayments
         self.archivedAt = archivedAt
