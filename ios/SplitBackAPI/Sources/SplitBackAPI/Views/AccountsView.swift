@@ -136,6 +136,7 @@ struct AccountsView: View {
                 }
                 Spacer()
                 Text(account.balance.formatted(.currency(code: account.currency)))
+                    .foregroundStyle(AccountKind.classify(account.type).balanceColor)
             }
         }
     }

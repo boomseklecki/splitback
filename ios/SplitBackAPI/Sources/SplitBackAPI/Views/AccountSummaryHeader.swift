@@ -1,5 +1,17 @@
 import SwiftUI
 
+extension AccountKind {
+    /// Tint for an account's balance, by kind: cash-flow assets green, liabilities red (money owed),
+    /// holdings indigo.
+    var balanceColor: Color {
+        switch self {
+        case .cashFlow: return .green
+        case .liability: return .red
+        case .holdings: return .indigo
+        }
+    }
+}
+
 /// Summary header at the top of an account's transaction list. Three variants by `AccountKind`:
 /// cash-flow (money in vs sent this month), liability (spent this month + pending), and holdings
 /// (minimal — balance, type, last synced only). All variants share name (the nav title), type,
