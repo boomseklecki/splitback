@@ -61,11 +61,15 @@ struct GroupDetailView: View {
             if !balances.isEmpty {
                 Section("Balances") {
                     ForEach(balances) { entry in
+                        let phrase = BalancePhrase.member(
+                            entry.net, isMe: entry.identifier == env.currentUser?.identifier)
                         HStack {
                             Text(entry.displayName?.titleCased ?? users.displayName(for: entry.identifier))
                             Spacer()
-                            Text(entry.net.formatted(.currency(code: "USD")))
-                                .foregroundStyle(entry.net >= 0 ? .green : .red)
+                            Text(phrase.label).font(.caption).foregroundStyle(.secondary)
+                            if let amount = phrase.amount {
+                                Text(amount).foregroundStyle(phrase.color).monospacedDigit()
+                            }
                         }
                     }
                 }

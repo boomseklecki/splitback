@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 
 /// The app's root. The thin app shell presents this and injects `AppEnvironment` + the model
-/// container. Tabs: Accounts, Expenses, Budget, Settings.
+/// container. Tabs: Accounts, Splits, Budget, Settings.
 public struct RootView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.modelContext) private var context
@@ -16,7 +16,7 @@ public struct RootView: View {
             AccountsView()
                 .tabItem { Label("Accounts", systemImage: "building.columns.fill") }
             GroupsListView()
-                .tabItem { Label("Expenses", systemImage: "list.bullet.rectangle.fill") }
+                .tabItem { Label("Splits", systemImage: "person.2.fill") }
             BudgetView()
                 .tabItem { Label("Budget", systemImage: "chart.pie.fill") }
             SettingsView()

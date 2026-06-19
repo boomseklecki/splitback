@@ -81,9 +81,14 @@ struct GroupsListView: View {
                                 }
                                 Spacer()
                                 if let net = myNets[group.id] {
-                                    Text(net.formatted(.currency(code: "USD")))
-                                        .monospacedDigit()
-                                        .foregroundStyle(net >= 0 ? .green : .red)
+                                    let phrase = BalancePhrase.mine(net)
+                                    VStack(alignment: .trailing, spacing: 1) {
+                                        Text(phrase.label).font(.caption2).foregroundStyle(.secondary)
+                                        if let amount = phrase.amount {
+                                            Text(amount).font(.subheadline).fontWeight(.medium)
+                                                .foregroundStyle(phrase.color).monospacedDigit()
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -99,7 +104,7 @@ struct GroupsListView: View {
                     NavigationLink("All Expenses") { AllExpensesView() }
                 }
             }
-            .navigationTitle("Expenses")
+            .navigationTitle("Splits")
             .navigationDestination(for: ExpenseGroup.self) { GroupDetailView(group: $0) }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
