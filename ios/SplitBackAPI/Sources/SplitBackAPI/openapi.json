@@ -1266,7 +1266,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SyncRequest",
+                "$ref": "#/components/schemas/app__schemas__plaid__SyncRequest",
                 "title": "Body"
               }
             }
@@ -2133,6 +2133,7 @@
           "splitwise"
         ],
         "summary": "Run Import",
+        "description": "Cold backfill (full window). Stamps the incremental cursor so /sync/expenses takes over.",
         "operationId": "run_import_splitwise_import_post",
         "requestBody": {
           "content": {
@@ -2151,6 +2152,147 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SplitwiseImportResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/splitwise/sync/groups": {
+      "post": {
+        "tags": [
+          "splitwise"
+        ],
+        "summary": "Sync Groups",
+        "description": "Pull-to-refresh the Groups list: refresh group metadata + members.",
+        "operationId": "sync_groups_splitwise_sync_groups_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/app__schemas__splitwise__SyncRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/splitwise/sync/users": {
+      "post": {
+        "tags": [
+          "splitwise"
+        ],
+        "summary": "Sync Users",
+        "description": "Pull-to-refresh the People list: refresh the users directory (members + current user).",
+        "operationId": "sync_users_splitwise_sync_users_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/app__schemas__splitwise__SyncRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/splitwise/sync/expenses": {
+      "post": {
+        "tags": [
+          "splitwise"
+        ],
+        "summary": "Sync Expenses",
+        "description": "Pull-to-refresh expenses: incremental pull since the stored cursor (or `since` override).\nCatches edits/settle-ups and archives expenses Splitwise has deleted.",
+        "operationId": "sync_expenses_splitwise_sync_expenses_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/app__schemas__splitwise__SyncRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncResult"
                 }
               }
             }
@@ -3229,17 +3371,6 @@
         ],
         "title": "SplitwiseStatus"
       },
-      "SyncRequest": {
-        "properties": {
-          "item_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Item Id"
-          }
-        },
-        "type": "object",
-        "title": "SyncRequest"
-      },
       "SyncResponse": {
         "properties": {
           "items_synced": {
@@ -3272,6 +3403,50 @@
           "removed"
         ],
         "title": "SyncResponse"
+      },
+      "SyncResult": {
+        "properties": {
+          "groups": {
+            "type": "integer",
+            "title": "Groups"
+          },
+          "users": {
+            "type": "integer",
+            "title": "Users"
+          },
+          "expenses_fetched": {
+            "type": "integer",
+            "title": "Expenses Fetched"
+          },
+          "imported": {
+            "type": "integer",
+            "title": "Imported"
+          },
+          "skipped_deleted": {
+            "type": "integer",
+            "title": "Skipped Deleted"
+          },
+          "archived_deleted": {
+            "type": "integer",
+            "title": "Archived Deleted"
+          },
+          "settle_ups": {
+            "type": "integer",
+            "title": "Settle Ups"
+          },
+          "cursor": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Cursor"
+          },
+          "dry_run": {
+            "type": "boolean",
+            "title": "Dry Run",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "SyncResult"
       },
       "TransactionCreate": {
         "properties": {
@@ -3541,6 +3716,36 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "app__schemas__plaid__SyncRequest": {
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Item Id"
+          }
+        },
+        "type": "object",
+        "title": "SyncRequest"
+      },
+      "app__schemas__splitwise__SyncRequest": {
+        "properties": {
+          "as_user": {
+            "type": "string",
+            "title": "As User"
+          },
+          "since": {
+            "type": "string",
+            "title": "Since"
+          },
+          "dry_run": {
+            "type": "boolean",
+            "title": "Dry Run",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "SyncRequest"
       }
     },
     "securitySchemes": {

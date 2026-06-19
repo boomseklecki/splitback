@@ -17,7 +17,7 @@ Core principle: the **server is the source of truth**. The app caches locally (S
 
 ## Backend API surface (from `ios/openapi.json`)
 
-Base URL is configurable (local: `http://localhost:8000`; production: the Cloudflare tunnel hostname). The full set lives in `ios/openapi.json` (34 paths) — the highlights below. **Receipt bytes flow through this same base URL** — there is no separate MinIO host to reach or configure.
+Base URL is configurable (local: `http://localhost:8000`; production: the Cloudflare tunnel hostname). The full set lives in `ios/openapi.json` (37 paths) — the highlights below. **Receipt bytes flow through this same base URL** — there is no separate MinIO host to reach or configure.
 
 **Users & identity**
 - `GET /me` — caller identity from the bearer token: `{identifier, authenticated, user}` (`user` carries `avatar_url`)
@@ -39,7 +39,7 @@ Base URL is configurable (local: `http://localhost:8000`; production: the Cloudf
 **Categories**
 - `GET /categories` → the canonical taxonomy list for pickers.
 
-All 34 endpoints:
+All 37 endpoints:
 
 **Groups**
 - `POST /groups` — create self-hosted group `{name}`
@@ -79,7 +79,12 @@ All 34 endpoints:
 **Splitwise**
 - `GET /auth/splitwise/login?user=` — 307 redirect to Splitwise (open in a web view / Safari); `GET /auth/splitwise/callback` — backend handles
 - `GET /splitwise/status` → `{connected, users:[…]}`
-- `POST /splitwise/import` → `{since?, until?, as_user?, dry_run?}` runs the import with the stored token (no more CLI dependency)
+- `POST /splitwise/import` → `{since?, until?, as_user?, dry_run?}` — **one-time backfill** with the stored token. Not for refreshes.
+- **Scoped pull-to-refresh sync** (the steady-state path; each returns `SyncResult` counts):
+  - `POST /splitwise/sync/expenses` → Expenses-tab pull-to-refresh. **Incremental** (delta-only since a server-side cursor); body `{as_user?, since?, dry_run?}`, `since` optional override. Catches edits/settle-ups and archives expenses Splitwise deleted. This is the common refresh — cheap.
+  - `POST /splitwise/sync/groups` → Groups-tab pull-to-refresh (group metadata + members).
+  - `POST /splitwise/sync/users` → People-tab pull-to-refresh (users directory + current user). Overlaps with `sync/groups` (both read `getGroups`); the People tab can call `sync/groups` instead if you'd rather avoid a duplicate call.
+  - Balances need no client change: `/balances` + `/groups/{id}/balances` are computed from synced expenses, so they reflect whatever the last `sync/expenses` pulled. **Don't** call `/import` on refresh.
 - `POST /splitwise/groups/{group_id}/import-local` → `{name?}` clones a Splitwise-linked group into a NEW self-hosted group (native copies of active expenses + splits/items + members) and archives the source so balances don't double-count. 400 if the source isn't a Splitwise group. (There is no manual per-expense push endpoint — pushes happen automatically on create/update/delete, see Expenses.)
 
 **Health:** `GET /health`, `GET /health/db`, `GET /`.

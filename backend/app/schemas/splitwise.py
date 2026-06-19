@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel
 
 from app.schemas.group import GroupResponse
@@ -32,3 +34,21 @@ class SplitwiseImportResult(BaseModel):
     settle_ups: int
     dry_run: bool
     users: int | None = None
+
+
+class SyncRequest(BaseModel):
+    as_user: str | None = None
+    since: str | None = None  # override updated_after (ISO 8601); /sync/expenses only
+    dry_run: bool = False
+
+
+class SyncResult(BaseModel):
+    groups: int | None = None
+    users: int | None = None
+    expenses_fetched: int | None = None
+    imported: int | None = None
+    skipped_deleted: int | None = None
+    archived_deleted: int | None = None
+    settle_ups: int | None = None
+    cursor: datetime | None = None  # new expenses_synced_at after an /sync/expenses run
+    dry_run: bool = False

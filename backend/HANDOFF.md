@@ -82,6 +82,17 @@ context but **this section is authoritative where they conflict**.
   `avatar_url`. New config: `AUTH_JWT_SECRET`, `AUTH_REQUIRED`, `GOOGLE_CLIENT_ID`, `APPLE_AUDIENCE`
   (empty defaults = open mode; see README "Authentication"). Provider verification is unit-tested with
   JWKS/SDK mocked; live verification awaits real creds. **Route count now 34 paths / 48 operations.**
+- **Incremental Splitwise sync + scoped refresh endpoints (added 2026-06-19).** `run_import` split into
+  reusable, independently-committing phases in `importer.py` (`sync_groups` / `sync_users` /
+  `sync_expenses`) — so a mid-sync failure no longer rolls back the whole import. `sync_expenses` takes
+  `updated_after` (delta-only; catches edits/settle-ups) and **archives locally** any expense Splitwise
+  has deleted (new — old import only skipped deleted rows). New cursor `splitwise_tokens.expenses_synced_at`
+  (migration `0010_sw_sync_cursor`); `client.fetch_expenses` gained `updated_after`/`updated_before`/
+  `group_id`. New endpoints `POST /splitwise/sync/{groups,users,expenses}` (synchronous, for iOS
+  pull-to-refresh) returning `SyncResult`; `/sync/expenses` reads/advances the cursor. `/import` stays the
+  cold backfill and now stamps the cursor. Balances unchanged — still computed from synced splits
+  (`balances.py`), no `simplified_debts`. Opt-in cron `app.cli.splitwise_sync` (mirrors `plaid_sync`).
+  **Route count now 37 paths / 51 operations.**
 - **iOS contract regenerated** via `ios/scripts/prepare_openapi.py` →
   `ios/SplitBackAPI/Sources/SplitBackAPI/openapi.json` (raw also at `ios/openapi.json`).
 

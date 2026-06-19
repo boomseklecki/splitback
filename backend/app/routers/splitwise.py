@@ -8,6 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.db import get_session
+from app.integrations.splitwise import client as sw_client
 from app.integrations.splitwise import importer
 from app.models import BackendType, Expense, ExpenseItem, Group, GroupMember, Split, SplitwiseToken
 from app.schemas.group import GroupResponse
@@ -17,6 +18,8 @@ from app.schemas.splitwise import (
     SplitwiseImportRequest,
     SplitwiseImportResult,
     SplitwiseStatus,
+    SyncRequest,
+    SyncResult,
 )
 
 router = APIRouter(prefix="/splitwise", tags=["splitwise"])
@@ -28,30 +31,83 @@ async def status(session: AsyncSession = Depends(get_session)) -> SplitwiseStatu
     return SplitwiseStatus(connected=len(users) > 0, users=list(users))
 
 
-@router.post("/import", response_model=SplitwiseImportResult)
-async def run_import(
-    body: SplitwiseImportRequest, session: AsyncSession = Depends(get_session)
-) -> dict:
+async def _select_token(session: AsyncSession, as_user: str | None) -> SplitwiseToken:
     query = select(SplitwiseToken)
-    if body.as_user:
-        query = query.where(SplitwiseToken.user_identifier == body.as_user)
+    if as_user:
+        query = query.where(SplitwiseToken.user_identifier == as_user)
     tokens = (await session.scalars(query)).all()
-
     if not tokens:
         raise HTTPException(
             status_code=400, detail="No Splitwise token; authorize via /auth/splitwise/login first"
         )
-    if len(tokens) > 1 and not body.as_user:
+    if len(tokens) > 1 and not as_user:
         raise HTTPException(status_code=400, detail="Multiple tokens stored; specify as_user")
+    return tokens[0]
 
-    return await importer.run_import(
+
+@router.post("/import", response_model=SplitwiseImportResult)
+async def run_import(
+    body: SplitwiseImportRequest, session: AsyncSession = Depends(get_session)
+) -> dict:
+    """Cold backfill (full window). Stamps the incremental cursor so /sync/expenses takes over."""
+    token = await _select_token(session, body.as_user)
+    started = datetime.now(timezone.utc)
+    result = await importer.run_import(
         session,
-        access_token=tokens[0].access_token,
+        access_token=token.access_token,
         dated_after=body.since,
         dated_before=body.until,
         user_map=settings.splitwise_user_map,
         dry_run=body.dry_run,
     )
+    if not body.dry_run:
+        token.expenses_synced_at = started
+        await session.commit()
+    return result
+
+
+@router.post("/sync/groups", response_model=SyncResult)
+async def sync_groups(
+    body: SyncRequest, session: AsyncSession = Depends(get_session)
+) -> SyncResult:
+    """Pull-to-refresh the Groups list: refresh group metadata + members."""
+    token = await _select_token(session, body.as_user)
+    client = sw_client.make_client(token.access_token)
+    stats = await importer.sync_groups(session, client, settings.splitwise_user_map)
+    return SyncResult(**stats)
+
+
+@router.post("/sync/users", response_model=SyncResult)
+async def sync_users(
+    body: SyncRequest, session: AsyncSession = Depends(get_session)
+) -> SyncResult:
+    """Pull-to-refresh the People list: refresh the users directory (members + current user)."""
+    token = await _select_token(session, body.as_user)
+    client = sw_client.make_client(token.access_token)
+    stats = await importer.sync_users(session, client, settings.splitwise_user_map)
+    return SyncResult(**stats)
+
+
+@router.post("/sync/expenses", response_model=SyncResult)
+async def sync_expenses(
+    body: SyncRequest, session: AsyncSession = Depends(get_session)
+) -> SyncResult:
+    """Pull-to-refresh expenses: incremental pull since the stored cursor (or `since` override).
+    Catches edits/settle-ups and archives expenses Splitwise has deleted."""
+    token = await _select_token(session, body.as_user)
+    client = sw_client.make_client(token.access_token)
+    updated_after = body.since or (
+        token.expenses_synced_at.isoformat() if token.expenses_synced_at else None
+    )
+    started = datetime.now(timezone.utc)
+    stats = await importer.sync_expenses(
+        session, client, settings.splitwise_user_map,
+        updated_after=updated_after, dry_run=body.dry_run,
+    )
+    if not body.dry_run:
+        token.expenses_synced_at = started
+        await session.commit()
+    return SyncResult(**stats, dry_run=body.dry_run, cursor=None if body.dry_run else started)
 
 
 @router.post("/groups/{group_id}/import-local", response_model=LocalImportResult)

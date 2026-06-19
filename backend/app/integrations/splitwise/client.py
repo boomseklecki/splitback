@@ -213,16 +213,24 @@ def fetch_expenses(
     client: Splitwise,
     dated_after: str | None = None,
     dated_before: str | None = None,
+    updated_after: str | None = None,
+    updated_before: str | None = None,
+    group_id: str | None = None,
 ) -> list[dict]:
-    """Page through all expenses in the user's account within the date window."""
+    """Page through the user's expenses. `dated_*` windows by expense date (backfill);
+    `updated_after` returns only rows changed since a cursor (incremental sync) and includes
+    deleted ones. `group_id` scopes to one group (drill-in)."""
     out: list[dict] = []
     offset = 0
     while True:
         page = client.getExpenses(
             offset=offset,
             limit=_PAGE_SIZE,
+            group_id=group_id,
             dated_after=dated_after,
             dated_before=dated_before,
+            updated_after=updated_after,
+            updated_before=updated_before,
         )
         if not page:
             break

@@ -1,4 +1,6 @@
-from sqlalchemy import String
+from datetime import datetime
+
+from sqlalchemy import DateTime, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -13,3 +15,6 @@ class SplitwiseToken(UUIDMixin, TimestampMixin, Base):
     access_token: Mapped[str] = mapped_column(String(512), nullable=False)
     token_type: Mapped[str] = mapped_column(String(32), nullable=False, default="bearer")
     scope: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    # Incremental-sync cursor: start time of the last successful expense sync; the next sync
+    # passes updated_after=this. Null until the first import/sync stamps it.
+    expenses_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

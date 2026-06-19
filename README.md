@@ -6,7 +6,7 @@ This repo contains the **backend**: Postgres schema, FastAPI app, and the local 
 
 - **Groups & expenses CRUD** — nested splits/items, ±0.01 balance validation (self-hosted groups), soft-delete (archive) + hide flags, `backend_type` filter.
 - **Receipts** — image bytes proxied through the API to/from MinIO (`POST /expenses/{id}/receipts`, `GET /receipts/{id}/content`); the client never reaches MinIO directly.
-- **Splitwise** — OAuth2 + PKCE auth and historical import (`app.cli.import_splitwise`).
+- **Splitwise** — OAuth2 + PKCE auth, historical import (`app.cli.import_splitwise`), and **incremental sync**: scoped pull-to-refresh endpoints (`POST /splitwise/sync/{groups,users,expenses}`) where the expenses pull is delta-only via `updated_after` (a cursor on `splitwise_tokens`) and archives expenses Splitwise has deleted. `POST /splitwise/import` is the one-time backfill.
 - **Plaid** — link/exchange, incremental `/transactions/sync`, accounts/transactions read endpoints (`app.cli.plaid_sync`).
 - **Auth** — sign in with Apple / Google / Splitwise; the backend verifies the provider token, find-or-creates the `User`, and issues its own stateless JWT (`POST /auth/apple`, `POST /auth/google`, Splitwise via the OAuth callback). See [Authentication](#authentication).
 
@@ -129,8 +129,11 @@ each `tests/test_*.py` is runnable standalone via `python -m tests.<name>`.
 ## Background jobs
 
 ```bash
-# Historical Splitwise import (after authorizing via /auth/splitwise/login)
+# One-time Splitwise backfill (after authorizing via /auth/splitwise/login)
 docker compose exec api python -m app.cli.import_splitwise --dry-run
+
+# Incremental Splitwise expense sync for all tokens (delta-only; suitable for a gentle cron)
+docker compose exec api python -m app.cli.splitwise_sync
 
 # Plaid transaction sync for all linked items (suitable for cron)
 docker compose exec api python -m app.cli.plaid_sync
