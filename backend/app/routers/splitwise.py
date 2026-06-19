@@ -1,7 +1,8 @@
+import asyncio
 from datetime import datetime, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -43,6 +44,31 @@ async def _select_token(session: AsyncSession, as_user: str | None) -> Splitwise
     if len(tokens) > 1 and not as_user:
         raise HTTPException(status_code=400, detail="Multiple tokens stored; specify as_user")
     return tokens[0]
+
+
+@router.get("/expenses/{expense_id}/receipt")
+async def splitwise_receipt(
+    expense_id: UUID, session: AsyncSession = Depends(get_session)
+) -> Response:
+    """Proxy a Splitwise expense's receipt image. Splitwise serves receipts from an authenticated API
+    endpoint, so we fetch with the stored OAuth token and stream the bytes back to the app."""
+    expense = await session.get(Expense, expense_id)
+    if expense is None or not expense.splitwise_receipt_url:
+        raise HTTPException(status_code=404, detail="No Splitwise receipt for this expense")
+    token = (await session.scalars(select(SplitwiseToken))).first()
+    if token is None:
+        raise HTTPException(status_code=400, detail="No Splitwise token")
+    try:
+        content, content_type = await asyncio.to_thread(
+            sw_client.fetch_receipt_bytes, token.access_token, expense.splitwise_receipt_url
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail="Failed to fetch Splitwise receipt") from exc
+    return Response(
+        content=content,
+        media_type=content_type,
+        headers={"Cache-Control": "private, max-age=86400"},
+    )
 
 
 @router.post("/import", response_model=SplitwiseImportResult)

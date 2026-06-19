@@ -3,6 +3,7 @@
 Keeping the read layer dict-based decouples the mapper from the package and makes
 both independently testable.
 """
+import requests
 from splitwise import Splitwise
 from splitwise.expense import Expense as SplitwiseExpense
 from splitwise.user import ExpenseUser
@@ -16,6 +17,14 @@ def make_client(access_token: str) -> Splitwise:
     client = Splitwise(settings.splitwise_consumer_key, settings.splitwise_consumer_secret)
     client.setOAuth2AccessToken({"access_token": access_token, "token_type": "bearer"})
     return client
+
+
+def fetch_receipt_bytes(access_token: str, url: str) -> tuple[bytes, str]:
+    """Fetch a Splitwise receipt image. The receipt URL is an authenticated API endpoint, so it needs
+    the user's OAuth token — it can't be loaded directly by the app. Returns (bytes, content_type)."""
+    resp = requests.get(url, headers={"Authorization": f"Bearer {access_token}"}, timeout=30)
+    resp.raise_for_status()
+    return resp.content, resp.headers.get("content-type") or "image/jpeg"
 
 
 def _method(obj, name: str):

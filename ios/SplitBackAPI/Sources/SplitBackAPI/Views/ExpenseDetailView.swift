@@ -31,6 +31,13 @@ struct ExpenseDetailView: View {
         return try? context.fetch(FetchDescriptor<ExpenseGroup>(predicate: #Predicate { $0.id == gid })).first
     }
 
+    /// Our backend proxy that fetches the Splitwise receipt with the OAuth token — the raw Splitwise
+    /// URL is auth-gated (HTTP 401) and can't be loaded directly by the app.
+    private var splitwiseReceiptProxyURL: URL? {
+        guard expense.splitwiseReceiptURL != nil else { return nil }
+        return APIConfig.baseURL.appendingPathComponent("splitwise/expenses/\(expense.id.uuidString)/receipt")
+    }
+
     private func currency(_ value: Decimal) -> String { value.formatted(.currency(code: expense.currency)) }
     private func nameOrYou(_ id: String) -> String { id == meIdentifier ? "You" : users.displayName(for: id) }
 
@@ -137,12 +144,20 @@ struct ExpenseDetailView: View {
             }
         }
         .sheet(isPresented: $showingSplitwiseReceipt) {
-            if let urlString = expense.splitwiseReceiptURL, let url = URL(string: urlString) {
+            if let url = splitwiseReceiptProxyURL {
                 NavigationStack {
-                    AsyncImage(url: url) { image in
-                        image.resizable().scaledToFit()
-                    } placeholder: {
-                        ProgressView()
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case let .success(image):
+                            image.resizable().scaledToFit()
+                        case .failure:
+                            ContentUnavailableView("Couldn't load receipt", systemImage: "exclamationmark.triangle",
+                                                   description: Text("The Splitwise receipt couldn't be fetched."))
+                        case .empty:
+                            ProgressView()
+                        @unknown default:
+                            EmptyView()
+                        }
                     }
                     .navigationTitle("Receipt")
                     .navigationBarTitleDisplayMode(.inline)
@@ -212,11 +227,14 @@ struct ExpenseDetailView: View {
                 .frame(width: 48, height: 48)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .onTapGesture { viewingReceipt = receipt }
-        } else if let urlString = expense.splitwiseReceiptURL, let url = URL(string: urlString) {
-            AsyncImage(url: url) { image in
-                image.resizable().scaledToFill()
-            } placeholder: {
-                Color.gray.opacity(0.15)
+        } else if let url = splitwiseReceiptProxyURL {
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case let .success(image): image.resizable().scaledToFill()
+                case .failure: Image(systemName: "doc.text.image").foregroundStyle(.secondary)
+                case .empty: ProgressView()
+                @unknown default: Color.gray.opacity(0.15)
+                }
             }
             .frame(width: 48, height: 48)
             .clipShape(RoundedRectangle(cornerRadius: 8))
