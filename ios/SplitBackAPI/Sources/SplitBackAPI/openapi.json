@@ -2127,6 +2127,62 @@
         ]
       }
     },
+    "/splitwise/expenses/{expense_id}/receipt": {
+      "get": {
+        "tags": [
+          "splitwise"
+        ],
+        "summary": "Splitwise Receipt",
+        "description": "Proxy a Splitwise expense's receipt image. Splitwise serves receipts from an authenticated API\nendpoint, so we fetch with the stored OAuth token and stream the bytes back to the app. `size`\n(e.g. `original`) requests a higher resolution for the full-screen view.",
+        "operationId": "splitwise_receipt_splitwise_expenses__expense_id__receipt_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "expense_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Expense Id"
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "title": "Size"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/splitwise/import": {
       "post": {
         "tags": [
@@ -2734,6 +2790,10 @@
           "category": {
             "type": "string",
             "title": "Category"
+          },
+          "created_by": {
+            "type": "string",
+            "title": "Created By"
           },
           "splitwise_receipt_url": {
             "type": "string",

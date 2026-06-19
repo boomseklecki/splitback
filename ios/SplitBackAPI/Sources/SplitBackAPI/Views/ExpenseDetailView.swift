@@ -43,6 +43,15 @@ struct ExpenseDetailView: View {
         return url
     }
 
+    /// "Added by Matt on Jun 19" when the creator is known, else just the date.
+    private var addedText: String {
+        let date = expense.createdAt.formatted(date: .abbreviated, time: .omitted)
+        if let by = expense.createdByIdentifier {
+            return "Added by \(users.displayName(for: by)) on \(date)"
+        }
+        return "Added \(date)"
+    }
+
     private func currency(_ value: Decimal) -> String { value.formatted(.currency(code: expense.currency)) }
     private func nameOrYou(_ id: String) -> String { id == meIdentifier ? "You" : users.displayName(for: id) }
 
@@ -120,8 +129,7 @@ struct ExpenseDetailView: View {
             }
 
             Section {
-                Text("Added \(expense.createdAt.formatted(date: .abbreviated, time: .omitted))")
-                    .font(.caption).foregroundStyle(.secondary)
+                Text(addedText).font(.caption).foregroundStyle(.secondary)
                 if expense.splitwiseExpenseId != nil {
                     Text("From Splitwise").font(.caption).foregroundStyle(.secondary)
                 }

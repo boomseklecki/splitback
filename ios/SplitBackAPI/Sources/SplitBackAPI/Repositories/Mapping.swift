@@ -184,6 +184,7 @@ enum Mapping {
             currency: r.currency,
             date: try dateOnly(r.date, field: "Expense.date"),
             category: r.category,
+            createdByIdentifier: r.created_by,
             splitwiseReceiptURL: r.splitwise_receipt_url,
             splitwiseRepayments: jsonString(r.repayments),
             archivedAt: r.archived_at,
