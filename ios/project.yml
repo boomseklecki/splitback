@@ -38,6 +38,14 @@ targets:
         UILaunchScreen: {}
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
+    entitlements:
+      path: SplitBack/SplitBack.entitlements
+      properties:
+        # Native Sign in with Apple. The backend verifies the identity token against
+        # apple_audience = this bundle id (com.splitback.app). Device builds also need the
+        # capability enabled on the App ID in the Apple Developer portal.
+        com.apple.developer.applesignin:
+          - Default
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.splitback.app
