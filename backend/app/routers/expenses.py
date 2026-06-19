@@ -119,6 +119,8 @@ async def create_expense(
         currency=body.currency or settings.default_currency,
         date=body.date,
         category=body.category,
+        notes=body.notes,
+        created_by=body.created_by,
     )
     expense.splits = _split_rows(body.splits)
     expense.items = _item_rows(body.items)
@@ -199,6 +201,10 @@ async def update_expense(
         expense.date = body.date
     if body.category is not None:
         expense.category = body.category
+    if body.notes is not None:
+        expense.notes = body.notes
+    if body.updated_by is not None:
+        expense.updated_by = body.updated_by
     if body.transaction_id is not None:
         expense.transaction_id = body.transaction_id
     if body.splits is not None:

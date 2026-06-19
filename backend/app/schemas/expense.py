@@ -28,6 +28,8 @@ class ExpenseCreate(BaseModel):
     currency: str | None = None
     date: date_type
     category: str | None = None
+    notes: str | None = None
+    created_by: str | None = None  # who added it (the app sends the signed-in user)
     transaction_id: UUID | None = None
     splits: list[SplitInput] = []
     items: list[ItemInput] = []
@@ -40,6 +42,8 @@ class ExpenseUpdate(BaseModel):
     currency: str | None = None
     date: date_type | None = None
     category: str | None = None
+    notes: str | None = None
+    updated_by: str | None = None  # who edited it (the app sends the signed-in user)
     transaction_id: UUID | None = None
     splits: list[SplitInput] | None = None
     items: list[ItemInput] | None = None
