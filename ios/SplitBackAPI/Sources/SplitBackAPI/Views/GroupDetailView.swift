@@ -41,6 +41,23 @@ struct GroupDetailView: View {
         SettleUp.collapseOlder(expenses)
     }
 
+    /// Groups date-descending expenses into month buckets with a "June 2026" label, newest month
+    /// first, preserving the date order within each month.
+    private func monthGroups(_ expenses: [Expense]) -> [(id: String, label: String, expenses: [Expense])] {
+        let calendar = Calendar.current
+        let buckets = Dictionary(grouping: expenses) {
+            calendar.dateComponents([.year, .month], from: $0.date)
+        }
+        return buckets.keys
+            .sorted { (calendar.date(from: $0) ?? .distantPast) > (calendar.date(from: $1) ?? .distantPast) }
+            .map { key in
+                let date = calendar.date(from: key) ?? .now
+                return ("\(key.year ?? 0)-\(key.month ?? 0)",
+                        date.formatted(.dateTime.month(.wide).year()),
+                        buckets[key] ?? [])
+            }
+    }
+
     var body: some View {
         List {
             if group.avatarURL != nil || group.groupType != nil {
@@ -75,21 +92,26 @@ struct GroupDetailView: View {
                 }
             }
 
-            Section("Expenses") {
-                let data = showCollapsed ? expenses : collapse.visible
-                ForEach(data) { expense in
-                    NavigationLink(value: expense) {
-                        ExpenseRow(expense: expense, users: users,
-                                   meIdentifier: env.currentUser?.identifier)
+            let data = showCollapsed ? expenses : collapse.visible
+            ForEach(monthGroups(data), id: \.id) { month in
+                Section {
+                    ForEach(month.expenses) { expense in
+                        NavigationLink(value: expense) {
+                            ExpenseRow(expense: expense, users: users,
+                                       meIdentifier: env.currentUser?.identifier)
+                        }
                     }
+                } header: {
+                    Text(month.label).textCase(nil)
                 }
-                if !showCollapsed && collapse.collapsed > 0 {
+            }
+            if expenses.isEmpty {
+                Section { Text("No expenses yet.").foregroundStyle(.secondary) }
+            } else if !showCollapsed && collapse.collapsed > 0 {
+                Section {
                     Button("Show \(collapse.collapsed) older expense\(collapse.collapsed == 1 ? "" : "s")") {
                         showCollapsed = true
                     }
-                }
-                if expenses.isEmpty {
-                    Text("No expenses yet.").foregroundStyle(.secondary)
                 }
             }
         }
@@ -217,6 +239,13 @@ struct ExpenseRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
+            VStack(spacing: 0) {
+                Text(expense.date.formatted(.dateTime.month(.abbreviated)))
+                    .font(.caption2).foregroundStyle(.secondary)
+                Text(expense.date.formatted(.dateTime.day()))
+                    .font(.headline).monospacedDigit()
+            }
+            .frame(width: 34)
             Image(systemName: categorySymbol(expense.category))
                 .font(.title3)
                 .foregroundStyle(.secondary)
