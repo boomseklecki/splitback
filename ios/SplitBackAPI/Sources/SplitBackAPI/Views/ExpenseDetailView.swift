@@ -285,8 +285,9 @@ struct ExpenseDetailView: View {
 
     private func updateCategory(_ category: String) {
         let id = expense.id
+        let me = env.currentUser?.identifier
         Task {
-            do { try await env.expenses(context).updateCategory(id: id, category: category) }
+            do { try await env.expenses(context).updateCategory(id: id, category: category, updatedBy: me) }
             catch { errorText = errorMessage(error) }
         }
     }

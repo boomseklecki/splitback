@@ -68,12 +68,13 @@ struct ExpenseRepository {
 
     /// Patches only the category (splits/items untouched server-side; pushes to Splitwise for
     /// linked expenses).
-    func updateCategory(id: UUID, category: String) async throws {
+    func updateCategory(id: UUID, category: String, updatedBy: String?) async throws {
         let output = try await client.update_expense_expenses__expense_id__patch(
             path: .init(expense_id: id.uuidString),
             body: .json(.init(
                 group_id: nil, description: nil, amount: nil, currency: nil,
-                date: nil, category: category, transaction_id: nil, splits: nil, items: nil
+                date: nil, category: category, notes: nil, updated_by: updatedBy,
+                transaction_id: nil, splits: nil, items: nil
             ))
         )
         switch output {

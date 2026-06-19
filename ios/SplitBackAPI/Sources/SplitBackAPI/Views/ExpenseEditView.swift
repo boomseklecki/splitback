@@ -18,6 +18,7 @@ struct ExpenseEditView: View {
     @State private var amountString: String
     @State private var date: Date
     @State private var category: String?
+    @State private var notes: String
     @State private var payer: String
     @State private var mode: SplitMode = .equal
     @State private var customOwed: [String: String]
@@ -40,6 +41,7 @@ struct ExpenseEditView: View {
         _amountString = State(initialValue: seedAmount.map(Mapping.decimalString) ?? "")
         _date = State(initialValue: editing?.date ?? prefill?.date ?? Date())
         _category = State(initialValue: editing?.category ?? prefill?.category)
+        _notes = State(initialValue: editing?.notes ?? "")
         let payerFromEdit = editing?.splits.first(where: { $0.paidShare > 0 })?.userIdentifier
         _payer = State(initialValue: payerFromEdit ?? people.first ?? "")
         var owed: [String: String] = [:]
@@ -87,6 +89,7 @@ struct ExpenseEditView: View {
                         Text("None").tag(String?.none)
                         ForEach(categories, id: \.self) { Text($0).tag(String?.some($0)) }
                     }
+                    TextField("Notes", text: $notes, axis: .vertical)
                 }
 
                 if !items.isEmpty {
@@ -161,9 +164,15 @@ struct ExpenseEditView: View {
 
     private func save() {
         saving = true
+        let me = env.currentUser?.identifier
+        let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
         let draft = ExpenseDraft(
             groupId: group.id, details: details, amount: amount,
-            date: date, category: category, transactionId: transactionId,
+            date: date, category: category,
+            notes: trimmedNotes.isEmpty ? nil : trimmedNotes,
+            createdBy: editing == nil ? me : nil,
+            updatedBy: editing != nil ? me : nil,
+            transactionId: transactionId,
             splits: splits, items: items
         )
         Task {

@@ -282,6 +282,8 @@ enum Mapping {
             currency: d.currency,
             date: dateOnlyString(d.date),
             category: d.category,
+            notes: d.notes,
+            created_by: d.createdBy,
             transaction_id: d.transactionId?.uuidString,
             splits: d.splits.map(splitInput),
             items: d.items.map(itemInput)
@@ -296,6 +298,8 @@ enum Mapping {
             currency: d.currency,
             date: dateOnlyString(d.date),
             category: d.category,
+            notes: d.notes,
+            updated_by: d.updatedBy,
             transaction_id: d.transactionId?.uuidString,
             splits: d.splits.map(splitInput),
             items: d.items.map(itemInput)
@@ -344,6 +348,10 @@ struct ExpenseDraft {
     var currency: String? = nil
     var date: Date
     var category: String? = nil
+    var notes: String? = nil
+    /// Who added (on create) / edited (on update) the expense — the signed-in user.
+    var createdBy: String? = nil
+    var updatedBy: String? = nil
     var transactionId: UUID? = nil
     var splits: [SplitDraft] = []
     var items: [ItemDraft] = []

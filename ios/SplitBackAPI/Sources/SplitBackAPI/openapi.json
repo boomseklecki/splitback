@@ -2717,6 +2717,14 @@
             "type": "string",
             "title": "Category"
           },
+          "notes": {
+            "type": "string",
+            "title": "Notes"
+          },
+          "created_by": {
+            "type": "string",
+            "title": "Created By"
+          },
           "transaction_id": {
             "type": "string",
             "format": "uuid",
@@ -2919,6 +2927,14 @@
           "category": {
             "type": "string",
             "title": "Category"
+          },
+          "notes": {
+            "type": "string",
+            "title": "Notes"
+          },
+          "updated_by": {
+            "type": "string",
+            "title": "Updated By"
           },
           "transaction_id": {
             "type": "string",
