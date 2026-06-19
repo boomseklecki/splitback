@@ -171,7 +171,7 @@ struct SettingsView: View {
             defer { importing = false }
             do {
                 let count = try await env.splitwise.runImport()
-                importSummary = "Imported \(count) expense\(count == 1 ? "" : "s")."
+                importSummary = "Imported \(count.formatted()) expense\(count == 1 ? "" : "s")."
                 try await env.refreshAll(context)
             } catch { errorText = errorMessage(error) }
         }
