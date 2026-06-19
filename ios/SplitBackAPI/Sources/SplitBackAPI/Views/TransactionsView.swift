@@ -27,6 +27,9 @@ struct TransactionsView: View {
 
     var body: some View {
         List {
+            if let account {
+                AccountSummaryHeader(account: account, transactions: transactions)
+            }
             if transactions.isEmpty {
                 ContentUnavailableView(
                     "No Transactions", systemImage: "list.bullet.rectangle",
