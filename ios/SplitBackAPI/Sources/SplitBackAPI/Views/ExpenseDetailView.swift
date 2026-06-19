@@ -3,8 +3,8 @@ import SwiftData
 import PhotosUI
 import UIKit
 
-/// Full expense detail: splits, line items, receipts (capture via photo/scan, view, delete);
-/// edit + delete the expense.
+/// Full expense detail: a header with a tappable category icon + receipt thumbnail, a "who paid /
+/// who owes" split breakdown, line items, receipt management, and edit/delete.
 struct ExpenseDetailView: View {
     let expense: Expense
 
@@ -14,6 +14,8 @@ struct ExpenseDetailView: View {
     @Query private var users: [User]
 
     @State private var showingEdit = false
+    @State private var showingCategoryPicker = false
+    @State private var showingSplitwiseReceipt = false
     @State private var confirmingDelete = false
     @State private var errorText: String?
     @State private var showingScanner = false
@@ -21,35 +23,50 @@ struct ExpenseDetailView: View {
     @State private var uploading = false
     @State private var viewingReceipt: Receipt?
 
+    private var meIdentifier: String? { env.currentUser?.identifier }
+    private var isSettleUp: Bool { expense.category == SettleUp.category }
+
     private var group: ExpenseGroup? {
         let gid = expense.groupId
         return try? context.fetch(FetchDescriptor<ExpenseGroup>(predicate: #Predicate { $0.id == gid })).first
     }
 
+    private func currency(_ value: Decimal) -> String { value.formatted(.currency(code: expense.currency)) }
+    private func nameOrYou(_ id: String) -> String { id == meIdentifier ? "You" : users.displayName(for: id) }
+
+    private var payers: [Split] {
+        expense.splits.filter { $0.paidShare > 0 }.sorted { $0.userIdentifier < $1.userIdentifier }
+    }
+    private var owers: [Split] {
+        expense.splits.filter { $0.owedShare > 0 && $0.paidShare == 0 }.sorted { $0.userIdentifier < $1.userIdentifier }
+    }
+
+    private var settleUpText: String {
+        let amount = currency(expense.amount)
+        guard let payer = payers.first else { return amount }
+        if let recipient = owers.first {
+            return "\(nameOrYou(payer.userIdentifier)) paid \(nameOrYou(recipient.userIdentifier)) \(amount)"
+        }
+        return "\(nameOrYou(payer.userIdentifier)) paid \(amount)"
+    }
+
     var body: some View {
         List {
-            Section {
-                LabeledContent("Amount", value: expense.amount.formatted(.currency(code: expense.currency)))
-                LabeledContent("Date", value: expense.date.formatted(date: .long, time: .omitted))
-                if let category = expense.category {
-                    LabeledContent("Category", value: category)
-                }
-                if expense.splitwiseExpenseId != nil {
-                    LabeledContent("Source", value: "Splitwise")
-                }
-            }
+            Section { header }
 
-            Section("Splits") {
-                ForEach(expense.splits.sorted(by: { $0.userIdentifier < $1.userIdentifier })) { split in
-                    HStack {
-                        Text(users.displayName(for: split.userIdentifier))
-                        Spacer()
-                        VStack(alignment: .trailing) {
-                            Text("paid \(split.paidShare.formatted(.currency(code: expense.currency)))")
-                            Text("owes \(split.owedShare.formatted(.currency(code: expense.currency)))")
-                                .foregroundStyle(.secondary)
-                        }
-                        .font(.caption)
+            if isSettleUp {
+                Section { Text(settleUpText).fontWeight(.medium) }
+            } else {
+                Section("Split") {
+                    ForEach(payers, id: \.userIdentifier) { split in
+                        Text("\(nameOrYou(split.userIdentifier)) paid \(currency(split.paidShare))")
+                            .fontWeight(.medium)
+                    }
+                    ForEach(owers, id: \.userIdentifier) { split in
+                        let isMe = split.userIdentifier == meIdentifier
+                        Text("\(nameOrYou(split.userIdentifier)) \(isMe ? "owe" : "owes") \(currency(split.owedShare))")
+                            .font(.callout).foregroundStyle(.secondary)
+                            .padding(.leading, 28)
                     }
                 }
             }
@@ -60,22 +77,7 @@ struct ExpenseDetailView: View {
                         HStack {
                             Text(item.name)
                             Spacer()
-                            Text(item.price.formatted(.currency(code: expense.currency)))
-                        }
-                    }
-                }
-            }
-
-            if let urlString = expense.splitwiseReceiptURL, let url = URL(string: urlString) {
-                Section("Splitwise Receipt") {
-                    AsyncImage(url: url) { phase in
-                        if let image = phase.image {
-                            image.resizable().scaledToFit()
-                        } else if phase.error != nil {
-                            Label("Couldn't load receipt", systemImage: "exclamationmark.triangle")
-                                .foregroundStyle(.secondary)
-                        } else {
-                            ProgressView().frame(maxWidth: .infinity)
+                            Text(currency(item.price))
                         }
                     }
                 }
@@ -106,6 +108,14 @@ struct ExpenseDetailView: View {
             }
 
             Section {
+                Text("Added \(expense.createdAt.formatted(date: .abbreviated, time: .omitted))")
+                    .font(.caption).foregroundStyle(.secondary)
+                if expense.splitwiseExpenseId != nil {
+                    Text("From Splitwise").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+
+            Section {
                 Button("Delete Expense", role: .destructive) { confirmingDelete = true }
             }
         }
@@ -119,6 +129,25 @@ struct ExpenseDetailView: View {
         .sheet(isPresented: $showingEdit) {
             if let group {
                 ExpenseEditView(group: group, members: [], editing: expense)
+            }
+        }
+        .sheet(isPresented: $showingCategoryPicker) {
+            CategoryPickerView(current: expense.category) { newCategory in
+                updateCategory(newCategory)
+            }
+        }
+        .sheet(isPresented: $showingSplitwiseReceipt) {
+            if let urlString = expense.splitwiseReceiptURL, let url = URL(string: urlString) {
+                NavigationStack {
+                    AsyncImage(url: url) { image in
+                        image.resizable().scaledToFit()
+                    } placeholder: {
+                        ProgressView()
+                    }
+                    .navigationTitle("Receipt")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { showingSplitwiseReceipt = false } } }
+                }
             }
         }
         .confirmationDialog("Delete this expense?", isPresented: $confirmingDelete, titleVisibility: .visible) {
@@ -145,6 +174,62 @@ struct ExpenseDetailView: View {
             }
         }
         .errorAlert($errorText)
+    }
+
+    /// Header: tappable category icon (→ picker), amount + category + date, receipt thumbnail.
+    private var header: some View {
+        HStack(alignment: .top, spacing: 16) {
+            Button { showingCategoryPicker = true } label: {
+                Image(systemName: categorySymbol(expense.category))
+                    .font(.title2)
+                    .frame(width: 52, height: 52)
+                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
+                    .overlay(alignment: .bottomTrailing) {
+                        Image(systemName: "pencil.circle.fill")
+                            .font(.caption2).foregroundStyle(.secondary)
+                            .background(Circle().fill(Color(.systemBackground)))
+                    }
+            }
+            .buttonStyle(.plain)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(currency(expense.amount)).font(.title2).fontWeight(.semibold)
+                Text(expense.category ?? "Uncategorized").font(.subheadline).foregroundStyle(.secondary)
+                Text(expense.date.formatted(date: .abbreviated, time: .omitted))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+            Spacer()
+            receiptThumbnail
+        }
+        .padding(.vertical, 4)
+    }
+
+    @ViewBuilder
+    private var receiptThumbnail: some View {
+        if let receipt = expense.receipts.first {
+            ReceiptThumbnail(receipt: receipt)
+                .frame(width: 48, height: 48)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .onTapGesture { viewingReceipt = receipt }
+        } else if let urlString = expense.splitwiseReceiptURL, let url = URL(string: urlString) {
+            AsyncImage(url: url) { image in
+                image.resizable().scaledToFill()
+            } placeholder: {
+                Color.gray.opacity(0.15)
+            }
+            .frame(width: 48, height: 48)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .onTapGesture { showingSplitwiseReceipt = true }
+        }
+    }
+
+    private func updateCategory(_ category: String) {
+        let id = expense.id
+        Task {
+            do { try await env.expenses(context).updateCategory(id: id, category: category) }
+            catch { errorText = errorMessage(error) }
+        }
     }
 
     private func upload(_ images: [Data]) {

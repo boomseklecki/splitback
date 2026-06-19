@@ -66,6 +66,26 @@ struct ExpenseRepository {
         }
     }
 
+    /// Patches only the category (splits/items untouched server-side; pushes to Splitwise for
+    /// linked expenses).
+    func updateCategory(id: UUID, category: String) async throws {
+        let output = try await client.update_expense_expenses__expense_id__patch(
+            path: .init(expense_id: id.uuidString),
+            body: .json(.init(
+                group_id: nil, description: nil, amount: nil, currency: nil,
+                date: nil, category: category, transaction_id: nil, splits: nil, items: nil
+            ))
+        )
+        switch output {
+        case let .ok(ok):
+            try upsert([try ok.body.json])
+        case let .unprocessableContent(error):
+            throw BackendError.validation(BackendError.validationMessage(try? error.body.json))
+        case let .undocumented(statusCode, _):
+            throw BackendError.fromUndocumented(statusCode)
+        }
+    }
+
     /// Deletes an expense. `propagate` overrides the backend's default for Splitwise-linked rows
     /// (nil = let the backend decide by expense kind). The local row is removed on success.
     func delete(id: UUID, propagate: Bool? = nil) async throws {
