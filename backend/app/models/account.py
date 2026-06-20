@@ -1,7 +1,7 @@
 import uuid
 from decimal import Decimal
 
-from sqlalchemy import ForeignKey, Numeric, String
+from sqlalchemy import Boolean, ForeignKey, Numeric, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -22,6 +22,9 @@ class Account(UUIDMixin, TimestampMixin, Base):
     )
     balance: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD")
+    # User overrides for Goals analytics; null = derive from the account's classification (subtype).
+    include_in_spending: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    include_in_cash_flow: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     plaid_item: Mapped["PlaidItem | None"] = relationship(  # noqa: F821
         back_populates="accounts"

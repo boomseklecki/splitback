@@ -12,6 +12,12 @@ class AccountCreate(BaseModel):
     currency: str | None = None
 
 
+class AccountUpdate(BaseModel):
+    # Goals-analytics inclusion overrides; null leaves the value unchanged (omitted via exclude_unset).
+    include_in_spending: bool | None = None
+    include_in_cash_flow: bool | None = None
+
+
 class AccountResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -21,5 +27,7 @@ class AccountResponse(BaseModel):
     plaid_account_id: str | None
     balance: Decimal
     currency: str
+    include_in_spending: bool | None
+    include_in_cash_flow: bool | None
     created_at: datetime
     updated_at: datetime

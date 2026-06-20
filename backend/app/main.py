@@ -11,7 +11,9 @@ from app.routers import (
     auth,
     balances,
     categories,
+    category_map,
     expenses,
+    goals,
     groups,
     health,
     plaid,
@@ -52,6 +54,8 @@ app.include_router(users.router, dependencies=_protected)
 app.include_router(balances.router, dependencies=_protected)
 app.include_router(splitwise.router, dependencies=_protected)
 app.include_router(categories.router, dependencies=_protected)
+app.include_router(category_map.router, dependencies=_protected)
+app.include_router(goals.router, dependencies=_protected)
 
 
 @app.get("/")

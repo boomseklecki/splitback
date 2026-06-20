@@ -10,7 +10,7 @@ from app.config import settings
 from app.db import get_session
 from app.models import Account, Transaction
 from app.models.enums import TransactionSource
-from app.schemas.account import AccountCreate, AccountResponse
+from app.schemas.account import AccountCreate, AccountResponse, AccountUpdate
 from app.schemas.transaction import TransactionCreate, TransactionResponse
 from app.utils import ensure_utc
 
@@ -39,6 +39,22 @@ async def create_account(
         currency=body.currency or settings.default_currency,
     )
     session.add(account)
+    await session.commit()
+    await session.refresh(account)
+    return account
+
+
+@router.patch("/accounts/{account_id}", response_model=AccountResponse)
+async def update_account(
+    account_id: UUID, body: AccountUpdate, session: AsyncSession = Depends(get_session)
+) -> Account:
+    """Set the Goals-analytics inclusion overrides. Plaid sync only touches name/type/balance/
+    currency, so these survive a re-sync."""
+    account = await session.get(Account, account_id)
+    if account is None:
+        raise HTTPException(status_code=404, detail="Account not found")
+    for field, value in body.model_dump(exclude_unset=True).items():
+        setattr(account, field, value)
     await session.commit()
     await session.refresh(account)
     return account
