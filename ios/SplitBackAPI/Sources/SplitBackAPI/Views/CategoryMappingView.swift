@@ -1,14 +1,13 @@
 import SwiftUI
 import SwiftData
 
-/// Review and edit how raw Plaid transaction categories map to the app's canonical categories. Offers
-/// on-device (Apple Intelligence) suggestions for unmapped labels, plus a manual picker per row.
-struct CategoryMappingView: View {
+/// Remap the raw Bank (Plaid) categories to the app's canonical categories. Offers an on-device
+/// (Apple Intelligence) pass for unmapped/vague labels, plus a manual picker per row.
+struct BankCategoriesView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.modelContext) private var context
 
     @Query private var transactions: [Transaction]
-    @Query private var expenses: [Expense]
     @Query private var categoryMaps: [CategoryMap]
     @Query(sort: \SpendCategory.position) private var categoryModels: [SpendCategory]
 
@@ -26,35 +25,15 @@ struct CategoryMappingView: View {
     private var mapByRaw: [String: CategoryMap] {
         Dictionary(categoryMaps.map { ($0.rawCategory, $0) }, uniquingKeysWith: { a, _ in a })
     }
-    /// How a raw label currently resolves: an explicit override, the built-in Plaid map ("auto"), or
-    /// nothing ("unmapped").
     private func resolved(_ raw: String) -> (canonical: String?, source: String) {
         if let m = mapByRaw[raw] { return (m.canonicalCategory, m.source) }
         if let auto = PlaidCategory.canonical(raw) { return (auto, "auto") }
         return (nil, "unmapped")
     }
-
-    /// Distinct Splitwise expense categories (the names Splitwise sends), excluding settle-ups and
-    /// reimbursements which are handled structurally.
-    private var splitwiseCategories: [String] {
-        let raws = expenses
-            .filter { $0.splitwiseExpenseId != nil }
-            .compactMap { $0.category }
-            .filter { !$0.isEmpty && $0 != SettleUp.category && $0 != Reimbursement.category }
-        return Set(raws).sorted()
-    }
-    /// Same precedence as `resolved`, but the deterministic "auto" tier is the Splitwise taxonomy map.
-    private func resolvedSplitwise(_ raw: String) -> (canonical: String?, source: String) {
-        if let m = mapByRaw[raw] { return (m.canonicalCategory, m.source) }
-        if let auto = SplitwiseCategory.canonical(raw) { return (auto, "auto") }
-        return (nil, "unmapped")
-    }
-    /// The current canonical for the shared edit sheet, for either taxonomy (a manual override wins).
     private func currentCanonical(_ raw: String) -> String? {
-        mapByRaw[raw]?.canonicalCategory ?? PlaidCategory.canonical(raw) ?? SplitwiseCategory.canonical(raw)
+        mapByRaw[raw]?.canonicalCategory ?? PlaidCategory.canonical(raw)
     }
     private var unmappedCount: Int { rawCategories.filter { resolved($0).source == "unmapped" }.count }
-    /// Vague transactions (Other/uncategorized) not yet refined — candidates for a description-based pass.
     private var refinable: [Transaction] {
         let lookup = CategoryMapping.lookup(categoryMaps)
         return transactions.filter {
@@ -67,9 +46,7 @@ struct CategoryMappingView: View {
             if CategoryMapper.isAvailable {
                 let pending = unmappedCount + refinable.count
                 Section {
-                    Button {
-                        Task { await runOnDevice() }
-                    } label: {
+                    Button { Task { await runOnDevice() } } label: {
                         Label(mapping ? "Categorizing…" : "Categorize with Apple Intelligence",
                               systemImage: "sparkles")
                     }
@@ -78,72 +55,32 @@ struct CategoryMappingView: View {
                     Text("On-device: maps \(unmappedCount) unmapped label\(unmappedCount == 1 ? "" : "s") and refines \(refinable.count) vague transaction\(refinable.count == 1 ? "" : "s") from their merchant. Your manual choices are kept.")
                 }
             }
-
-            Section("Bank Categories") {
+            Section {
                 if rawCategories.isEmpty {
                     Text("No Plaid transactions yet.").font(.caption).foregroundStyle(.secondary)
                 }
                 ForEach(rawCategories, id: \.self) { raw in
                     Button { editing = EditingRaw(id: raw) } label: {
-                        categoryRow(label: PlaidCategory.humanized(raw), resolution: resolved(raw))
+                        mappingRow(label: PlaidCategory.humanized(raw), resolution: resolved(raw))
                     }
                 }
-            }
-
-            Section {
-                if splitwiseCategories.isEmpty {
-                    Text("No Splitwise expenses yet.").font(.caption).foregroundStyle(.secondary)
-                }
-                ForEach(splitwiseCategories, id: \.self) { raw in
-                    Button { editing = EditingRaw(id: raw) } label: {
-                        categoryRow(label: raw, resolution: resolvedSplitwise(raw))
-                    }
-                }
-            } header: {
-                Text("Splitwise Categories")
             } footer: {
-                Text("How imported Splitwise categories map into your spending categories.")
+                Text("How your bank transaction categories map into your spending categories.")
             }
         }
-        .navigationTitle("Spending Categories")
+        .navigationTitle("Bank Categories")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $editing) { item in
-            CategoryPickerView(current: currentCanonical(item.id)) { canonical in
-                setManual(raw: item.id, canonical: canonical)
+            CategoryPickerView(current: currentCanonical(item.id), subject: PlaidCategory.humanized(item.id)) {
+                setManual(env: env, context: context, raw: item.id, canonical: $0, errorText: $errorText)
             }
         }
         .errorAlert($errorText)
     }
 
-    private func categoryRow(label: String, resolution: (canonical: String?, source: String)) -> some View {
-        HStack(spacing: 10) {
-            Text(label).foregroundStyle(.primary)
-            Spacer()
-            if let canonical = resolution.canonical {
-                if let icon = sourceIcon(resolution.source) {
-                    Image(systemName: icon).font(.caption2).foregroundStyle(.tertiary)
-                }
-                Text(canonical).foregroundStyle(.secondary)
-            } else {
-                Text("Unmapped").foregroundStyle(.tertiary)
-            }
-            Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
-        }
-    }
-
-    private func sourceIcon(_ source: String) -> String? {
-        switch source {
-        case "manual": return "hand.point.up.left"
-        case "ondevice": return "sparkles"
-        case "auto": return "wand.and.stars"
-        default: return nil
-        }
-    }
-
     private func runOnDevice() async {
         mapping = true
         defer { mapping = false }
-        // 1) Map any raw category labels the built-in map doesn't cover.
         let unmapped = rawCategories.filter { resolved($0).source == "unmapped" }
         let allowed = categoryModels.map(\.name)
         let suggestions = await CategoryMapper.suggest(for: unmapped, allowed: allowed)
@@ -151,10 +88,7 @@ struct CategoryMappingView: View {
             for (raw, canonical) in suggestions {
                 try await env.categoryMaps(context).set(raw: raw, canonical: canonical, source: "ondevice")
             }
-        } catch {
-            errorText = errorMessage(error)
-        }
-        // 2) Refine vague transactions from their merchant description.
+        } catch { errorText = errorMessage(error) }
         let items = refinable.map {
             CategoryMapper.Item(id: $0.id, description: $0.details, rawCategory: $0.category)
         }
@@ -165,11 +99,100 @@ struct CategoryMappingView: View {
         }
         do { try context.save() } catch { errorText = errorMessage(error) }
     }
+}
 
-    private func setManual(raw: String, canonical: String) {
-        Task {
-            do { try await env.categoryMaps(context).set(raw: raw, canonical: canonical, source: "manual") }
-            catch { errorText = errorMessage(error) }
+/// Remap imported Splitwise category names to the app's canonical categories (manual picker per row).
+struct SplitwiseCategoriesView: View {
+    @Environment(AppEnvironment.self) private var env
+    @Environment(\.modelContext) private var context
+
+    @Query private var expenses: [Expense]
+    @Query private var categoryMaps: [CategoryMap]
+
+    @State private var editing: EditingRaw?
+    @State private var errorText: String?
+
+    private struct EditingRaw: Identifiable { let id: String }
+
+    private var splitwiseCategories: [String] {
+        let raws = expenses
+            .filter { $0.splitwiseExpenseId != nil }
+            .compactMap { $0.category }
+            .filter { !$0.isEmpty && $0 != SettleUp.category && $0 != Reimbursement.category }
+        return Set(raws).sorted()
+    }
+    private var mapByRaw: [String: CategoryMap] {
+        Dictionary(categoryMaps.map { ($0.rawCategory, $0) }, uniquingKeysWith: { a, _ in a })
+    }
+    private func resolved(_ raw: String) -> (canonical: String?, source: String) {
+        if let m = mapByRaw[raw] { return (m.canonicalCategory, m.source) }
+        if let auto = SplitwiseCategory.canonical(raw) { return (auto, "auto") }
+        return (nil, "unmapped")
+    }
+    private func currentCanonical(_ raw: String) -> String? {
+        mapByRaw[raw]?.canonicalCategory ?? SplitwiseCategory.canonical(raw)
+    }
+
+    var body: some View {
+        List {
+            Section {
+                if splitwiseCategories.isEmpty {
+                    Text("No Splitwise expenses yet.").font(.caption).foregroundStyle(.secondary)
+                }
+                ForEach(splitwiseCategories, id: \.self) { raw in
+                    Button { editing = EditingRaw(id: raw) } label: {
+                        mappingRow(label: raw, resolution: resolved(raw))
+                    }
+                }
+            } footer: {
+                Text("How imported Splitwise categories map into your spending categories.")
+            }
         }
+        .navigationTitle("Splitwise Categories")
+        .navigationBarTitleDisplayMode(.inline)
+        .sheet(item: $editing) { item in
+            CategoryPickerView(current: currentCanonical(item.id), subject: item.id) {
+                setManual(env: env, context: context, raw: item.id, canonical: $0, errorText: $errorText)
+            }
+        }
+        .errorAlert($errorText)
+    }
+}
+
+// MARK: - Shared
+
+/// One source→canonical mapping row: the source label, its resolved canonical + source icon, chevron.
+@ViewBuilder
+func mappingRow(label: String, resolution: (canonical: String?, source: String)) -> some View {
+    HStack(spacing: 10) {
+        Text(label).foregroundStyle(.primary)
+        Spacer()
+        if let canonical = resolution.canonical {
+            if let icon = mappingSourceIcon(resolution.source) {
+                Image(systemName: icon).font(.caption2).foregroundStyle(.tertiary)
+            }
+            Text(canonical).foregroundStyle(.secondary)
+        } else {
+            Text("Unmapped").foregroundStyle(.tertiary)
+        }
+        Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+    }
+}
+
+func mappingSourceIcon(_ source: String) -> String? {
+    switch source {
+    case "manual": return "hand.point.up.left"
+    case "ondevice": return "sparkles"
+    case "auto": return "wand.and.stars"
+    default: return nil
+    }
+}
+
+@MainActor
+private func setManual(env: AppEnvironment, context: ModelContext, raw: String, canonical: String,
+                       errorText: Binding<String?>) {
+    Task {
+        do { try await env.categoryMaps(context).set(raw: raw, canonical: canonical, source: "manual") }
+        catch { errorText.wrappedValue = errorMessage(error) }
     }
 }

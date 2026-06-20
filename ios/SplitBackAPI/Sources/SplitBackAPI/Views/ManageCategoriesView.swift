@@ -49,11 +49,26 @@ struct ManageCategoriesView: View {
                     }
                 }
                 .onDelete { offsets in delete(offsets, dependents: dependents) }
+            } header: {
+                Text("Categories")
             } footer: {
                 Text("Add your own categories or rename/delete any. A category can't be deleted while Bank or Splitwise categories map to it — tap it to reassign those first.")
             }
+
+            Section("Mappings") {
+                NavigationLink {
+                    BankCategoriesView()
+                } label: {
+                    Label("Bank Categories", systemImage: "building.columns")
+                }
+                NavigationLink {
+                    SplitwiseCategoriesView()
+                } label: {
+                    Label("Splitwise Categories", systemImage: "person.2")
+                }
+            }
         }
-        .navigationTitle("Manage Categories")
+        .navigationTitle("Spending Categories")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -148,6 +163,7 @@ struct MappingReassignRow: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.modelContext) private var context
     @State private var picking = false
+    @State private var pendingCanonical: String?
     @State private var errorText: String?
 
     var body: some View {
@@ -161,13 +177,26 @@ struct MappingReassignRow: View {
             }
         }
         .sheet(isPresented: $picking) {
-            CategoryPickerView(current: currentCanonical) { reassign(to: $0) }
+            CategoryPickerView(current: currentCanonical, subject: dependent.label) { chosen in
+                if chosen != currentCanonical { pendingCanonical = chosen }
+            }
+        }
+        // Confirm before moving it — otherwise the row silently leaves this category's list.
+        .confirmationDialog(
+            pendingCanonical.map { "Map “\(dependent.label)” to “\($0)”?" } ?? "",
+            isPresented: Binding(get: { pendingCanonical != nil },
+                                 set: { if !$0 { pendingCanonical = nil } }),
+            titleVisibility: .visible
+        ) {
+            if let target = pendingCanonical {
+                Button("Map to \(target)") { reassign(to: target); pendingCanonical = nil }
+            }
+            Button("Cancel", role: .cancel) { pendingCanonical = nil }
         }
         .errorAlert($errorText)
     }
 
     private func reassign(to canonical: String) {
-        guard canonical != currentCanonical else { return }
         let raw = dependent.raw
         Task {
             do { try await env.categoryMaps(context).set(raw: raw, canonical: canonical, source: "manual") }
@@ -189,6 +218,7 @@ struct CategoryEditView: View {
 
     @State private var name: String
     @State private var icon: String
+    @State private var showingIconGrid = false
     @State private var saving = false
     @State private var errorText: String?
 
@@ -208,24 +238,48 @@ struct CategoryEditView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    VStack(spacing: 8) {
+                        Button { withAnimation { showingIconGrid.toggle() } } label: {
+                            Image(systemName: icon)
+                                .font(.system(size: 30))
+                                .foregroundStyle(categoryColor(name))
+                                .frame(width: 72, height: 72)
+                                .background(Circle().fill(categoryColor(name).opacity(0.18)))
+                                .overlay(alignment: .bottomTrailing) {
+                                    Image(systemName: "pencil.circle.fill")
+                                        .font(.body).foregroundStyle(.secondary)
+                                        .background(Circle().fill(Color(.systemBackground)))
+                                }
+                        }
+                        .buttonStyle(.plain)
+                        Text(showingIconGrid ? "Choose an icon" : "Tap to change icon")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .listRowBackground(Color.clear)
+                }
+
                 Section { TextField("Name", text: $name) }
 
-                Section("Icon") {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 46), spacing: 10)], spacing: 10) {
-                        ForEach(categoryIconChoices, id: \.self) { symbol in
-                            Button { icon = symbol } label: {
-                                Image(systemName: symbol)
-                                    .font(.title3)
-                                    .frame(width: 46, height: 46)
-                                    .background(icon == symbol ? Color.accentColor.opacity(0.2) : Color(.secondarySystemBackground),
-                                                in: RoundedRectangle(cornerRadius: 10))
-                                    .overlay(RoundedRectangle(cornerRadius: 10)
-                                        .strokeBorder(icon == symbol ? Color.accentColor : .clear, lineWidth: 2))
+                if showingIconGrid {
+                    Section("Icon") {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 46), spacing: 10)], spacing: 10) {
+                            ForEach(categoryIconChoices, id: \.self) { symbol in
+                                Button { icon = symbol } label: {
+                                    Image(systemName: symbol)
+                                        .font(.title3)
+                                        .frame(width: 46, height: 46)
+                                        .background(icon == symbol ? Color.accentColor.opacity(0.2) : Color(.secondarySystemBackground),
+                                                    in: RoundedRectangle(cornerRadius: 10))
+                                        .overlay(RoundedRectangle(cornerRadius: 10)
+                                            .strokeBorder(icon == symbol ? Color.accentColor : .clear, lineWidth: 2))
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
                         }
+                        .padding(.vertical, 4)
                     }
-                    .padding(.vertical, 4)
                 }
 
                 if !dependents.isEmpty {
