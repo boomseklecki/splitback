@@ -131,11 +131,11 @@ struct ExpenseEditView: View {
     private func owedText(_ person: String) -> String {
         owed(person).formatted(.currency(code: "USD"))
     }
-    /// What each person "gets back" in a reimbursement: the recipient gets the full amount, everyone
-    /// else gets their equal share.
+    /// Each person's equal share of the reimbursement ("gets back $50") — the per-person split, shown
+    /// like the owed amount in every other mode. (The gross the recipient received is a detail-view
+    /// concern, not the editor's.)
     private func reimbursementGetsBackText(_ person: String) -> String {
-        let split = splits.first { $0.userIdentifier == person }
-        let value = person == payer ? (split?.owedShare ?? 0) : (split?.paidShare ?? 0)
+        let value = splits.first { $0.userIdentifier == person }?.paidShare ?? 0
         return "gets back " + value.formatted(.currency(code: "USD"))
     }
 
