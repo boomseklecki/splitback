@@ -1,0 +1,152 @@
+import SwiftUI
+import SwiftData
+import Charts
+
+/// A goal's detail: for budgets, the month's standing + a category spend trend with the target line;
+/// for savings, progress to target + the account's monthly net contributions.
+struct GoalDetailView: View {
+    let goal: Goal
+
+    @Environment(AppEnvironment.self) private var env
+    @Environment(\.modelContext) private var context
+    @Environment(\.dismiss) private var dismiss
+
+    @Query private var accounts: [Account]
+    @Query(sort: \Transaction.date, order: .reverse) private var transactions: [Transaction]
+    @Query private var categoryMaps: [CategoryMap]
+
+    @State private var showingEdit = false
+    @State private var confirmingDelete = false
+    @State private var errorText: String?
+
+    private let months = 6
+    private var lookup: [String: String] { CategoryMapping.lookup(categoryMaps) }
+    private var month: Date { SpendingAnalytics.monthStart(Date()) }
+    private var account: Account? { goal.accountId.flatMap { id in accounts.first { $0.id == id } } }
+
+    var body: some View {
+        List {
+            if goal.goalKind == .spend { budgetContent } else { saveContent }
+
+            Section {
+                Button("Edit Goal", systemImage: "pencil") { showingEdit = true }
+                Button("Delete Goal", systemImage: "trash", role: .destructive) { confirmingDelete = true }
+            }
+        }
+        .navigationTitle(goal.name)
+        .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showingEdit) { GoalEditView(editing: goal) }
+        .confirmationDialog("Delete this goal?", isPresented: $confirmingDelete, titleVisibility: .visible) {
+            Button("Delete", role: .destructive) { delete() }
+        }
+        .errorAlert($errorText)
+    }
+
+    // MARK: Budget
+
+    private var spentThisMonth: Decimal {
+        GoalProgress.spent(for: goal.category ?? "", in: month, transactions: transactions,
+                           accounts: accounts, lookup: lookup)
+    }
+    private var monthlyCategorySpend: [MonthlyValue] {
+        SpendingAnalytics.monthRange(months: months, ending: Date(), cal: .current).map { m in
+            MonthlyValue(month: m, value: GoalProgress.spent(
+                for: goal.category ?? "", in: m, transactions: transactions,
+                accounts: accounts, lookup: lookup))
+        }
+    }
+    private var thisMonthTransactions: [Transaction] {
+        let byId = Dictionary(accounts.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        return transactions.filter {
+            SpendingAnalytics.monthStart($0.date) == month
+                && SpendingAnalytics.isSpend($0, accounts: byId, lookup: lookup)
+                && CategoryMapping.effectiveCategory(for: $0, lookup: lookup) == goal.category
+        }
+    }
+
+    @ViewBuilder private var budgetContent: some View {
+        Section {
+            BudgetRow(goal: goal, spent: spentThisMonth)
+        }
+        Section("Last \(months) Months") {
+            Chart {
+                ForEach(monthlyCategorySpend) { point in
+                    BarMark(
+                        x: .value("Month", point.month, unit: .month),
+                        y: .value("Spent", NSDecimalNumber(decimal: point.value).doubleValue)
+                    )
+                    .foregroundStyle(categoryColor(goal.category))
+                    .cornerRadius(4)
+                }
+                RuleMark(y: .value("Budget", NSDecimalNumber(decimal: goal.targetAmount).doubleValue))
+                    .foregroundStyle(.secondary)
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                    .annotation(position: .top, alignment: .leading) {
+                        Text("Budget").font(.caption2).foregroundStyle(.secondary)
+                    }
+            }
+            .chartXAxis { AxisMarks(values: .stride(by: .month)) { _ in
+                AxisValueLabel(format: .dateTime.month(.narrow))
+            } }
+            .frame(height: 180)
+        }
+        Section("This Month") {
+            if thisMonthTransactions.isEmpty {
+                Text("No transactions in this category yet.").font(.caption).foregroundStyle(.secondary)
+            } else {
+                ForEach(thisMonthTransactions) { t in
+                    HStack {
+                        Text(t.details)
+                        Spacer()
+                        Text(t.amount.formatted(.currency(code: t.currency)))
+                            .foregroundStyle(.secondary).monospacedDigit()
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: Savings
+
+    private var monthlyContributions: [MonthlyValue] {
+        let cal = Calendar.current
+        var totals: [Date: Decimal] = [:]
+        for t in transactions where t.accountId == goal.accountId {
+            // Net contribution = inflow (amount<0) minus outflow (amount>0) for the account.
+            totals[SpendingAnalytics.monthStart(t.date, cal), default: 0] -= t.amount
+        }
+        return SpendingAnalytics.monthRange(months: months, ending: Date(), cal: cal)
+            .map { MonthlyValue(month: $0, value: totals[$0] ?? 0) }
+    }
+
+    @ViewBuilder private var saveContent: some View {
+        Section {
+            SaveRow(goal: goal, account: account)
+            if let date = goal.startingDate, let start = goal.startingBalance {
+                Text("Since \(date.formatted(date: .abbreviated, time: .omitted)): started at \(start.formatted(.currency(code: goal.currency)))")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        Section("Monthly Net Contribution") {
+            Chart(monthlyContributions) { point in
+                BarMark(
+                    x: .value("Month", point.month, unit: .month),
+                    y: .value("Net", NSDecimalNumber(decimal: point.value).doubleValue)
+                )
+                .foregroundStyle(point.value >= 0 ? Color.green : Color.red)
+                .cornerRadius(4)
+            }
+            .chartXAxis { AxisMarks(values: .stride(by: .month)) { _ in
+                AxisValueLabel(format: .dateTime.month(.narrow))
+            } }
+            .frame(height: 180)
+        }
+    }
+
+    private func delete() {
+        Task {
+            do { try await env.goals(context).delete(id: goal.id); dismiss() }
+            catch { errorText = errorMessage(error) }
+        }
+    }
+}

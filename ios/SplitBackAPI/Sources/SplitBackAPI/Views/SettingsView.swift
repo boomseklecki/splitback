@@ -98,6 +98,14 @@ struct SettingsView: View {
                     }
                 }
 
+                Section("Spending") {
+                    NavigationLink {
+                        CategoryMappingView()
+                    } label: {
+                        Label("Spending Categories", systemImage: "tag")
+                    }
+                }
+
                 Section("Linked Banks") {
                     ForEach(items, id: \.id) { item in
                         NavigationLink {

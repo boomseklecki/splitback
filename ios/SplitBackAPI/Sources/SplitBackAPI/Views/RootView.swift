@@ -17,8 +17,8 @@ public struct RootView: View {
                 .tabItem { Label("Accounts", systemImage: "building.columns.fill") }
             GroupsListView()
                 .tabItem { Label("Splits", systemImage: "person.2.fill") }
-            BudgetView()
-                .tabItem { Label("Budget", systemImage: "chart.pie.fill") }
+            GoalsView()
+                .tabItem { Label("Goals", systemImage: "target") }
             SettingsView()
                 .tabItem { Label("Settings", systemImage: "gearshape.fill") }
         }

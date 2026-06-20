@@ -59,6 +59,21 @@ struct TransactionsView: View {
                 ToolbarItem(placement: .primaryAction) {
                     Button { showingManual = true } label: { Image(systemName: "plus") }
                 }
+            } else if let account {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Section("Goals") {
+                            Toggle("Include in spending", isOn: Binding(
+                                get: { account.countsInSpending },
+                                set: { setFlags(account, includeInSpending: $0) }))
+                            Toggle("Include in cash flow", isOn: Binding(
+                                get: { account.countsInCashFlow },
+                                set: { setFlags(account, includeInCashFlow: $0) }))
+                        }
+                    } label: {
+                        Image(systemName: "slider.horizontal.3")
+                    }
+                }
             }
         }
         .sheet(isPresented: $showingManual) { ManualTransactionView() }
@@ -68,6 +83,18 @@ struct TransactionsView: View {
             catch { errorText = errorMessage(error) }
         }
         .errorAlert($errorText)
+    }
+
+    /// Persists one inclusion override (the unspecified flag is left untouched server-side).
+    private func setFlags(_ account: Account, includeInSpending: Bool? = nil,
+                          includeInCashFlow: Bool? = nil) {
+        Task {
+            do {
+                try await env.accounts(context).updateFlags(
+                    id: account.id, includeInSpending: includeInSpending,
+                    includeInCashFlow: includeInCashFlow)
+            } catch { errorText = errorMessage(error) }
+        }
     }
 }
 
