@@ -122,8 +122,19 @@ struct ExpenseDetailView: View {
             if !expense.items.isEmpty {
                 Section("Items") {
                     ForEach(expense.items) { item in
-                        HStack {
-                            Text(item.name)
+                        HStack(spacing: 10) {
+                            Image(systemName: categorySymbol(item.category))
+                                .foregroundStyle(categoryColor(item.category)).frame(width: 22)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.name)
+                                HStack(spacing: 4) {
+                                    if let category = item.category { Text(category) }
+                                    if let owner = item.ownerIdentifier {
+                                        Text("· \(nameOrYou(owner))")
+                                    }
+                                }
+                                .font(.caption).foregroundStyle(.secondary)
+                            }
                             Spacer()
                             Text(currency(item.price))
                         }

@@ -27,6 +27,7 @@ struct ExpenseEditView: View {
            sort: \ExpenseGroup.name)
     private var groups: [ExpenseGroup]
     @Query private var allMembers: [GroupMember]
+    @Query(sort: \SpendCategory.position) private var spendCategories: [SpendCategory]
 
     @State private var myNets: [UUID: Decimal] = [:]
     @State private var lastExpense: [UUID: GroupSummary.Last] = [:]
@@ -46,13 +47,19 @@ struct ExpenseEditView: View {
     @State private var percents: [String: String] = [:]
     @State private var shareCounts: [String: String] = [:]
     @State private var adjustments: [String: String] = [:]
-    @State private var itemOwners: [Int: String] = [:]
     @State private var participants: [String]
     @State private var items: [ItemDraft]
     @State private var transactionId: UUID?
-    @State private var showingCategoryPicker = false
+    @State private var categoryTarget: CategoryTarget?
+    @State private var categorizingItems = false
     @State private var saving = false
     @State private var errorText: String?
+
+    /// Which category the picker is editing — the expense's, or a line item's (by index).
+    private enum CategoryTarget: Identifiable {
+        case expense, item(Int)
+        var id: String { switch self { case .expense: "expense"; case let .item(i): "item-\(i)" } }
+    }
 
     init(group: ExpenseGroup, members: [String], editing: Expense? = nil,
          prefill: ExpensePrefill? = nil, attachImageData: Data? = nil) {
@@ -133,8 +140,8 @@ struct ExpenseEditView: View {
     /// Per-person total of the line items assigned to them (itemized mode).
     private var assignedItemTotals: [String: Decimal] {
         var totals: [String: Decimal] = [:]
-        for (index, item) in items.enumerated() {
-            if let owner = itemOwners[index] { totals[owner, default: 0] += item.price }
+        for item in items {
+            if let owner = item.owner { totals[owner, default: 0] += item.price }
         }
         return totals
     }
@@ -205,6 +212,75 @@ struct ExpenseEditView: View {
         Binding(get: { map.wrappedValue[key, default: ""] }, set: { map.wrappedValue[key] = $0 })
     }
 
+    /// One editable line item: name, price, a category capsule, and (itemized mode) an owner picker.
+    @ViewBuilder
+    private func itemRow(_ index: Int) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                TextField("Item", text: itemBinding(index, \.name))
+                Spacer()
+                Text("$").foregroundStyle(.secondary)
+                TextField("0.00", text: itemPriceBinding(index))
+                    .keyboardType(.decimalPad).multilineTextAlignment(.trailing).frame(width: 70)
+            }
+            HStack(spacing: 12) {
+                Button { categoryTarget = .item(index) } label: {
+                    let category = items.indices.contains(index) ? items[index].category : nil
+                    HStack(spacing: 4) {
+                        Image(systemName: categorySymbol(category)).font(.caption)
+                        Text(category ?? "Category").font(.caption)
+                            .foregroundStyle(category == nil ? .secondary : .primary)
+                    }
+                }
+                .buttonStyle(.borderless)
+                Spacer()
+                if mode == .itemized {
+                    Picker("Assigned to", selection: itemOwnerBinding(index)) {
+                        Text("Shared").tag("")
+                        ForEach(participants, id: \.self) { Text(displayName($0)).tag($0) }
+                    }
+                    .labelsHidden().font(.caption)
+                }
+            }
+        }
+    }
+
+    private func itemBinding(_ index: Int, _ keyPath: WritableKeyPath<ItemDraft, String>) -> Binding<String> {
+        Binding(
+            get: { items.indices.contains(index) ? items[index][keyPath: keyPath] : "" },
+            set: { if items.indices.contains(index) { items[index][keyPath: keyPath] = $0 } }
+        )
+    }
+    private func itemPriceBinding(_ index: Int) -> Binding<String> {
+        Binding(
+            get: { items.indices.contains(index) && items[index].price != 0 ? Mapping.decimalString(items[index].price) : "" },
+            set: { if items.indices.contains(index) { items[index].price = decimal($0) } }
+        )
+    }
+    private func itemOwnerBinding(_ index: Int) -> Binding<String> {
+        Binding(
+            get: { items.indices.contains(index) ? (items[index].owner ?? "") : "" },
+            set: { if items.indices.contains(index) { items[index].owner = $0.isEmpty ? nil : $0 } }
+        )
+    }
+
+    /// On-device categorization of named line items by their name (Apple Intelligence).
+    private func categorizeItems() async {
+        categorizingItems = true
+        defer { categorizingItems = false }
+        var idToIndex: [UUID: Int] = [:]
+        var mapperItems: [CategoryMapper.Item] = []
+        for (index, item) in items.enumerated() where !item.name.isEmpty {
+            let tempId = UUID()
+            idToIndex[tempId] = index
+            mapperItems.append(.init(id: tempId, description: item.name, rawCategory: item.category))
+        }
+        let refined = await CategoryMapper.refine(mapperItems, allowed: spendCategories.map(\.name))
+        for (id, category) in refined {
+            if let index = idToIndex[id], items.indices.contains(index) { items[index].category = category }
+        }
+    }
+
     /// The trailing input for one participant, per split mode. Computed-only modes show the owed amount.
     @ViewBuilder
     private func splitInput(_ person: String) -> some View {
@@ -263,7 +339,7 @@ struct ExpenseEditView: View {
                 Section {
                     HStack(spacing: 12) {
                         if mode != .reimbursement && mode != .settleUp {
-                            Button { showingCategoryPicker = true } label: {
+                            Button { categoryTarget = .expense } label: {
                                 Image(systemName: categorySymbol(category))
                                     .font(.title3)
                                     .foregroundStyle(.secondary)
@@ -284,27 +360,19 @@ struct ExpenseEditView: View {
                     TextField("Notes", text: $notes, axis: .vertical)
                 }
 
-                if !items.isEmpty {
-                    Section("Items") {
-                        ForEach(items.indices, id: \.self) { index in
-                            VStack(alignment: .leading, spacing: 4) {
-                                HStack {
-                                    Text(items[index].name)
-                                    Spacer()
-                                    Text(items[index].price.formatted(.currency(code: "USD")))
-                                        .foregroundStyle(.secondary)
-                                }
-                                if mode == .itemized {
-                                    Picker("Assigned to", selection: Binding(
-                                        get: { itemOwners[index] ?? "" },
-                                        set: { itemOwners[index] = $0.isEmpty ? nil : $0 }
-                                    )) {
-                                        Text("Unassigned").tag("")
-                                        ForEach(participants, id: \.self) { Text(displayName($0)).tag($0) }
-                                    }
-                                    .font(.caption)
-                                }
+                if mode != .reimbursement && mode != .settleUp {
+                    Section("Line Items") {
+                        ForEach(items.indices, id: \.self) { index in itemRow(index) }
+                            .onDelete { items.remove(atOffsets: $0) }
+                        Button { items.append(ItemDraft(name: "", price: 0)) } label: {
+                            Label("Add Item", systemImage: "plus")
+                        }
+                        if CategoryMapper.isAvailable && items.contains(where: { !$0.name.isEmpty }) {
+                            Button { Task { await categorizeItems() } } label: {
+                                Label(categorizingItems ? "Categorizing…" : "Categorize Items",
+                                      systemImage: "sparkles")
                             }
+                            .disabled(categorizingItems)
                         }
                     }
                 }
@@ -374,8 +442,15 @@ struct ExpenseEditView: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) { Button("Save", action: save).disabled(!canSave) }
             }
-            .sheet(isPresented: $showingCategoryPicker) {
-                CategoryPickerView(current: category) { category = $0 }
+            .sheet(item: $categoryTarget) { target in
+                switch target {
+                case .expense:
+                    CategoryPickerView(current: category) { category = $0 }
+                case let .item(index):
+                    if items.indices.contains(index) {
+                        CategoryPickerView(current: items[index].category) { items[index].category = $0 }
+                    }
+                }
             }
             .task {
                 guard editing == nil else { return }
@@ -477,7 +552,8 @@ struct ExpenseEditView: View {
         payer = (env.currentUser?.identifier).flatMap { members.contains($0) ? $0 : nil } ?? members.first ?? ""
         multiPayer = false; paidBy = [:]
         settleUpTo = members.first { $0 != payer } ?? ""
-        customOwed = [:]; percents = [:]; shareCounts = [:]; adjustments = [:]; itemOwners = [:]
+        customOwed = [:]; percents = [:]; shareCounts = [:]; adjustments = [:]
+        for i in items.indices { items[i].owner = nil }  // owners key on the old group's members
         if !availableModes.contains(mode) { mode = .equal }
     }
 
