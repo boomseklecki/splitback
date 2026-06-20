@@ -8,10 +8,13 @@ struct TransactionsView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.modelContext) private var context
     @Query private var transactions: [Transaction]
+    @Query private var categoryMaps: [CategoryMap]
 
     @State private var showingManual = false
     @State private var selected: Transaction?
     @State private var errorText: String?
+
+    private var lookup: [String: String] { CategoryMapping.lookup(categoryMaps) }
 
     init(account: Account? = nil) {
         self.account = account
@@ -40,11 +43,17 @@ struct TransactionsView: View {
             }
             ForEach(transactions) { transaction in
                 Button { selected = transaction } label: {
-                    HStack {
+                    let category = CategoryMapping.effectiveCategory(for: transaction, lookup: lookup)
+                    HStack(spacing: 12) {
+                        Image(systemName: categorySymbol(category))
+                            .foregroundStyle(categoryColor(category)).frame(width: 26)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(transaction.details).foregroundStyle(.primary)
-                            Text(transaction.date.formatted(date: .abbreviated, time: .omitted))
-                                .font(.caption).foregroundStyle(.secondary)
+                            HStack(spacing: 4) {
+                                Text(transaction.date.formatted(date: .abbreviated, time: .omitted))
+                                if let category { Text("· \(category)") }
+                            }
+                            .font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
                         Text(transaction.amount.formatted(.currency(code: transaction.currency)))

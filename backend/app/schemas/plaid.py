@@ -40,6 +40,9 @@ class ExchangeResponse(BaseModel):
 
 class SyncRequest(BaseModel):
     item_id: UUID | None = None
+    # When true, clears the saved cursor first so transactions are re-pulled from scratch (used to
+    # backfill fields like category after a mapping change).
+    reset: bool = False
 
 
 class SyncResponse(BaseModel):

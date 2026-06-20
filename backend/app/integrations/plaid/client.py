@@ -36,8 +36,20 @@ def _normalize_account(account: dict) -> dict:
     }
 
 
+def _transaction_category(transaction: dict) -> str | None:
+    """Plaid's category. Prefers the current `personal_finance_category` taxonomy (the legacy
+    `category` array is deprecated and comes back null on modern items) — `detailed` first so we can
+    tell e.g. groceries from restaurants, then `primary`, then the legacy array as a last resort."""
+    pfc = transaction.get("personal_finance_category") or {}
+    if isinstance(pfc, dict):
+        detailed = pfc.get("detailed") or pfc.get("primary")
+        if detailed:
+            return detailed
+    legacy = transaction.get("category")
+    return legacy[0] if isinstance(legacy, list) and legacy else None
+
+
 def _normalize_transaction(transaction: dict) -> dict:
-    category = transaction.get("category")
     return {
         "plaid_transaction_id": transaction.get("transaction_id"),
         "plaid_account_id": transaction.get("account_id"),
@@ -45,7 +57,7 @@ def _normalize_transaction(transaction: dict) -> dict:
         "amount": transaction.get("amount"),
         "currency": transaction.get("iso_currency_code") or "USD",
         "date": transaction.get("date"),
-        "category": category[0] if isinstance(category, list) and category else None,
+        "category": _transaction_category(transaction),
         "pending": transaction.get("pending", False),
     }
 

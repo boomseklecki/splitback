@@ -86,6 +86,11 @@ async def run_sync(
     if not items:
         raise HTTPException(status_code=404, detail="No Plaid items to sync")
 
+    if body and body.reset:
+        for item in items:
+            item.transactions_cursor = None
+        await session.flush()
+
     client = plaid_client.make_client()
     totals = {"accounts": 0, "added": 0, "modified": 0, "removed": 0}
     for item in items:
