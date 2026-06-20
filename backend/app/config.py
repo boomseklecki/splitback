@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     plaid_products: str = "transactions"
     plaid_country_codes: str = "US"
     plaid_language: str = "en"
+    # OAuth redirect URI for Plaid Link (required by most production banks). Must be registered in the
+    # Plaid dashboard AND handled by the iOS app. Leave blank for sandbox / non-OAuth — only passed
+    # to link-token creation when set (an unregistered value breaks ALL link tokens).
+    plaid_redirect_uri: str = ""
 
     # Splitwise (server-side only) — consumer key/secret act as the OAuth2 client id/secret
     splitwise_consumer_key: str = ""

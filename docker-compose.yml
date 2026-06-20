@@ -72,8 +72,12 @@ services:
     env_file:
       - .env
     environment:
-      # Override only the DB target; reuse the shared MinIO + all other settings from .env.
+      # Override the DB target + force open auth so the integration suite (which calls endpoints
+      # without a token) isn't affected by a production AUTH_REQUIRED=true in .env. Auth enforcement
+      # itself is covered by tests that monkeypatch settings. Everything else reused from .env.
       DATABASE_URL: postgresql+asyncpg://splitback:splitback@db-test:5432/splitback
+      AUTH_REQUIRED: "false"
+      API_TOKENS: "{}"
     depends_on:
       db-test:
         condition: service_healthy

@@ -67,14 +67,17 @@ class PlaidClient:
         self._api = _build_api()
 
     def create_link_token(self, user_identifier: str) -> str:
-        request = LinkTokenCreateRequest(
+        kwargs = dict(
             user=LinkTokenCreateRequestUser(client_user_id=user_identifier),
             client_name=settings.app_name,
             products=[Products(p.strip()) for p in settings.plaid_products.split(",")],
             country_codes=[CountryCode(c.strip()) for c in settings.plaid_country_codes.split(",")],
             language=settings.plaid_language,
         )
-        return self._api.link_token_create(request).to_dict()["link_token"]
+        # Only include redirect_uri when configured — an unregistered value rejects every link token.
+        if settings.plaid_redirect_uri:
+            kwargs["redirect_uri"] = settings.plaid_redirect_uri
+        return self._api.link_token_create(LinkTokenCreateRequest(**kwargs)).to_dict()["link_token"]
 
     def exchange_public_token(self, public_token: str) -> tuple[str, str]:
         response = self._api.item_public_token_exchange(
