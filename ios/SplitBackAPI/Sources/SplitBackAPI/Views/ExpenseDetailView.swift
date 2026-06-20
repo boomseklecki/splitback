@@ -12,8 +12,10 @@ struct ExpenseDetailView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     @Query private var users: [User]
+    @Query(sort: \SpendCategory.position) private var spendCategories: [SpendCategory]
 
     @State private var showingEdit = false
+    @State private var editPrefill: ExpensePrefill?
     @State private var showingCategoryPicker = false
     @State private var showingSplitwiseReceipt = false
     @State private var confirmingDelete = false
@@ -22,6 +24,10 @@ struct ExpenseDetailView: View {
     @State private var pickedPhoto: PhotosPickerItem?
     @State private var uploading = false
     @State private var viewingReceipt: Receipt?
+    @State private var extractAvailable = false
+    @State private var extracting = false
+
+    private var hasReceipt: Bool { expense.receipts.first != nil || expense.splitwiseReceiptURL != nil }
 
     private var meIdentifier: String? { env.currentUser?.identifier }
     private var isSettleUp: Bool { expense.category == SettleUp.category }
@@ -164,6 +170,13 @@ struct ExpenseDetailView: View {
                     Label(uploading ? "Uploading…" : "Add Receipt", systemImage: "paperclip")
                 }
                 .disabled(uploading)
+                if extractAvailable && hasReceipt {
+                    Button { Task { await extractItems() } } label: {
+                        Label(extracting ? "Reading receipt…" : "Extract Items from Receipt",
+                              systemImage: "sparkles")
+                    }
+                    .disabled(extracting)
+                }
             }
 
             Section {
@@ -193,12 +206,13 @@ struct ExpenseDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button("Edit") { showingEdit = true }
+                Button("Edit") { editPrefill = nil; showingEdit = true }
             }
         }
+        .task { extractAvailable = ReceiptExtractor().isAvailable }
         .sheet(isPresented: $showingEdit) {
             if let group {
-                ExpenseEditView(group: group, members: [], editing: expense)
+                ExpenseEditView(group: group, members: [], editing: expense, prefill: editPrefill)
             }
         }
         .sheet(isPresented: $showingCategoryPicker) {
@@ -286,6 +300,35 @@ struct ExpenseDetailView: View {
             do { try await env.expenses(context).updateCategory(id: id, category: category, updatedBy: me) }
             catch { errorText = errorMessage(error) }
         }
+    }
+
+    /// Run OCR + on-device extraction on the expense's existing receipt and open the editor with the
+    /// extracted line items appended for review.
+    private func extractItems() async {
+        extracting = true
+        defer { extracting = false }
+        guard let image = await receiptImage() else {
+            errorText = "Couldn't load the receipt image."
+            return
+        }
+        do {
+            let text = try await ReceiptOCR.recognizeText(in: image)
+            let extraction = try await ReceiptExtractor().extract(from: text, categories: spendCategories.map(\.name))
+            editPrefill = .from(extraction)
+            showingEdit = true
+        } catch {
+            errorText = errorMessage(error)
+        }
+    }
+
+    private func receiptImage() async -> UIImage? {
+        if let receipt = expense.receipts.first {
+            return await ReceiptImageStore.shared.image(for: receipt.id, using: env.receipts(context))
+        }
+        if expense.splitwiseReceiptURL != nil {
+            return await SplitwiseReceiptImageStore.shared.image(expenseId: expense.id)
+        }
+        return nil
     }
 
     private func upload(_ images: [Data]) {

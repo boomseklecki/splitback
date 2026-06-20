@@ -87,10 +87,13 @@ struct ExpenseEditView: View {
         var owed: [String: String] = [:]
         for split in editing?.splits ?? [] { owed[split.userIdentifier] = Mapping.decimalString(split.owedShare) }
         _customOwed = State(initialValue: owed)
-        let seedItems = editing?.items.map {
+        // Seed from the edited expense's items, plus any prefill items (a fresh scan, or items extracted
+        // from an existing receipt being reviewed). The user prunes duplicates in the editor.
+        let existingItems = editing?.items.map {
             ItemDraft(id: $0.id, name: $0.name, quantity: $0.quantity, price: $0.price,
                       category: $0.category, owner: $0.ownerIdentifier)
-        } ?? prefill?.items ?? []
+        } ?? []
+        let seedItems = existingItems + (prefill?.items ?? [])
         _items = State(initialValue: seedItems)
         _transactionId = State(initialValue: editing?.transactionId ?? prefill?.transactionId)
         // Preserve a stored split when editing (Reimbursement / Settle-up if marked, else Exact); new
