@@ -338,7 +338,7 @@ struct ExpenseEditView: View {
 
     private func groupLabel(chevron: Bool) -> some View {
         HStack(spacing: 8) {
-            AvatarView(url: group.avatarURL, name: group.name, size: 28)
+            AvatarView(url: group.avatarURL, name: group.name, size: 28, systemImage: group.typeSymbol)
             Text(group.name).font(.headline)
             if chevron { Image(systemName: "chevron.up.chevron.down").font(.caption2) }
         }
