@@ -2,12 +2,14 @@ import SwiftUI
 import SwiftData
 
 /// Add, rename, delete, and re-icon the canonical categories (full control — built-ins included).
-/// A category can't be deleted while source categories (Bank/Splitwise) map to it; the dependents
-/// sheet lists those mappings and lets you reassign them first.
+/// A category can't be deleted while source categories (Bank/Splitwise) map to it — through a manual
+/// override or the built-in deterministic maps. The dependents sheet lists those and lets you reassign.
 struct ManageCategoriesView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.modelContext) private var context
     @Query(sort: \SpendCategory.position) private var categories: [SpendCategory]
+    @Query private var transactions: [Transaction]
+    @Query private var expenses: [Expense]
     @Query private var categoryMaps: [CategoryMap]
 
     @State private var sheet: Sheet?
@@ -24,12 +26,11 @@ struct ManageCategoriesView: View {
         }
     }
 
-    private func dependentCount(_ category: SpendCategory) -> Int {
-        categoryMaps.filter { $0.canonicalCategory == category.name }.count
-    }
-
     var body: some View {
-        List {
+        // Reverse map (canonical → source labels) built once per render, not per row.
+        let dependents = CategoryDependents.grouped(transactions: transactions, expenses: expenses,
+                                                    categoryMaps: categoryMaps)
+        return List {
             Section {
                 ForEach(categories) { category in
                     Button { sheet = .edit(category) } label: {
@@ -38,10 +39,8 @@ struct ManageCategoriesView: View {
                                 .foregroundStyle(categoryColor(category.name)).frame(width: 26)
                             Text(category.name).foregroundStyle(.primary)
                             Spacer()
-                            let used = dependentCount(category)
-                            if used > 0 {
-                                Text("\(used)").font(.caption2).foregroundStyle(.tertiary)
-                            }
+                            let used = dependents[category.name]?.count ?? 0
+                            if used > 0 { Text("\(used)").font(.caption2).foregroundStyle(.tertiary) }
                             if category.builtin {
                                 Text("Built-in").font(.caption2).foregroundStyle(.tertiary)
                             }
@@ -49,9 +48,9 @@ struct ManageCategoriesView: View {
                         }
                     }
                 }
-                .onDelete(perform: delete)
+                .onDelete { offsets in delete(offsets, dependents: dependents) }
             } footer: {
-                Text("Add your own categories or rename/delete any. A category can't be deleted while source categories map to it — tap it to reassign those. Renaming a built-in won't update the automatic Plaid/Splitwise mappings that output its name.")
+                Text("Add your own categories or rename/delete any. A category can't be deleted while Bank or Splitwise categories map to it — tap it to reassign those first.")
             }
         }
         .navigationTitle("Manage Categories")
@@ -70,9 +69,9 @@ struct ManageCategoriesView: View {
         .errorAlert($errorText)
     }
 
-    private func delete(_ offsets: IndexSet) {
+    private func delete(_ offsets: IndexSet, dependents: [String: [CategoryDependent]]) {
         for category in offsets.map({ categories[$0] }) {
-            if dependentCount(category) > 0 {
+            if dependents[category.name]?.isEmpty == false {
                 sheet = .dependents(category)  // reassign the mappings first
                 return
             }
@@ -85,7 +84,7 @@ struct ManageCategoriesView: View {
     }
 }
 
-/// Lists the source categories (Bank/Splitwise) currently mapped to `category`, each reassignable, and
+/// Lists the source categories (Bank/Splitwise) that resolve to `category`, each reassignable, and
 /// allows deleting the category once none remain.
 struct CategoryDependentsView: View {
     let category: SpendCategory
@@ -93,12 +92,14 @@ struct CategoryDependentsView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
+    @Query private var transactions: [Transaction]
+    @Query private var expenses: [Expense]
     @Query private var categoryMaps: [CategoryMap]
     @State private var errorText: String?
 
-    private var dependents: [CategoryMap] {
-        categoryMaps.filter { $0.canonicalCategory == category.name }
-            .sorted { $0.rawCategory < $1.rawCategory }
+    private var dependents: [CategoryDependent] {
+        CategoryDependents.of(category.name, transactions: transactions, expenses: expenses,
+                              categoryMaps: categoryMaps)
     }
 
     var body: some View {
@@ -106,10 +107,10 @@ struct CategoryDependentsView: View {
             List {
                 Section {
                     if dependents.isEmpty {
-                        Text("No source categories map here anymore.")
+                        Text("No Bank or Splitwise categories map here anymore.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
-                    ForEach(dependents) { MappingReassignRow(map: $0) }
+                    ForEach(dependents) { MappingReassignRow(dependent: $0, currentCanonical: category.name) }
                 } header: {
                     Text("Mapped to \(category.name)")
                 } footer: {
@@ -139,40 +140,35 @@ struct CategoryDependentsView: View {
     }
 }
 
-/// One source→canonical mapping, tappable to reassign it via the category picker.
+/// One source→canonical mapping, tappable to reassign it (writes/updates a `category_map` override).
 struct MappingReassignRow: View {
-    let map: CategoryMap
+    let dependent: CategoryDependent
+    let currentCanonical: String
 
     @Environment(AppEnvironment.self) private var env
     @Environment(\.modelContext) private var context
     @State private var picking = false
     @State private var errorText: String?
 
-    /// Plaid labels are SCREAMING_SNAKE; anything else is a Splitwise name.
-    private var isBankLabel: Bool {
-        map.rawCategory == map.rawCategory.uppercased() && map.rawCategory.contains("_")
-    }
-    private var label: String { isBankLabel ? PlaidCategory.humanized(map.rawCategory) : map.rawCategory }
-
     var body: some View {
         Button { picking = true } label: {
             HStack(spacing: 10) {
-                Image(systemName: isBankLabel ? "building.columns" : "person.2")
+                Image(systemName: dependent.icon)
                     .font(.caption2).foregroundStyle(.tertiary).frame(width: 18)
-                Text(label).foregroundStyle(.primary)
+                Text(dependent.label).foregroundStyle(.primary)
                 Spacer()
-                Text(map.canonicalCategory).foregroundStyle(.secondary)
                 Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
             }
         }
         .sheet(isPresented: $picking) {
-            CategoryPickerView(current: map.canonicalCategory) { reassign(to: $0) }
+            CategoryPickerView(current: currentCanonical) { reassign(to: $0) }
         }
         .errorAlert($errorText)
     }
 
     private func reassign(to canonical: String) {
-        let raw = map.rawCategory
+        guard canonical != currentCanonical else { return }
+        let raw = dependent.raw
         Task {
             do { try await env.categoryMaps(context).set(raw: raw, canonical: canonical, source: "manual") }
             catch { errorText = errorMessage(error) }
@@ -180,13 +176,15 @@ struct MappingReassignRow: View {
     }
 }
 
-/// Create or edit one category: name + a grid of SF Symbol icons, plus the mappings that point here.
+/// Create or edit one category: name + a grid of SF Symbol icons, plus the source categories that map here.
 struct CategoryEditView: View {
     let editing: SpendCategory?  // nil = create
 
     @Environment(AppEnvironment.self) private var env
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
+    @Query private var transactions: [Transaction]
+    @Query private var expenses: [Expense]
     @Query private var categoryMaps: [CategoryMap]
 
     @State private var name: String
@@ -201,10 +199,10 @@ struct CategoryEditView: View {
     }
 
     private var canSave: Bool { !name.trimmingCharacters(in: .whitespaces).isEmpty && !saving }
-    private var dependents: [CategoryMap] {
+    private var dependents: [CategoryDependent] {
         guard let editing else { return [] }
-        return categoryMaps.filter { $0.canonicalCategory == editing.name }
-            .sorted { $0.rawCategory < $1.rawCategory }
+        return CategoryDependents.of(editing.name, transactions: transactions, expenses: expenses,
+                                     categoryMaps: categoryMaps)
     }
 
     var body: some View {
@@ -232,17 +230,12 @@ struct CategoryEditView: View {
 
                 if !dependents.isEmpty {
                     Section {
-                        ForEach(dependents) { MappingReassignRow(map: $0) }
+                        ForEach(dependents) { MappingReassignRow(dependent: $0, currentCanonical: editing?.name ?? "") }
                     } header: {
-                        Text("Used by \(dependents.count) mapping\(dependents.count == 1 ? "" : "s")")
+                        Text("Mapped here (\(dependents.count))")
                     } footer: {
-                        Text("Source categories currently mapped to “\(editing?.name ?? "")”.")
+                        Text("Bank and Splitwise categories that currently resolve to “\(editing?.name ?? "")”. Tap to reassign.")
                     }
-                }
-
-                if editing?.builtin == true {
-                    Text("Built-in category. Renaming it won't update the automatic Plaid/Splitwise mappings that output its name.")
-                        .font(.caption).foregroundStyle(.secondary)
                 }
             }
             .navigationTitle(editing == nil ? "New Category" : "Edit Category")

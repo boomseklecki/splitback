@@ -18,10 +18,11 @@ final class GoalsAnalyticsTests: XCTestCase {
 
     /// An expense with a single split for `me` owing `owed`, optionally linked to a transaction/archived.
     private func expense(_ amount: Decimal, category: String?, me: String = "me", owed: Decimal,
-                         transactionId: UUID? = nil, archived: Date? = nil,
+                         transactionId: UUID? = nil, splitwiseId: String? = nil, archived: Date? = nil,
                          date: Date = Date(), details: String = "e") -> Expense {
         let split = Split(id: UUID(), userIdentifier: me, paidShare: amount, owedShare: owed)
-        return Expense(id: UUID(), groupId: UUID(), transactionId: transactionId, details: details,
+        return Expense(id: UUID(), groupId: UUID(), transactionId: transactionId,
+                       splitwiseExpenseId: splitwiseId, details: details,
                        amount: amount, currency: "USD", date: date, category: category,
                        archivedAt: archived, createdAt: Date(), updatedAt: Date(), splits: [split])
     }
@@ -232,6 +233,31 @@ final class GoalsAnalyticsTests: XCTestCase {
         XCTAssertEqual(result.count, 1)
         XCTAssertEqual(result.first?.category, "Dining")
         XCTAssertEqual(result.first?.total, 50)  // not fragmented into a separate "Dining out" slice
+    }
+
+    func testCategoryDependentsReverseMapping() {
+        let checking = account(type: "checking")
+        // A Plaid label that resolves to Dining via the built-in primary map (no override row),
+        let txns = [
+            txn(5, category: "FOOD_AND_DRINK_COFFEE", account: checking),
+            txn(5, category: "FOOD_AND_DRINK_GROCERIES", account: checking),  // -> Groceries
+        ]
+        // a Splitwise name that resolves to Dining via the deterministic Splitwise map,
+        let exps = [expense(10, category: "Dining out", owed: 10, splitwiseId: "sw1"),
+                    expense(10, category: "Settle-up", owed: 10, splitwiseId: "sw2")]  // excluded
+        let grouped = CategoryDependents.grouped(transactions: txns, expenses: exps, categoryMaps: [])
+        let dining = (grouped["Dining"] ?? []).map(\.raw).sorted()
+        XCTAssertEqual(dining, ["Dining out", "FOOD_AND_DRINK_COFFEE"])  // built-in links, not just overrides
+        XCTAssertEqual(grouped["Groceries"]?.map(\.raw), ["FOOD_AND_DRINK_GROCERIES"])
+        XCTAssertNil(grouped["Settle-up"])  // settle-up excluded
+
+        // An override re-points a label to a different canonical, moving it in the reverse map.
+        let maps = [CategoryMap(id: UUID(), rawCategory: "FOOD_AND_DRINK_COFFEE",
+                                canonicalCategory: "Household", source: "manual",
+                                createdAt: Date(), updatedAt: Date())]
+        let grouped2 = CategoryDependents.grouped(transactions: txns, expenses: exps, categoryMaps: maps)
+        XCTAssertEqual(grouped2["Dining"]?.map(\.raw), ["Dining out"])
+        XCTAssertEqual(grouped2["Household"]?.map(\.raw), ["FOOD_AND_DRINK_COFFEE"])
     }
 
     // MARK: GoalProgress
