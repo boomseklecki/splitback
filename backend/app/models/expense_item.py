@@ -19,5 +19,10 @@ class ExpenseItem(UUIDMixin, TimestampMixin, Base):
     quantity: Mapped[Decimal] = mapped_column(Numeric(10, 3), nullable=False, default=1)
     price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     category: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # Budget attribution: the participant this item is assigned to (null = shared/split).
+    owner_identifier: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Provenance (added-by / edited-by; added-on / edited-on are created_at / updated_at).
+    created_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    updated_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     expense: Mapped["Expense"] = relationship(back_populates="items")  # noqa: F821

@@ -4046,6 +4046,11 @@
       },
       "ItemInput": {
         "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
           "name": {
             "type": "string",
             "title": "Name"
@@ -4064,6 +4069,10 @@
           "category": {
             "type": "string",
             "title": "Category"
+          },
+          "owner_identifier": {
+            "type": "string",
+            "title": "Owner Identifier"
           }
         },
         "type": "object",
@@ -4097,6 +4106,28 @@
           "category": {
             "type": "string",
             "title": "Category"
+          },
+          "owner_identifier": {
+            "type": "string",
+            "title": "Owner Identifier"
+          },
+          "created_by": {
+            "type": "string",
+            "title": "Created By"
+          },
+          "updated_by": {
+            "type": "string",
+            "title": "Updated By"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
           }
         },
         "type": "object",
@@ -4104,7 +4135,9 @@
           "id",
           "name",
           "quantity",
-          "price"
+          "price",
+          "created_at",
+          "updated_at"
         ],
         "title": "ItemResponse"
       },

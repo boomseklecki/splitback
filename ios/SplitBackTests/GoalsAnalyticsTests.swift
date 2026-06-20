@@ -287,6 +287,34 @@ final class GoalsAnalyticsTests: XCTestCase {
         XCTAssertEqual(grouped2["Household"]?.map(\.raw), ["FOOD_AND_DRINK_COFFEE"])
     }
 
+    func testItemizedAttribution() {
+        let checking = account(type: "checking")
+        let me = "me"
+        // $100 expense (category Shopping). Items: Groceries $40 + Personal Care $30 assigned to me,
+        // Snacks $20 unassigned, $10 non-item remainder (tax). Two participants; the $30 shared pool
+        // (snacks + tax) splits equally → my owed = 70 + 15 = 85.
+        let exp = Expense(
+            id: UUID(), groupId: UUID(), details: "Target run", amount: 100, currency: "USD",
+            date: Date(), category: "Shopping", createdAt: Date(), updatedAt: Date(),
+            splits: [
+                Split(id: UUID(), userIdentifier: me, paidShare: 100, owedShare: 85),
+                Split(id: UUID(), userIdentifier: "friend", paidShare: 0, owedShare: 15),
+            ],
+            items: [
+                ExpenseItem(id: UUID(), name: "Milk", quantity: 1, price: 40, category: "Groceries", ownerIdentifier: me),
+                ExpenseItem(id: UUID(), name: "Soap", quantity: 1, price: 30, category: "Personal Care", ownerIdentifier: me),
+                ExpenseItem(id: UUID(), name: "Chips", quantity: 1, price: 20, category: "Snacks", ownerIdentifier: nil),
+            ])
+        let result = SpendingAnalytics.byCategory(in: Date(), transactions: [], accounts: [checking],
+                                                  lookup: [:], expenses: [exp], me: me)
+        let byCat = Dictionary(result.map { ($0.category, $0.total) }, uniquingKeysWith: { a, _ in a })
+        XCTAssertEqual(byCat["Groceries"], 40)        // assigned to me, full price
+        XCTAssertEqual(byCat["Personal Care"], 30)    // assigned to me, full price
+        XCTAssertEqual(byCat["Snacks"], 10)           // my 15 pool share × 20/30
+        XCTAssertEqual(byCat["Shopping"], 5)          // remainder → expense category, 15 × 10/30
+        XCTAssertEqual(result.reduce(Decimal(0)) { $0 + $1.total }, 85)  // sums to my owed share
+    }
+
     // MARK: GoalProgress
 
     func testBudgetStatusAndFraction() {

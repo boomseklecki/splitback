@@ -68,7 +68,8 @@ final class MappingTests: XCTestCase {
                 .init(id: uuidB, user_identifier: "nikki", paid_share: "0.00", owed_share: "21.25")
             ],
             items: [
-                .init(id: uuidC, name: "Milk", quantity: "2", price: "3.49", category: "dairy")
+                .init(id: uuidC, name: "Milk", quantity: "2", price: "3.49", category: "dairy",
+                      created_at: epoch, updated_at: epoch)
             ],
             receipts: [
                 .init(id: uuidA, expense_id: uuidA, bucket: "receipts", object_key: "k/1.jpg",

@@ -15,10 +15,12 @@ class SplitInput(BaseModel):
 
 
 class ItemInput(BaseModel):
+    id: UUID | None = None  # existing item to update in place (preserves added-by/on); null = new
     name: str
     quantity: Decimal = Decimal(1)
     price: Decimal
     category: str | None = None
+    owner_identifier: str | None = None
 
 
 class ExpenseCreate(BaseModel):
@@ -66,6 +68,11 @@ class ItemResponse(BaseModel):
     quantity: Decimal
     price: Decimal
     category: str | None
+    owner_identifier: str | None
+    created_by: str | None
+    updated_by: str | None
+    created_at: datetime
+    updated_at: datetime
 
 
 class ExpenseResponse(BaseModel):

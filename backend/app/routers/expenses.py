@@ -76,11 +76,39 @@ def _split_rows(splits) -> list[Split]:
     ]
 
 
-def _item_rows(items) -> list[ExpenseItem]:
+def _item_rows(items, created_by: str | None = None) -> list[ExpenseItem]:
     return [
-        ExpenseItem(name=i.name, quantity=i.quantity, price=i.price, category=i.category)
+        ExpenseItem(name=i.name, quantity=i.quantity, price=i.price, category=i.category,
+                    owner_identifier=i.owner_identifier, created_by=created_by)
         for i in items
     ]
+
+
+def _apply_items(expense: Expense, items, editor: str | None) -> None:
+    """Upsert items by id so added-by/added-on survive edits: existing items keep their identity
+    (stamping updated_by only when a field changed), new items (id nil) are stamped with created_by,
+    and items absent from the payload are dropped (delete-orphan)."""
+    existing = {it.id: it for it in expense.items}
+    result: list[ExpenseItem] = []
+    for i in items:
+        current = existing.get(i.id) if i.id is not None else None
+        if current is not None:
+            changed = (
+                current.name != i.name or current.quantity != i.quantity
+                or current.price != i.price or current.category != i.category
+                or current.owner_identifier != i.owner_identifier
+            )
+            current.name = i.name
+            current.quantity = i.quantity
+            current.price = i.price
+            current.category = i.category
+            current.owner_identifier = i.owner_identifier
+            if changed:
+                current.updated_by = editor
+            result.append(current)
+        else:
+            result.append(_item_rows([i], created_by=editor)[0])
+    expense.items = result
 
 
 async def _load_detail(session: AsyncSession, expense_id: UUID) -> Expense | None:
@@ -123,7 +151,7 @@ async def create_expense(
         created_by=body.created_by,
     )
     expense.splits = _split_rows(body.splits)
-    expense.items = _item_rows(body.items)
+    expense.items = _item_rows(body.items, created_by=body.created_by)
     if group.backend_type == BackendType.splitwise:
         # Push-first: create on Splitwise and stamp the returned id before committing.
         await _sync_to_splitwise(session, expense, group, "create")
@@ -210,7 +238,7 @@ async def update_expense(
     if body.splits is not None:
         expense.splits = _split_rows(body.splits)
     if body.items is not None:
-        expense.items = _item_rows(body.items)
+        _apply_items(expense, body.items, body.updated_by)
 
     if target_group.backend_type == BackendType.splitwise:
         # Push the edit; heal a pre-existing phantom (no id yet) by creating instead.

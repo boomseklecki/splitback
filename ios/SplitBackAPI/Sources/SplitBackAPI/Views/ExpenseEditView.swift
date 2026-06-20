@@ -81,7 +81,8 @@ struct ExpenseEditView: View {
         for split in editing?.splits ?? [] { owed[split.userIdentifier] = Mapping.decimalString(split.owedShare) }
         _customOwed = State(initialValue: owed)
         let seedItems = editing?.items.map {
-            ItemDraft(name: $0.name, quantity: $0.quantity, price: $0.price, category: $0.category)
+            ItemDraft(id: $0.id, name: $0.name, quantity: $0.quantity, price: $0.price,
+                      category: $0.category, owner: $0.ownerIdentifier)
         } ?? prefill?.items ?? []
         _items = State(initialValue: seedItems)
         _transactionId = State(initialValue: editing?.transactionId ?? prefill?.transactionId)

@@ -212,7 +212,12 @@ enum Mapping {
             name: r.name,
             quantity: try decimal(r.quantity, field: "ItemResponse.quantity"),
             price: try decimal(r.price, field: "ItemResponse.price"),
-            category: r.category
+            category: r.category,
+            ownerIdentifier: r.owner_identifier,
+            addedBy: r.created_by,
+            editedBy: r.updated_by,
+            addedOn: r.created_at,
+            editedOn: r.updated_at
         )
     }
 
@@ -320,10 +325,12 @@ enum Mapping {
 
     static func itemInput(_ d: ItemDraft) -> Components.Schemas.ItemInput {
         .init(
+            id: d.id?.uuidString,
             name: d.name,
             quantity: decimalString(d.quantity),
             price: decimalString(d.price),
-            category: d.category
+            category: d.category,
+            owner_identifier: d.owner
         )
     }
 
@@ -456,10 +463,12 @@ struct SplitDraft {
 }
 
 struct ItemDraft {
+    var id: UUID? = nil  // existing item (round-trips identity so edits preserve provenance); nil = new
     var name: String
     var quantity: Decimal = 1
     var price: Decimal
     var category: String? = nil
+    var owner: String? = nil
 }
 
 struct UserDraft {

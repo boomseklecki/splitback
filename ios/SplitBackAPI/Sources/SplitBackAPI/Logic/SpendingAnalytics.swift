@@ -74,6 +74,14 @@ enum SpendingAnalytics {
                                                                     : (mySplit?.owedShare ?? 0)
                     guard inflow > 0 else { continue }
                     amount = -inflow
+                } else if !e.items.isEmpty {
+                    // Itemized outflow: attribute your share of each item to its own category.
+                    for c in ItemizedSpend.categoryContributions(for: e, me: me, lookup: lookup) {
+                        events.append(SpendEvent(
+                            id: e.id, date: e.date, label: e.details, category: c.category,
+                            amount: c.amount, countsInSpending: true, countsInCashFlow: true))
+                    }
+                    continue
                 } else {
                     let share = mySplit?.owedShare ?? 0
                     guard share > 0 else { continue }  // you consumed nothing (or aren't in this expense)
