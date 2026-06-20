@@ -138,17 +138,99 @@ struct ExpenseRepository {
     func upsert(_ responses: [Components.Schemas.ExpenseResponse]) throws {
         for r in responses {
             let id = try Mapping.uuid(r.id, field: "Expense.id")
-            if let existing = try context.fetch(
+            let mapped = try Mapping.expense(r)  // fresh, not yet inserted
+            guard let existing = try context.fetch(
                 FetchDescriptor<Expense>(predicate: #Predicate { $0.id == id })
-            ).first {
-                context.delete(existing)
+            ).first else {
+                context.insert(mapped)
+                continue
+            }
+            // Update in place so the Expense (and its unchanged splits/items/receipts) keep their
+            // identity — deleting + re-inserting invalidates objects live views still hold, which
+            // crashes SwiftData ("access a full future backing data … with nil").
+            existing.groupId = mapped.groupId
+            existing.transactionId = mapped.transactionId
+            existing.splitwiseExpenseId = mapped.splitwiseExpenseId
+            existing.details = mapped.details
+            existing.amount = mapped.amount
+            existing.currency = mapped.currency
+            existing.date = mapped.date
+            existing.category = mapped.category
+            existing.createdByIdentifier = mapped.createdByIdentifier
+            existing.updatedByIdentifier = mapped.updatedByIdentifier
+            existing.splitwiseCreatedAt = mapped.splitwiseCreatedAt
+            existing.splitwiseUpdatedAt = mapped.splitwiseUpdatedAt
+            existing.notes = mapped.notes
+            existing.commentsCount = mapped.commentsCount
+            existing.repeats = mapped.repeats
+            existing.repeatInterval = mapped.repeatInterval
+            existing.expenseBundleId = mapped.expenseBundleId
+            existing.splitwiseReceiptURL = mapped.splitwiseReceiptURL
+            existing.splitwiseRepayments = mapped.splitwiseRepayments
+            existing.archivedAt = mapped.archivedAt
+            existing.createdAt = mapped.createdAt
+            existing.updatedAt = mapped.updatedAt
+            reconcileSplits(existing, mapped.splits)
+            reconcileItems(existing, mapped.items)
+            reconcileReceipts(existing, mapped.receipts)
+        }
+        try context.save()
+    }
+
+    /// Reconcile a to-many relationship by `id`: update matched children in place, insert new ones,
+    /// delete removed ones — so unchanged children aren't invalidated out from under live views.
+    private func reconcileSplits(_ expense: Expense, _ incoming: [Split]) {
+        var byId = Dictionary(expense.splits.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var result: [Split] = []
+        for new in incoming {
+            if let current = byId.removeValue(forKey: new.id) {
+                current.userIdentifier = new.userIdentifier
+                current.paidShare = new.paidShare
+                current.owedShare = new.owedShare
+                result.append(current)
+            } else {
+                context.insert(new)
+                result.append(new)
             }
         }
-        try context.save()
+        for removed in byId.values { context.delete(removed) }
+        expense.splits = result
+    }
 
-        for r in responses {
-            context.insert(try Mapping.expense(r))
+    private func reconcileItems(_ expense: Expense, _ incoming: [ExpenseItem]) {
+        var byId = Dictionary(expense.items.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var result: [ExpenseItem] = []
+        for new in incoming {
+            if let current = byId.removeValue(forKey: new.id) {
+                current.name = new.name
+                current.quantity = new.quantity
+                current.price = new.price
+                current.category = new.category
+                result.append(current)
+            } else {
+                context.insert(new)
+                result.append(new)
+            }
         }
-        try context.save()
+        for removed in byId.values { context.delete(removed) }
+        expense.items = result
+    }
+
+    private func reconcileReceipts(_ expense: Expense, _ incoming: [Receipt]) {
+        var byId = Dictionary(expense.receipts.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var result: [Receipt] = []
+        for new in incoming {
+            if let current = byId.removeValue(forKey: new.id) {
+                current.bucket = new.bucket
+                current.objectKey = new.objectKey
+                current.contentType = new.contentType
+                result.append(current)
+            } else {
+                context.insert(new)
+                result.append(new)
+            }
+        }
+        for removed in byId.values { context.delete(removed) }
+        expense.receipts = result
     }
 }
