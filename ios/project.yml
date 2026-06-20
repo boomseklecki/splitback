@@ -53,6 +53,10 @@ targets:
         # capability enabled on the App ID in the Apple Developer portal.
         com.apple.developer.applesignin:
           - Default
+        # Universal Links for the join link (splitback.app/join) and Plaid OAuth redirect
+        # (splitback.app/plaid/oauth, app-handled — resumes Plaid Link, no backend route).
+        com.apple.developer.associated-domains:
+          - applinks:splitback.app
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.splitback.app

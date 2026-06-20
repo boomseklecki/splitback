@@ -158,9 +158,10 @@ struct SettingsView: View {
                     linkToken: session.token,
                     onSuccess: { publicToken in
                         linkSession = nil
+                        PlaidLinkSession.shared.finish()
                         Task { await exchange(publicToken) }
                     },
-                    onExit: { linkSession = nil }
+                    onExit: { linkSession = nil; PlaidLinkSession.shared.finish() }
                 )
                 .ignoresSafeArea()
             }
@@ -200,8 +201,11 @@ struct SettingsView: View {
         linking = true
         Task {
             defer { linking = false }
-            do { linkSession = LinkSession(token: try await env.plaid(context).linkToken(userIdentifier: me)) }
-            catch { errorText = errorMessage(error) }
+            do {
+                let token = try await env.plaid(context).linkToken(userIdentifier: me)
+                PlaidLinkSession.shared.begin(token: token)  // persist so a terminated OAuth can resume
+                linkSession = LinkSession(token: token)
+            } catch { errorText = errorMessage(error) }
         }
     }
 

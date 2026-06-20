@@ -6,6 +6,8 @@ import LinkKit
 /// exchanges it). Works in the simulator once the backend issues a link token.
 struct PlaidLinkView: UIViewControllerRepresentable {
     let linkToken: String
+    /// When set, resume an OAuth flow interrupted by app termination instead of opening Link fresh.
+    var resumeRedirect: URL? = nil
     var onSuccess: (_ publicToken: String) -> Void
     var onExit: () -> Void = {}
 
@@ -24,7 +26,7 @@ struct PlaidLinkView: UIViewControllerRepresentable {
 
     /// Hosts the Plaid handler and presents it once it's in the window hierarchy.
     final class HostController: UIViewController {
-        var onFirstAppear: (() -> Void)?
+        var onFirstAppear: (@MainActor () -> Void)?
         private var appeared = false
 
         override func viewDidAppear(_ animated: Bool) {
@@ -35,6 +37,7 @@ struct PlaidLinkView: UIViewControllerRepresentable {
         }
     }
 
+    @MainActor
     final class Coordinator {
         private let parent: PlaidLinkView
         private var handler: Handler?
@@ -50,7 +53,13 @@ struct PlaidLinkView: UIViewControllerRepresentable {
             switch Plaid.create(configuration) {
             case let .success(handler):
                 self.handler = handler
-                handler.open(presentUsing: .viewController(controller))
+                PlaidLinkSession.shared.register(handler)
+                if let redirect = parent.resumeRedirect {
+                    // App was terminated mid-OAuth; resume from the redirect rather than reopening.
+                    handler.resumeAfterTermination(from: redirect)
+                } else {
+                    handler.open(presentUsing: .viewController(controller))
+                }
             case .failure:
                 parent.onExit()
             }
