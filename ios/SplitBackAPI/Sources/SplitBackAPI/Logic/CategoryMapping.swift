@@ -23,10 +23,12 @@ enum CategoryMapping {
         return builtin ?? raw
     }
 
-    /// Resolves a raw category string without a transaction's refinement (map → built-in → raw).
+    /// Resolves a raw category string without a transaction's refinement: a synced override → the
+    /// built-in Plaid map → the Splitwise taxonomy map → the raw string. The Splitwise map folds imported
+    /// expense categories (e.g. "Dining out") into canonical buckets so they don't fragment the donut.
     static func canonical(_ raw: String, lookup: [String: String]) -> String? {
         guard !raw.isEmpty else { return nil }
-        return lookup[raw] ?? PlaidCategory.canonical(raw) ?? raw
+        return lookup[raw] ?? PlaidCategory.canonical(raw) ?? SplitwiseCategory.canonical(raw) ?? raw
     }
 
     /// Whether a transaction's category is vague enough to benefit from a description-based refinement:

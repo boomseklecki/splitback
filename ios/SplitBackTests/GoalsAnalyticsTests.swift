@@ -209,6 +209,31 @@ final class GoalsAnalyticsTests: XCTestCase {
         XCTAssertEqual(series.first?.value, 1980)  // 2000 in − 20 owed share
     }
 
+    func testSplitwiseCategoryMapping() {
+        XCTAssertEqual(SplitwiseCategory.canonical("Dining out"), "Dining")
+        XCTAssertEqual(SplitwiseCategory.canonical("Gas/fuel"), "Fuel")
+        XCTAssertEqual(SplitwiseCategory.canonical("Electricity"), "Utilities")
+        XCTAssertEqual(SplitwiseCategory.canonical("Medical expenses"), "Health")
+        XCTAssertNil(SplitwiseCategory.canonical("Not A Splitwise Category"))
+        // Routed through CategoryMapping.canonical (after the Plaid map).
+        XCTAssertEqual(CategoryMapping.canonical("Dining out", lookup: [:]), "Dining")
+        // A manual override still wins over the Splitwise map.
+        XCTAssertEqual(CategoryMapping.canonical("Dining out", lookup: ["Dining out": "Entertainment"]),
+                       "Entertainment")
+    }
+
+    func testSplitwiseExpenseFoldsIntoCanonicalBucket() {
+        let checking = account(type: "checking")
+        // A Plaid "Dining" transaction and a Splitwise "Dining out" expense should share one slice.
+        let txns = [txn(30, category: "Dining", account: checking)]
+        let exps = [expense(60, category: "Dining out", owed: 20)]
+        let result = SpendingAnalytics.byCategory(in: Date(), transactions: txns,
+                                                  accounts: [checking], lookup: [:], expenses: exps, me: "me")
+        XCTAssertEqual(result.count, 1)
+        XCTAssertEqual(result.first?.category, "Dining")
+        XCTAssertEqual(result.first?.total, 50)  // not fragmented into a separate "Dining out" slice
+    }
+
     // MARK: GoalProgress
 
     func testBudgetStatusAndFraction() {
