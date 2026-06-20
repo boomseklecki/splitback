@@ -166,6 +166,11 @@ overrides it.
   `GET /.well-known/apple-app-site-association` as `application/json`, built from `APPLE_TEAM_ID` (set in
   `.env`) + bundle id `com.splitback.app`. For dev, append `?mode=developer` to the associated domain to
   bypass Apple's AASA CDN cache.
+- **Plaid OAuth (production banks):** the AASA also covers **`/plaid/oauth*`** — Plaid's production
+  link uses `redirect_uri=https://splitback.app/plaid/oauth` (set in backend `.env`, registered in the
+  Plaid dashboard). The Plaid Link SDK must be initialized with that `redirect_uri`, and the app must
+  catch the Universal Link to resume Link (Plaid's `continue`/`resumeAfterTermination`). This path is
+  **app-handled only** — there's no backend route behind it (unlike the Splitwise callback).
 - **Configure handler** (Universal Link `https://splitback.app/join?api=` **and**
   `splitback://configure?api=`): parse `api` (+ `name`); require **https** (reject http except
   localhost); `GET <api>/server-info` → `{app, version, name, requires_auth, auth_providers}` to verify

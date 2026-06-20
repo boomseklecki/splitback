@@ -41,7 +41,17 @@ async def apple_app_site_association() -> JSONResponse:
         raise HTTPException(status_code=404, detail="Universal Links not configured")
     app_id = f"{settings.apple_team_id}.{settings.apple_audience}"
     return JSONResponse(
-        {"applinks": {"details": [{"appID": app_id, "components": [{"/": "/join*"}]}]}}
+        {
+            "applinks": {
+                "details": [
+                    {
+                        "appID": app_id,
+                        # /join* = onboarding deep link; /plaid/oauth* = Plaid Link OAuth return.
+                        "components": [{"/": "/join*"}, {"/": "/plaid/oauth*"}],
+                    }
+                ]
+            }
+        }
     )
 
 
