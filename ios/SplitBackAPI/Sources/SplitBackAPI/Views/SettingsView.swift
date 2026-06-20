@@ -92,6 +92,10 @@ struct SettingsView: View {
 
                 if let joinURL = JoinLink.url(apiBaseURL: env.baseURLString, name: env.serverName) {
                     Section {
+                        QRCodeView(string: joinURL.absoluteString)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 200)
+                            .padding(.vertical, 8)
                         ShareLink(item: joinURL) {
                             Label("Share Join Link", systemImage: "square.and.arrow.up")
                         }
