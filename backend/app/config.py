@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     auth_required: bool = False  # when true, guarded endpoints reject requests without a valid token
     google_client_id: str = ""  # Google iOS OAuth client id — the id-token audience
     apple_audience: str = ""  # the iOS app bundle id (e.g. com.splitback.app) — the identity-token audience
+    # Apple Developer Team ID — used to serve the App Site Association (GET /.well-known/apple-app-site-association)
+    # for Universal Links. AASA returns 404 until this is set. appID = "<team_id>.<apple_audience>".
+    apple_team_id: str = ""
 
     # Postgres
     database_url: str = "postgresql+asyncpg://splitback:splitback@db:5432/splitback"

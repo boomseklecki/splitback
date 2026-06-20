@@ -154,15 +154,18 @@ There is no settlement endpoint by design. A settle-up is just an expense with `
 
 ## Onboarding / join link (iOS to build)
 
-A shared link installs the app and pre-fills the backend endpoint. The static site lives in the repo's
-`web/` (deployed to Cloudflare Pages at the fixed domain **`splitback.app`**); the link looks like
-`https://splitback.app/join?api=https://<backend-host>&name=<label>`.
+A shared link installs the app and pre-fills the backend endpoint. **The backend serves the join site
+itself** (single host — no separate static host): `https://<public-host>/join` (e.g.
+`https://splitback.app/join?name=<label>`). The endpoint defaults to the host serving the page; `?api=`
+overrides it.
 
-- **Associated domain + scheme:** add `applinks:splitback.app` to `SplitBack.entitlements` (and
-  `ios/project.yml`). The `splitback://` URL scheme already exists (Splitwise OAuth) — extend it to also
-  handle `splitback://configure?api=…&name=…`. The AASA at `web/.well-known/apple-app-site-association`
-  needs your Apple **Team ID** in place of `TEAMID` (same value the entitlement domain implies); bundle
-  id is `com.splitback.app`.
+- **Associated domain + scheme:** add `applinks:<public-host>` (e.g. `applinks:splitback.app`) to
+  `SplitBack.entitlements` (and `ios/project.yml`) — it must match the host serving the AASA. The
+  `splitback://` URL scheme already exists (Splitwise OAuth) — extend it to also handle
+  `splitback://configure?api=…&name=…`. The backend serves the AASA at
+  `GET /.well-known/apple-app-site-association` as `application/json`, built from `APPLE_TEAM_ID` (set in
+  `.env`) + bundle id `com.splitback.app`. For dev, append `?mode=developer` to the associated domain to
+  bypass Apple's AASA CDN cache.
 - **Configure handler** (Universal Link `https://splitback.app/join?api=` **and**
   `splitback://configure?api=`): parse `api` (+ `name`); require **https** (reject http except
   localhost); `GET <api>/server-info` → `{app, version, name, requires_auth, auth_providers}` to verify

@@ -21,7 +21,6 @@
     .btn { display:block; width:100%; padding:14px; border-radius:12px; border:0; cursor:pointer;
            font-size:16px; font-weight:600; text-decoration:none; margin:8px 0; }
     .btn.primary { background:var(--accent); color:#fff; }
-    .btn.secondary { background:transparent; color:var(--accent); border:1px solid var(--line); }
     .step { text-align:left; color:var(--muted); font-size:14px; margin:20px 0 8px; }
     #qr { margin:12px auto; width:200px; height:200px; display:flex; align-items:center;
           justify-content:center; background:#fff; border-radius:12px; padding:10px; }
@@ -65,35 +64,24 @@
     var APP_STORE_URL  = "https://apps.apple.com/";
 
     var params = new URLSearchParams(location.search);
-    var api = (params.get("api") || "").trim();
+    // Default the endpoint to the host serving this page (single-host: backend serves /join).
+    var api = (params.get("api") || "").trim() || location.origin;
     var name = (params.get("name") || "").trim();
 
     var sub = document.getElementById("sub");
-    var manual = document.getElementById("manual");
-    var divider = document.getElementById("divider");
+    var host = api.replace(/^https?:\/\//, "").replace(/\/$/, "");
+    sub.innerHTML = "Connect to <span class=\"host\">" + (name ? escapeHtml(name) : escapeHtml(host)) + "</span>";
+    document.getElementById("endpoint").value = api;
 
-    if (api) {
-      var host = api.replace(/^https?:\/\//, "").replace(/\/$/, "");
-      sub.innerHTML = "Connect to <span class=\"host\">" + (name ? escapeHtml(name) : escapeHtml(host)) + "</span>";
-      document.getElementById("endpoint").value = api;
-
-      // Custom-scheme link the in-app scanner / a tap opens to configure the endpoint.
-      var configure = "splitback://configure?api=" + encodeURIComponent(api) + (name ? "&name=" + encodeURIComponent(name) : "");
-      try {
-        var qr = qrcode(0, "M");
-        qr.addData(configure);
-        qr.make();
-        document.getElementById("qr").innerHTML = qr.createImgTag(5, 0);
-      } catch (e) {
-        document.getElementById("qr").textContent = "QR unavailable — use the URL below.";
-      }
-    } else {
-      // No endpoint in the link: just an install page.
-      sub.textContent = "Install SplitBack, then open your invite link to connect.";
-      manual.classList.add("hide");
-      divider.classList.add("hide");
-      document.getElementById("qr").parentElement.querySelector(".step").classList.add("hide");
-      document.getElementById("qr").classList.add("hide");
+    // Custom-scheme link the in-app scanner / a tap opens to configure the endpoint.
+    var configure = "splitback://configure?api=" + encodeURIComponent(api) + (name ? "&name=" + encodeURIComponent(name) : "");
+    try {
+      var qr = qrcode(0, "M");
+      qr.addData(configure);
+      qr.make();
+      document.getElementById("qr").innerHTML = qr.createImgTag(5, 0);
+    } catch (e) {
+      document.getElementById("qr").textContent = "QR unavailable — use the URL below.";
     }
 
     // Prefer TestFlight on iOS (beta); App Store otherwise.

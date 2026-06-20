@@ -1,3 +1,0 @@
-# Apple requires the App Site Association served as JSON. It has no file extension, so set it explicitly.
-/.well-known/apple-app-site-association
-  Content-Type: application/json

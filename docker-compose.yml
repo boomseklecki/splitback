@@ -86,7 +86,7 @@ services:
   # Tunnel"). Reads CLOUDFLARE_TUNNEL_TOKEN from .env. Started only with `--profile tunnel`.
   cloudflared:
     image: cloudflare/cloudflared:latest
-    pull_policy: never
+    # default pull_policy (missing) — pull the connector image if it isn't present yet
     profiles: ["tunnel"]
     restart: unless-stopped
     command: tunnel run --token ${CLOUDFLARE_TUNNEL_TOKEN}

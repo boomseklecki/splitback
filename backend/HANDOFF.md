@@ -93,17 +93,20 @@ context but **this section is authoritative where they conflict**.
   cold backfill and now stamps the cursor. Balances unchanged — still computed from synced splits
   (`balances.py`), no `simplified_debts`. Opt-in cron `app.cli.splitwise_sync` (mirrors `plaid_sync`).
   **Route count now 37 paths / 51 operations.**
-- **Onboarding join link + Cloudflare tunnel exposure (added 2026-06-20).** Unguarded
-  `GET /server-info` (`app/routers/public.py` → `{app, version, name, requires_auth, auth_providers}`)
-  lets the iOS join flow verify a URL is a real SplitBack backend before adopting it; `PUBLIC_HOSTNAME`
-  setting sets the friendly label. Static onboarding site in `web/` (deploy to Cloudflare Pages at
-  `splitback.app`): `web/join/index.html` (install + invite QR `splitback://configure?api=` + copyable
-  endpoint) and `web/.well-known/apple-app-site-association` (Universal Links; replace `TEAMID`). Tunnel:
-  profile-gated `cloudflared` compose service (`docker compose --profile tunnel up -d cloudflared`)
-  reading `CLOUDFLARE_TUNNEL_TOKEN` from `.env` — remotely-managed tunnel, dashboard-configured hostname
-  → `http://api:8000`; the API never reads the token. See README "Public access via Cloudflare Tunnel" +
-  "Sharing the app". iOS handler (associated domains, `splitback://configure`, confirm + Scan-invite) is
-  in `ios/HANDOFF.md`. Deferred: web admin portal + settings store, Docker-controlled tunnel on/off.
+- **Onboarding join link + Cloudflare tunnel exposure (added 2026-06-20, single-host).** The **backend
+  serves the onboarding site itself** (no separate static host) — unguarded routes in
+  `app/routers/public.py`: `GET /server-info` (`{app, version, name, requires_auth, auth_providers}`,
+  the app's pre-adopt verify; `PUBLIC_HOSTNAME` = friendly label), `GET /join` (the static
+  `app/static/join.html` — install + invite QR `splitback://configure?api=` + copyable endpoint; `?api=`
+  defaults to the serving host), and `GET /.well-known/apple-app-site-association` (Universal Links,
+  served `application/json`, generated from `APPLE_TEAM_ID` + `APPLE_AUDIENCE`; 404 until `APPLE_TEAM_ID`
+  is set). The AASA/join routes are `include_in_schema=False` (browser/Apple-facing, not in the iOS
+  contract). Tunnel: profile-gated `cloudflared` compose service
+  (`docker compose --profile tunnel up -d cloudflared`) reading `CLOUDFLARE_TUNNEL_TOKEN` from `.env` —
+  remotely-managed, dashboard hostname `splitback.app` → `http://api:8000`; the API never reads the
+  token. So one public host does the API + join + AASA. iOS handler (associated domain = the public
+  host, `splitback://configure`, confirm + Scan-invite) in `ios/HANDOFF.md`. Deferred: web admin portal
+  + settings store, Docker-controlled tunnel on/off, separate static host (Cloudflare Pages).
 - **iOS contract regenerated** via `ios/scripts/prepare_openapi.py` →
   `ios/SplitBackAPI/Sources/SplitBackAPI/openapi.json` (raw also at `ios/openapi.json`).
 

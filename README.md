@@ -128,39 +128,28 @@ token (it's compose-only). That public hostname is what you hand out as the app'
 
 ## Sharing the app (join link)
 
-The repo's `web/` directory is a static site (deploy to Cloudflare Pages at a fixed domain, e.g.
-`splitback.app`) that lets people install the app and point it at your backend in one link:
+The **backend serves the onboarding site itself** (no separate static host) — your public hostname does
+double duty for the API and the join page. Share one link:
 
 ```
-https://splitback.app/join?api=https://<your-public-hostname>&name=Your%20Household
+https://splitback.app/join                       # endpoint defaults to this host
+https://splitback.app/join?name=Your%20Household  # optional friendlier label
 ```
 
-- `web/join/index.html` — install button (TestFlight/App Store), an invite **QR** (`splitback://configure?api=…`)
-  for the app's "Scan invite", and the server URL as copyable text.
-- `web/.well-known/apple-app-site-association` — the Universal-Link association; replace `TEAMID` with
-  your Apple Developer **Team ID** (the app's `applinks:` entitlement uses the same domain). With the app
-  installed, tapping the link opens it and pre-fills the endpoint; otherwise the page guides installation.
+The backend serves, all unguarded:
+- `GET /join` — install button (TestFlight/App Store), an invite **QR** (`splitback://configure?api=…`)
+  for the app's "Scan invite", and the server URL as copyable text. `?api=` overrides the endpoint
+  (defaults to the host serving the page); `?name=` sets the label.
+- `GET /.well-known/apple-app-site-association` — the Universal-Link association, served as
+  `application/json`, generated from `APPLE_TEAM_ID` + `APPLE_AUDIENCE` (appID = `<team>.<bundle>`).
+  Returns 404 until `APPLE_TEAM_ID` is set. With the app installed, tapping the link opens it and
+  pre-fills the endpoint; otherwise the page guides installation.
+- `GET /server-info` (`{app, version, name, requires_auth, auth_providers}`) — pinged by the app to
+  verify a URL is a real SplitBack server before adopting it (`PUBLIC_HOSTNAME` sets the friendly label).
 
-- `web/_headers` — forces `Content-Type: application/json` on the AASA (it has no file extension, so
-  Cloudflare won't infer it). **Required** — Universal Links silently fail without it.
-
-The backend exposes an unguarded `GET /server-info` (`{app, version, name, requires_auth, auth_providers}`)
-that the app pings to verify a URL is a real SplitBack server before adopting it (`PUBLIC_HOSTNAME` sets
-the friendly label).
-
-### Deploy the join site (Cloudflare Pages)
-
-Cloudflare folded Pages into "Workers & Pages"; the CLI is the most reliable path:
-
-```bash
-npx wrangler login                                   # one-time browser auth
-npx wrangler pages deploy web --project-name splitback
-```
-
-Then in the Pages project → **Custom domains** → add the apex `splitback.app` (the tunnel uses a separate
-subdomain like `api.splitback.app`). Re-run the deploy command to publish updates. Verify the AASA after
-deploy: `curl -I https://splitback.app/.well-known/apple-app-site-association` should show
-`content-type: application/json` over HTTPS with no redirect.
+The iOS app's `applinks:` associated domain must match this public hostname. After exposing the backend
+(tunnel above), verify the AASA: `curl -I https://splitback.app/.well-known/apple-app-site-association`
+should show `content-type: application/json` over HTTPS with no redirect (set `APPLE_TEAM_ID` first).
 
 ## Running tests
 

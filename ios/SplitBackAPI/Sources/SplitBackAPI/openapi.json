@@ -4561,6 +4561,11 @@
             "type": "string",
             "format": "uuid",
             "title": "Item Id"
+          },
+          "reset": {
+            "type": "boolean",
+            "title": "Reset",
+            "default": false
           }
         },
         "type": "object",
