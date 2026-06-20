@@ -21,6 +21,11 @@ public final class AppEnvironment {
     /// Whether a Splitwise token is connected. Gates the scoped sync endpoints (which 400 without one)
     /// so non-Splitwise instances don't call them on every pull-to-refresh.
     public private(set) var splitwiseConnected = false
+    /// Whether the configured backend requires sign-in (from the unguarded `GET /server-info`). Nil
+    /// until first loaded / when server-info is unreachable; drives the launch gate.
+    public private(set) var serverRequiresAuth: Bool?
+    /// Sign-in providers the backend offers (e.g. ["apple","google","splitwise"]); filters the gate.
+    public private(set) var authProviders: [String] = []
 
     public init() {
         let store = KeychainTokenStore()
@@ -35,9 +40,25 @@ public final class AppEnvironment {
         hasToken = (token?.isEmpty == false)
     }
 
-    /// Refreshes the signed-in profile from `GET /me` (best-effort).
+    /// Refreshes the signed-in profile from `GET /me`. A definitive 401 means the stored token is
+    /// invalid/expired → sign out so it isn't resent and the launch gate re-shows. Transient/offline
+    /// failures leave the prior state (so a network blip doesn't lock a signed-in user out).
     func refreshCurrentUser(_ context: ModelContext) async {
-        currentUser = try? await users(context).currentUser()
+        do {
+            currentUser = try await users(context).currentUser()
+        } catch BackendError.http(401) {
+            signOut()
+        } catch {
+            // transient/offline — keep the prior currentUser
+        }
+    }
+
+    /// Loads the backend's auth requirement + providers from the unguarded `GET /server-info`.
+    /// Best-effort: leaves `serverRequiresAuth` nil when unreachable (gate falls back to a token check).
+    func loadServerInfo() async {
+        guard let info = try? await client.server_info_server_info_get().ok.body.json else { return }
+        serverRequiresAuth = info.requires_auth
+        authProviders = info.auth_providers
     }
 
     /// Refreshes whether Splitwise is connected (best-effort; leaves the prior value on failure).

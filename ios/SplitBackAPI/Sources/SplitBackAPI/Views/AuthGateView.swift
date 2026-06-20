@@ -6,6 +6,10 @@ import AuthenticationServices
 /// and Google needs `GIDClientID` in the Info.plist (both surfaced as friendly errors until configured).
 /// Presented from Settings for now — not yet a hard launch gate.
 public struct AuthGateView: View {
+    /// When true the view is the app's launch gate (no "Close", no dismiss-on-success — the gate flips
+    /// via `AppEnvironment` state). Default false = presented as a sheet from Settings.
+    let isLaunchGate: Bool
+
     @Environment(AppEnvironment.self) private var env
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
@@ -14,7 +18,12 @@ public struct AuthGateView: View {
     @State private var busy = false
     @State private var errorText: String?
 
-    public init() {}
+    public init(isLaunchGate: Bool = false) { self.isLaunchGate = isLaunchGate }
+
+    /// Whether to surface a provider button — only those the backend offers (or all, when unknown).
+    private func offers(_ provider: String) -> Bool {
+        env.authProviders.isEmpty || env.authProviders.contains(provider)
+    }
 
     public var body: some View {
         NavigationStack {
@@ -28,25 +37,34 @@ public struct AuthGateView: View {
                 }
 
                 Section("Sign In") {
-                    SignInWithAppleButton(.signIn,
-                        onRequest: { $0.requestedScopes = [.fullName, .email] },
-                        onCompletion: handleApple)
-                        .signInWithAppleButtonStyle(.black)
-                        .frame(height: 44)
-                        .listRowInsets(EdgeInsets())
-
-                    Button { run { try await env.auth(context).signInWithGoogle() } } label: {
-                        Label("Continue with Google", systemImage: "g.circle.fill")
+                    if offers("apple") {
+                        SignInWithAppleButton(.signIn,
+                            onRequest: { $0.requestedScopes = [.fullName, .email] },
+                            onCompletion: handleApple)
+                            .signInWithAppleButtonStyle(.black)
+                            .frame(height: 44)
+                            .listRowInsets(EdgeInsets())
                     }
-                    Button { run { try await env.auth(context).signInWithSplitwise() } } label: {
-                        Label("Continue with Splitwise", systemImage: "arrow.triangle.2.circlepath")
+                    if offers("google") {
+                        Button { run { try await env.auth(context).signInWithGoogle() } } label: {
+                            Label("Continue with Google", systemImage: "g.circle.fill")
+                        }
+                    }
+                    if offers("splitwise") {
+                        Button { run { try await env.auth(context).signInWithSplitwise() } } label: {
+                            Label("Continue with Splitwise", systemImage: "arrow.triangle.2.circlepath")
+                        }
                     }
                 }
                 .disabled(busy)
             }
             .navigationTitle("Sign In")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
+            .toolbar {
+                if !isLaunchGate {
+                    ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
+                }
+            }
             .task { baseURL = env.baseURLString }
             .errorAlert($errorText)
         }
@@ -60,7 +78,7 @@ public struct AuthGateView: View {
             do {
                 let token = try await work()
                 await env.applySession(token: token, context: context)
-                dismiss()
+                if !isLaunchGate { dismiss() }
             } catch {
                 if (error as? ASWebAuthenticationSessionError)?.code == .canceledLogin { return }
                 errorText = errorMessage(error)

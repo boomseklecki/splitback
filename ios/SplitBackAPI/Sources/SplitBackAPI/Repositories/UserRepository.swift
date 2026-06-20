@@ -34,13 +34,19 @@ struct UserRepository {
         return MeInfo(identifier: response.identifier, authenticated: response.authenticated)
     }
 
-    /// The signed-in user's full profile, or nil in open mode / when not signed in.
+    /// The signed-in user's full profile, or nil in open mode / when not signed in. Throws
+    /// `BackendError.http(401)` when the token is rejected (so callers can clear a stale session).
     func currentUser() async throws -> CurrentUser? {
-        guard let user = try await client.me_me_get().ok.body.json.user else { return nil }
-        return CurrentUser(
-            identifier: user.identifier, displayName: user.display_name,
-            email: user.email, avatarURL: user.avatar_url
-        )
+        switch try await client.me_me_get() {
+        case let .ok(ok):
+            guard let user = try ok.body.json.user else { return nil }
+            return CurrentUser(
+                identifier: user.identifier, displayName: user.display_name,
+                email: user.email, avatarURL: user.avatar_url
+            )
+        case let .undocumented(statusCode, _):
+            throw BackendError.fromUndocumented(statusCode)
+        }
     }
 
     @discardableResult
