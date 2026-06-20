@@ -11,6 +11,7 @@ struct TransactionDetailView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.modelContext) private var context
     @Query private var categoryMaps: [CategoryMap]
+    @Query(sort: \SpendCategory.position) private var spendCategories: [SpendCategory]
     @Query private var accounts: [Account]
     /// Scoped to just this transaction's linked expense (if any) — querying the whole expenses table
     /// here would load every cached expense (and its relationships) on the main thread each open.
@@ -156,7 +157,7 @@ struct TransactionDetailView: View {
         defer { categorizing = false }
         let item = CategoryMapper.Item(id: transaction.id, description: transaction.details,
                                        rawCategory: transaction.category)
-        let result = await CategoryMapper.refine([item])
+        let result = await CategoryMapper.refine([item], allowed: spendCategories.map(\.name))
         guard let category = result[transaction.id] else { return }  // keep prior if the model abstains
         setOverride(category)
     }

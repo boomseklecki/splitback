@@ -21,6 +21,7 @@ struct GroupsListView: View {
            sort: \ExpenseGroup.name)
     private var groups: [ExpenseGroup]
     @Query private var members: [GroupMember]
+    @Query(sort: \SpendCategory.position) private var spendCategories: [SpendCategory]
 
     @AppStorage("expenses.sortMode") private var sortModeRaw = SortMode.activity.rawValue
     @AppStorage("expenses.showSettled") private var showSettled = false
@@ -182,7 +183,7 @@ struct GroupsListView: View {
                     onComplete: { images in
                         showingReceiptScanner = false
                         if let first = images.first {
-                            Task { await scan.process(image: first, categories: []) }
+                            Task { await scan.process(image: first, categories: spendCategories.map(\.name)) }
                         }
                     },
                     onCancel: { showingReceiptScanner = false }
@@ -201,7 +202,7 @@ struct GroupsListView: View {
                     defer { receiptPhoto = nil }
                     guard let data = try? await item.loadTransferable(type: Data.self),
                           let image = UIImage(data: data) else { return }
-                    await scan.process(image: image, categories: [])
+                    await scan.process(image: image, categories: spendCategories.map(\.name))
                 }
             }
             .overlay {

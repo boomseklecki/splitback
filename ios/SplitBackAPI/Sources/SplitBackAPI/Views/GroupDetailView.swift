@@ -14,6 +14,7 @@ struct GroupDetailView: View {
     @Query private var expenses: [Expense]
     @Query private var members: [GroupMember]
     @Query private var users: [User]
+    @Query(sort: \SpendCategory.position) private var spendCategories: [SpendCategory]
 
     @State private var balances: [Balance] = []
     @State private var showingNewExpense = false
@@ -131,7 +132,7 @@ struct GroupDetailView: View {
                 onComplete: { images in
                     showingReceiptScanner = false
                     if let first = images.first {
-                        Task { await scan.process(image: first, categories: []) }
+                        Task { await scan.process(image: first, categories: spendCategories.map(\.name)) }
                     }
                 },
                 onCancel: { showingReceiptScanner = false }
@@ -150,7 +151,7 @@ struct GroupDetailView: View {
                 defer { receiptPhoto = nil }
                 guard let data = try? await item.loadTransferable(type: Data.self),
                       let image = UIImage(data: data) else { return }
-                await scan.process(image: image, categories: [])
+                await scan.process(image: image, categories: spendCategories.map(\.name))
             }
         }
         .overlay {
