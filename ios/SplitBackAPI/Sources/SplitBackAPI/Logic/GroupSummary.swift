@@ -52,4 +52,13 @@ enum GroupSummary {
     static func byActivity(_ groups: [ExpenseGroup], lastExpense: [UUID: Last]) -> [ExpenseGroup] {
         groups.sorted { (lastExpense[$0.id]?.date ?? .distantPast) > (lastExpense[$1.id]?.date ?? .distantPast) }
     }
+
+    /// The groups to show in a picker: hide settled (unless `includeSettled`), then sort by recent
+    /// activity. Shared by the transaction→expense picker and the expense editor's group switcher.
+    static func visible(_ groups: [ExpenseGroup], myNets: [UUID: Decimal],
+                        lastExpense: [UUID: Last], includeSettled: Bool) -> [ExpenseGroup] {
+        let shown = includeSettled ? groups
+            : groups.filter { !isSettled($0, myNets: myNets, lastExpense: lastExpense) }
+        return byActivity(shown, lastExpense: lastExpense)
+    }
 }

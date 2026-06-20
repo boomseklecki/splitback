@@ -143,9 +143,7 @@ private struct NewExpenseFromTransactionView: View {
         groups.filter { GroupSummary.isSettled($0, myNets: myNets, lastExpense: lastExpense) }.count
     }
     private var visibleGroups: [ExpenseGroup] {
-        let shown = showSettled ? groups
-            : groups.filter { !GroupSummary.isSettled($0, myNets: myNets, lastExpense: lastExpense) }
-        return GroupSummary.byActivity(shown, lastExpense: lastExpense)
+        GroupSummary.visible(groups, myNets: myNets, lastExpense: lastExpense, includeSettled: showSettled)
     }
 
     var body: some View {

@@ -22,8 +22,13 @@ struct ExpenseEditView: View {
     @Environment(\.dismiss) private var dismiss
 
     @Query private var users: [User]
-    @Query private var allGroups: [ExpenseGroup]
+    @Query(filter: #Predicate<ExpenseGroup> { $0.archivedAt == nil && $0.hidden == false },
+           sort: \ExpenseGroup.name)
+    private var groups: [ExpenseGroup]
     @Query private var allMembers: [GroupMember]
+
+    @State private var myNets: [UUID: Decimal] = [:]
+    @State private var lastExpense: [UUID: GroupSummary.Last] = [:]
 
     @State private var group: ExpenseGroup
     @State private var details: String
@@ -77,9 +82,13 @@ struct ExpenseEditView: View {
     private var amount: Decimal { Decimal(string: amountString, locale: Locale(identifier: "en_US_POSIX")) ?? 0 }
     private var isSelfHosted: Bool { group.backendType == .selfHosted }
 
-    /// Groups the expense can be moved to (new expenses only — an existing expense stays in its group).
+    /// Groups the expense can be moved to (new expenses only). Same filtered/sorted list the
+    /// transaction→expense picker uses (settled hidden, recent-activity first), with the current
+    /// group always kept so it shows even when it would otherwise be filtered out.
     private var selectableGroups: [ExpenseGroup] {
-        allGroups.filter { $0.archivedAt == nil }.sorted { $0.name.localizedCompare($1.name) == .orderedAscending }
+        var list = GroupSummary.visible(groups, myNets: myNets, lastExpense: lastExpense, includeSettled: false)
+        if !list.contains(where: { $0.id == group.id }) { list.insert(group, at: 0) }
+        return list
     }
 
     /// Reimbursement is self-hosted only: it relies on a local "Reimbursement" marker + inverted shares
@@ -294,17 +303,20 @@ struct ExpenseEditView: View {
                 CategoryPickerView(current: category) { category = $0 }
             }
             .task {
+                guard editing == nil else { return }
                 // For a new expense, default "Paid by" to you (from /me) when you're a participant —
                 // otherwise keep the first member chosen in init.
-                if editing == nil, let me = env.currentUser?.identifier, participants.contains(me) {
-                    payer = me
-                }
+                if let me = env.currentUser?.identifier, participants.contains(me) { payer = me }
+                // Settled-filtering + activity sort for the group switcher (mirrors the transaction picker).
+                myNets = await GroupSummary.myNets(groups, me: env.currentUser?.identifier, balances: env.balances)
+                lastExpense = GroupSummary.lastExpenses(groups, myNets: myNets, includeSettled: false, context: context)
             }
             .errorAlert($errorText)
         }
     }
 
-    /// Centered group name; a menu to switch groups when creating a new expense and more than one exists.
+    /// Centered group avatar + name; a menu to switch groups when creating a new expense and more
+    /// than one is available.
     @ViewBuilder
     private var groupSelector: some View {
         if editing == nil, selectableGroups.count > 1 {
@@ -317,13 +329,18 @@ struct ExpenseEditView: View {
                     }
                 }
             } label: {
-                HStack(spacing: 4) {
-                    Text(group.name).font(.headline)
-                    Image(systemName: "chevron.up.chevron.down").font(.caption2)
-                }
+                groupLabel(chevron: true)
             }
         } else {
+            groupLabel(chevron: false)
+        }
+    }
+
+    private func groupLabel(chevron: Bool) -> some View {
+        HStack(spacing: 8) {
+            AvatarView(url: group.avatarURL, name: group.name, size: 28)
             Text(group.name).font(.headline)
+            if chevron { Image(systemName: "chevron.up.chevron.down").font(.caption2) }
         }
     }
 
