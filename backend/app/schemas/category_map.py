@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict
 class CategoryMapUpsert(BaseModel):
     raw_category: str
     canonical_category: str
+    source: str = "manual"  # "manual" (user pick) | "ondevice" (Apple Intelligence suggestion)
 
 
 class CategoryMapResponse(BaseModel):

@@ -45,11 +45,6 @@ class Settings(BaseSettings):
     plaid_country_codes: str = "US"
     plaid_language: str = "en"
 
-    # Anthropic (server-side only) — used to map raw Plaid categories to our canonical taxonomy.
-    anthropic_api_key: str = ""
-    # When true (and a key is set), POST /category-map/suggest calls Claude; otherwise it 503s.
-    goals_ai_categorization_enabled: bool = False
-
     # Splitwise (server-side only) — consumer key/secret act as the OAuth2 client id/secret
     splitwise_consumer_key: str = ""
     splitwise_consumer_secret: str = ""

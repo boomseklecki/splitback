@@ -69,16 +69,22 @@ async def test_account_inclusion_flags():
                 await session.commit()
 
 
-async def test_category_map_manual_upsert_and_ai_disabled():
+async def test_category_map_upsert_sources():
     try:
+        # An on-device suggestion, then a manual override of the same raw label.
+        status, body = _req("PUT", "/category-map",
+                            {"raw_category": RAW, "canonical_category": "Groceries", "source": "ondevice"})
+        assert status == 200, (status, body)
+        assert json.loads(body)["source"] == "ondevice"
         status, body = _req("PUT", "/category-map", {"raw_category": RAW, "canonical_category": "Dining"})
         assert status == 200, (status, body)
-        assert json.loads(body)["source"] == "manual"
+        row = json.loads(body)
+        assert row["source"] == "manual" and row["canonical_category"] == "Dining"
         assert any(m["raw_category"] == RAW for m in json.loads(_req("GET", "/category-map")[1]))
-        # Unknown canonical rejected.
+        # Unknown canonical / source rejected.
         assert _req("PUT", "/category-map", {"raw_category": RAW, "canonical_category": "Nope"})[0] == 422
-        # Suggest is gated off by default.
-        assert _req("POST", "/category-map/suggest")[0] == 503
+        assert _req("PUT", "/category-map",
+                    {"raw_category": RAW, "canonical_category": "Dining", "source": "bogus"})[0] == 422
     finally:
         async with async_session() as session:
             await session.execute(delete(CategoryMap).where(CategoryMap.raw_category == RAW))

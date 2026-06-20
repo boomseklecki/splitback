@@ -8,8 +8,8 @@ from app.models.base import TimestampMixin, UUIDMixin
 class CategoryMap(UUIDMixin, TimestampMixin, Base):
     """Maps a raw Plaid transaction category (as stored on `transactions.category`) to one of the
     canonical categories in `app.categories.CATEGORIES`. Lets budgets/spending analytics group raw
-    Plaid labels under the app's vocabulary. `source` distinguishes AI-suggested rows (overwritable)
-    from manual user choices (sticky)."""
+    Plaid labels under the app's vocabulary. `source` distinguishes on-device (Apple Intelligence)
+    suggestions the app generated (overwritable) from manual user choices (sticky)."""
 
     __tablename__ = "category_map"
 
