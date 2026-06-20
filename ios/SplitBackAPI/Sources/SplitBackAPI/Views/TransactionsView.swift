@@ -41,9 +41,7 @@ struct TransactionsView: View {
                 )
             }
             ForEach(transactions) { transaction in
-                NavigationLink {
-                    TransactionDetailView(transaction: transaction)
-                } label: {
+                NavigationLink(value: transaction) {
                     let category = CategoryMapping.effectiveCategory(for: transaction, lookup: lookup)
                     HStack(spacing: 12) {
                         Image(systemName: categorySymbol(category))
@@ -64,6 +62,7 @@ struct TransactionsView: View {
             }
         }
         .navigationTitle(account?.name ?? "Transactions")
+        .navigationDestination(for: Transaction.self) { TransactionDetailView(transaction: $0) }
         .toolbar {
             if account == nil {
                 ToolbarItem(placement: .primaryAction) {
