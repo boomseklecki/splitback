@@ -74,7 +74,11 @@ struct ExpenseEditView: View {
     private var isSelfHosted: Bool { group.backendType == .selfHosted }
 
     private func decimal(_ string: String?) -> Decimal {
-        Decimal(string: string ?? "", locale: Locale(identifier: "en_US_POSIX")) ?? 0
+        // Tolerate a leading "+" (the adjustment field's placeholder invites it) — Decimal(string:)
+        // returns nil for "+6", which would silently drop the adjustment.
+        var text = (string ?? "").trimmingCharacters(in: .whitespaces)
+        if text.hasPrefix("+") { text.removeFirst() }
+        return Decimal(string: text, locale: Locale(identifier: "en_US_POSIX")) ?? 0
     }
     private func numeric(_ map: [String: String]) -> [String: Decimal] {
         map.reduce(into: [:]) { $0[$1.key] = decimal($1.value) }
