@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
 from app.models.category import Category
+from app.models.category_map import CategoryMap
 from app.schemas.category import CategoryCreate, CategoryResponse, CategoryUpdate
 
 router = APIRouter(tags=["categories"])
@@ -76,5 +77,16 @@ async def delete_category(
     category_id: UUID, session: AsyncSession = Depends(get_session)
 ) -> None:
     category = await _get_or_404(session, category_id)
+    in_use = await session.scalar(
+        select(func.count())
+        .select_from(CategoryMap)
+        .where(CategoryMap.canonical_category == category.name)
+    )
+    if in_use:
+        raise HTTPException(
+            status_code=409,
+            detail=f"'{category.name}' is mapped from {in_use} source "
+            f"categor{'y' if in_use == 1 else 'ies'}. Reassign those first.",
+        )
     await session.delete(category)
     await session.commit()
