@@ -9,7 +9,9 @@ struct SplitBackApp: App {
         do {
             return try SplitBackStore.makeModelContainer()
         } catch {
-            fatalError("Failed to create ModelContainer: \(error)")
+            // Last resort: launch with an ephemeral cache rather than crashing. Data re-syncs from
+            // the server (the store is only a cache).
+            return try! SplitBackStore.makeModelContainer(inMemory: true)
         }
     }()
 
