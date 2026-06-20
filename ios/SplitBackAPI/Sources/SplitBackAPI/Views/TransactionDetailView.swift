@@ -12,12 +12,21 @@ struct TransactionDetailView: View {
     @Environment(\.modelContext) private var context
     @Query private var categoryMaps: [CategoryMap]
     @Query private var accounts: [Account]
-    @Query private var expenses: [Expense]
+    /// Scoped to just this transaction's linked expense (if any) — querying the whole expenses table
+    /// here would load every cached expense (and its relationships) on the main thread each open.
+    @Query private var linkedExpenses: [Expense]
 
     @State private var showingCategoryPicker = false
     @State private var showingCreate = false
     @State private var categorizing = false
+    @State private var aiAvailable = false
     @State private var errorText: String?
+
+    init(transaction: Transaction) {
+        self.transaction = transaction
+        let tid = transaction.id
+        _linkedExpenses = Query(filter: #Predicate<Expense> { $0.transactionId == tid })
+    }
 
     private var lookup: [String: String] { CategoryMapping.lookup(categoryMaps) }
     private var effectiveCategory: String? {
@@ -32,9 +41,7 @@ struct TransactionDetailView: View {
     }
 
     /// An expense already created from this transaction, if any (links via `transactionId`).
-    private var linkedExpense: Expense? {
-        expenses.first { $0.transactionId == transaction.id }
-    }
+    private var linkedExpense: Expense? { linkedExpenses.first }
 
     /// The raw Plaid label, humanized, shown only when it differs from the effective category.
     private var rawLabel: String? {
@@ -60,7 +67,7 @@ struct TransactionDetailView: View {
             }
 
             Section("Category") {
-                if CategoryMapper.isAvailable {
+                if aiAvailable {
                     Button {
                         Task { await categorizeWithAI() }
                     } label: {
@@ -98,6 +105,7 @@ struct TransactionDetailView: View {
         }
         .navigationTitle("Transaction")
         .navigationBarTitleDisplayMode(.inline)
+        .task { aiAvailable = CategoryMapper.isAvailable }
         .sheet(isPresented: $showingCategoryPicker) {
             CategoryPickerView(current: effectiveCategory) { setOverride($0) }
         }
