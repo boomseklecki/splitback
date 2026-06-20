@@ -29,6 +29,8 @@ public final class AppEnvironment {
     /// Whether the last `/server-info` probe reached a SplitBack backend. Nil before the first probe;
     /// false means the configured URL is wrong/unreachable (drives the gate's connectivity hint).
     public private(set) var serverReachable: Bool?
+    /// The backend's friendly name from `/server-info` (e.g. "Matt's Household"); used as the join link label.
+    public private(set) var serverName: String?
 
     public init() {
         let store = KeychainTokenStore()
@@ -63,6 +65,7 @@ public final class AppEnvironment {
             let info = try await client.server_info_server_info_get().ok.body.json
             serverRequiresAuth = info.requires_auth
             authProviders = info.auth_providers
+            serverName = info.name
             serverReachable = true
         } catch {
             serverReachable = false  // wrong URL / unreachable / not a SplitBack backend

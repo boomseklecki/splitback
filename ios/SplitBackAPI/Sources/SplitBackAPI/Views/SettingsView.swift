@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UIKit
 
 /// Account/session, backend base URL, bearer-token entry (Keychain), Splitwise status + import,
 /// linked banks (Plaid), and a drill-through to the people roster.
@@ -89,6 +90,27 @@ struct SettingsView: View {
                     }
                 }
 
+                if let joinURL = JoinLink.url(apiBaseURL: env.baseURLString, name: env.serverName) {
+                    Section {
+                        ShareLink(item: joinURL) {
+                            Label("Share Join Link", systemImage: "square.and.arrow.up")
+                        }
+                        Button {
+                            UIPasteboard.general.url = joinURL
+                        } label: {
+                            Label("Copy Join Link", systemImage: "doc.on.doc")
+                        }
+                        Text(joinURL.absoluteString)
+                            .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                    } header: {
+                        Text("Invite")
+                    } footer: {
+                        Text(JoinLink.isPubliclyReachable(env.baseURLString)
+                             ? "Share to set up SplitBack on another device against this backend."
+                             : "This backend address only works on your local network. Set a public (tunnel/HTTPS) Base URL above before sharing.")
+                    }
+                }
+
                 Section("API Token") {
                     SecureField("Bearer token (optional)", text: $token)
                     Button("Save Token") {
@@ -174,6 +196,7 @@ struct SettingsView: View {
     }
 
     private func reloadAfterConfigChange() async {
+        await env.loadServerInfo()  // refresh the server name/reachability for the join link
         do { try await env.refreshAll(context) }
         catch { errorText = errorMessage(error) }
         await env.refreshSplitwiseStatus()
