@@ -125,6 +125,13 @@ struct ExpenseEditView: View {
     private func owedText(_ person: String) -> String {
         owed(person).formatted(.currency(code: "USD"))
     }
+    /// What each person "gets back" in a reimbursement: the recipient gets the full amount, everyone
+    /// else gets their equal share.
+    private func reimbursementGetsBackText(_ person: String) -> String {
+        let split = splits.first { $0.userIdentifier == person }
+        let value = person == payer ? (split?.owedShare ?? 0) : (split?.paidShare ?? 0)
+        return "gets back " + value.formatted(.currency(code: "USD"))
+    }
 
     private func entry(_ map: Binding<[String: String]>, _ key: String) -> Binding<String> {
         Binding(get: { map.wrappedValue[key, default: ""] }, set: { map.wrappedValue[key] = $0 })
@@ -134,8 +141,10 @@ struct ExpenseEditView: View {
     @ViewBuilder
     private func splitInput(_ person: String) -> some View {
         switch mode {
-        case .equal, .reimbursement, .itemized:
+        case .equal, .itemized:
             Text(owedText(person)).foregroundStyle(.secondary)
+        case .reimbursement:
+            Text(reimbursementGetsBackText(person)).foregroundStyle(.secondary)
         case .exact:
             TextField("0.00", text: entry($customOwed, person))
                 .keyboardType(.decimalPad).multilineTextAlignment(.trailing)
@@ -212,7 +221,7 @@ struct ExpenseEditView: View {
                 }
 
                 Section("Split") {
-                    Picker("Paid by", selection: $payer) {
+                    Picker(mode == .reimbursement ? "Reimbursed" : "Paid by", selection: $payer) {
                         ForEach(participants, id: \.self) { Text($0).tag($0) }
                     }
                     Picker("Mode", selection: $mode) {
