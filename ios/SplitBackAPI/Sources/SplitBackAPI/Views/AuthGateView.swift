@@ -28,12 +28,24 @@ public struct AuthGateView: View {
     public var body: some View {
         NavigationStack {
             Form {
-                Section("Server") {
+                Section {
                     TextField("API base URL", text: $baseURL)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .keyboardType(.URL)
-                    Button("Use This Server") { env.setBaseURL(baseURL) }
+                    Button("Use This Server") {
+                        env.setBaseURL(baseURL)
+                        Task { await env.loadServerInfo() }  // re-probe so the hint/providers update
+                    }
+                } header: {
+                    Text("Server")
+                } footer: {
+                    if env.serverReachable == false {
+                        Label("Couldn't reach this server. Check the URL — on a device, "
+                              + "use the backend's LAN IP or tunnel host, not localhost.",
+                              systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                    }
                 }
 
                 Section("Sign In") {

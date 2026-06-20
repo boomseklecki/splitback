@@ -26,6 +26,9 @@ public final class AppEnvironment {
     public private(set) var serverRequiresAuth: Bool?
     /// Sign-in providers the backend offers (e.g. ["apple","google","splitwise"]); filters the gate.
     public private(set) var authProviders: [String] = []
+    /// Whether the last `/server-info` probe reached a SplitBack backend. Nil before the first probe;
+    /// false means the configured URL is wrong/unreachable (drives the gate's connectivity hint).
+    public private(set) var serverReachable: Bool?
 
     public init() {
         let store = KeychainTokenStore()
@@ -53,12 +56,17 @@ public final class AppEnvironment {
         }
     }
 
-    /// Loads the backend's auth requirement + providers from the unguarded `GET /server-info`.
-    /// Best-effort: leaves `serverRequiresAuth` nil when unreachable (gate falls back to a token check).
+    /// Loads the backend's auth requirement + providers from the unguarded `GET /server-info`, and
+    /// records whether the configured URL actually reached a SplitBack backend.
     func loadServerInfo() async {
-        guard let info = try? await client.server_info_server_info_get().ok.body.json else { return }
-        serverRequiresAuth = info.requires_auth
-        authProviders = info.auth_providers
+        do {
+            let info = try await client.server_info_server_info_get().ok.body.json
+            serverRequiresAuth = info.requires_auth
+            authProviders = info.auth_providers
+            serverReachable = true
+        } catch {
+            serverReachable = false  // wrong URL / unreachable / not a SplitBack backend
+        }
     }
 
     /// Refreshes whether Splitwise is connected (best-effort; leaves the prior value on failure).
