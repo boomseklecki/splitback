@@ -7,6 +7,9 @@ class Settings(BaseSettings):
     # Core
     app_name: str = "SplitBack"
     default_currency: str = "USD"
+    # Friendly label for this backend on the iOS join/confirm screen (e.g. "Matt's Household").
+    # Surfaced by the unguarded GET /server-info; defaults to app_name when blank.
+    public_hostname: str = ""
     # When true, DELETE /groups/{id} hard-deletes (cascade + MinIO cleanup) instead of archiving.
     groups_hard_delete_enabled: bool = False
     # Governs local-only (non-Splitwise) expenses: when true, DELETE /expenses/{id} hard-deletes

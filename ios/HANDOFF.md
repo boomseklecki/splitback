@@ -152,6 +152,28 @@ There is no settlement endpoint by design. A settle-up is just an expense with `
 4. **Project layout** — default: Xcode app project under `ios/`, with the generated API client either in-target or as a local SPM package `ios/SplitBackAPI`.
 5. **Auth** — real sign-in now exists: **Apple / Google / Splitwise → a backend-issued JWT** (see the "Auth / sign-in" endpoints above). The app signs in via one provider, receives our `{token, user}` (or the `splitback://auth?token=` redirect for Splitwise), stores the JWT in the Keychain, and injects `Authorization: Bearer <jwt>` via the generated client's middleware/transport (the existing `AuthMiddleware` already reads the Keychain per request). Enforcement stays **default-open** (`AUTH_REQUIRED=false`), so early iOS development still needs no token — but wiring the sign-in flow + token storage is now Phase-appropriate. The legacy `API_TOKENS` map still works as an alternate bearer. **iOS to build:** a sign-in screen (ASAuthorizationController for Apple, GoogleSignIn SDK, `ASWebAuthenticationSession` for Splitwise catching the `splitback://auth` callback), persist the JWT, and gate the app on it when `AUTH_REQUIRED` is on.
 
+## Onboarding / join link (iOS to build)
+
+A shared link installs the app and pre-fills the backend endpoint. The static site lives in the repo's
+`web/` (deployed to Cloudflare Pages at the fixed domain **`splitback.app`**); the link looks like
+`https://splitback.app/join?api=https://<backend-host>&name=<label>`.
+
+- **Associated domain + scheme:** add `applinks:splitback.app` to `SplitBack.entitlements` (and
+  `ios/project.yml`). The `splitback://` URL scheme already exists (Splitwise OAuth) — extend it to also
+  handle `splitback://configure?api=…&name=…`. The AASA at `web/.well-known/apple-app-site-association`
+  needs your Apple **Team ID** in place of `TEAMID` (same value the entitlement domain implies); bundle
+  id is `com.splitback.app`.
+- **Configure handler** (Universal Link `https://splitback.app/join?api=` **and**
+  `splitback://configure?api=`): parse `api` (+ `name`); require **https** (reject http except
+  localhost); `GET <api>/server-info` → `{app, version, name, requires_auth, auth_providers}` to verify
+  it's a real SplitBack backend; show a **confirm screen** ("Connect to SplitBack at `<host>`?"); then
+  call the existing `AppEnvironment.setBaseURL` / `APIConfig.setOverride`. Friendly error on failure.
+- **Scan invite:** an entry that reuses the VisionKit scanner (already used for receipts) to read the
+  invite **QR** (encodes `splitback://configure?api=…`) and runs the same confirm flow — covers the
+  "installed after tapping the link" case where the Universal Link won't re-fire.
+- `/server-info` is **unguarded** (no token needed) — it's how the app validates a server before adopting
+  it, and before the user has signed in.
+
 ## Reference artifacts
 
 - `ios/openapi.json` — the API contract (regenerate from a running backend with `curl localhost:8000/openapi.json` if the backend changes).

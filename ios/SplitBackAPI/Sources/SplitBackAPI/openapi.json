@@ -55,6 +55,28 @@
         }
       }
     },
+    "/server-info": {
+      "get": {
+        "tags": [
+          "public"
+        ],
+        "summary": "Server Info",
+        "description": "Identity the iOS app pings to verify a URL is really a SplitBack backend before adopting it\n(the join-link confirm screen). Reveals nothing sensitive.",
+        "operationId": "server_info_server_info_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerInfo"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/auth/apple": {
       "post": {
         "tags": [
@@ -4008,6 +4030,42 @@
           "created_at"
         ],
         "title": "ReceiptResponse"
+      },
+      "ServerInfo": {
+        "properties": {
+          "app": {
+            "type": "string",
+            "title": "App"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "requires_auth": {
+            "type": "boolean",
+            "title": "Requires Auth"
+          },
+          "auth_providers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Auth Providers"
+          }
+        },
+        "type": "object",
+        "required": [
+          "app",
+          "version",
+          "name",
+          "requires_auth",
+          "auth_providers"
+        ],
+        "title": "ServerInfo"
       },
       "SplitInput": {
         "properties": {

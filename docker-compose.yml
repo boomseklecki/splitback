@@ -80,6 +80,20 @@ services:
       minio:
         condition: service_started
 
+  # --- Cloudflare tunnel connector (profile: tunnel) ---
+  # Exposes the API publicly over HTTPS via a *remotely-managed* tunnel (create it + the public
+  # hostname -> http://api:8000 in the Cloudflare dashboard; see README "Public access via Cloudflare
+  # Tunnel"). Reads CLOUDFLARE_TUNNEL_TOKEN from .env. Started only with `--profile tunnel`.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    pull_policy: never
+    profiles: ["tunnel"]
+    restart: unless-stopped
+    command: tunnel run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      api:
+        condition: service_started
+
 volumes:
   db_data:
   minio_data:

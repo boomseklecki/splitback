@@ -17,6 +17,7 @@ from app.routers import (
     groups,
     health,
     plaid,
+    public,
     receipts,
     splitwise,
     splitwise_auth,
@@ -40,6 +41,7 @@ app = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan)
 
 # Open: healthchecks, sign-in, and the Splitwise OAuth browser redirect can't carry a bearer.
 app.include_router(health.router)
+app.include_router(public.router)
 app.include_router(auth.router)
 app.include_router(splitwise_auth.router)
 

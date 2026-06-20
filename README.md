@@ -110,6 +110,41 @@ Set these in `.env` (see `.env.example`):
 
 **Splitwise** uses the existing `SPLITWISE_CONSUMER_KEY` / `SPLITWISE_CONSUMER_SECRET` / redirect URI.
 
+## Public access via Cloudflare Tunnel
+
+To reach the backend from outside your LAN (so the iOS app works anywhere), expose it with a Cloudflare
+tunnel. Use a **remotely-managed** tunnel so everything stays manageable from the Cloudflare dashboard:
+
+1. Cloudflare **Zero Trust → Networks → Tunnels → Create a tunnel** → **Cloudflared** → name it →
+   **copy the connector token**.
+2. On the tunnel, add a **public hostname**: your domain (e.g. `splitback.app`) → service
+   `http://api:8000`. Cloudflare auto-creates the DNS record. (`api:8000` is the compose service name —
+   the connector shares the API's network.)
+3. Put the token in `.env`: `CLOUDFLARE_TUNNEL_TOKEN=<token>`.
+4. Start the connector: `docker compose --profile tunnel up -d cloudflared`.
+
+Manage/disable the tunnel and its routes on the Cloudflare website thereafter. The API never sees the
+token (it's compose-only). That public hostname is what you hand out as the app's server URL (below).
+
+## Sharing the app (join link)
+
+The repo's `web/` directory is a static site (deploy to Cloudflare Pages at a fixed domain, e.g.
+`splitback.app`) that lets people install the app and point it at your backend in one link:
+
+```
+https://splitback.app/join?api=https://<your-public-hostname>&name=Your%20Household
+```
+
+- `web/join/index.html` — install button (TestFlight/App Store), an invite **QR** (`splitback://configure?api=…`)
+  for the app's "Scan invite", and the server URL as copyable text.
+- `web/.well-known/apple-app-site-association` — the Universal-Link association; replace `TEAMID` with
+  your Apple Developer **Team ID** (the app's `applinks:` entitlement uses the same domain). With the app
+  installed, tapping the link opens it and pre-fills the endpoint; otherwise the page guides installation.
+
+The backend exposes an unguarded `GET /server-info` (`{app, version, name, requires_auth, auth_providers}`)
+that the app pings to verify a URL is a real SplitBack server before adopting it (`PUBLIC_HOSTNAME` sets
+the friendly label).
+
 ## Running tests
 
 The suite includes integration tests that drive the running API + DB, so they must run against a
