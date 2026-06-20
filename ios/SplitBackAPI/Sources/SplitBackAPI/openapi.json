@@ -1784,6 +1784,63 @@
           }
         }
       },
+      "patch": {
+        "tags": [
+          "accounts"
+        ],
+        "summary": "Update Transaction",
+        "description": "Set (or clear, with null) the per-transaction category override. Plaid sync only touches\ndescription/amount/currency/date/category/pending, so this survives a re-sync.",
+        "operationId": "update_transaction_transactions__transaction_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "transaction_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Transaction Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransactionUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
       "delete": {
         "tags": [
           "accounts"
@@ -4370,6 +4427,10 @@
             "type": "string",
             "title": "Category"
           },
+          "category_override": {
+            "type": "string",
+            "title": "Category Override"
+          },
           "pending": {
             "type": "boolean",
             "title": "Pending"
@@ -4406,6 +4467,16 @@
           "manual"
         ],
         "title": "TransactionSource"
+      },
+      "TransactionUpdate": {
+        "properties": {
+          "category_override": {
+            "type": "string",
+            "title": "Category Override"
+          }
+        },
+        "type": "object",
+        "title": "TransactionUpdate"
       },
       "UserCreate": {
         "properties": {

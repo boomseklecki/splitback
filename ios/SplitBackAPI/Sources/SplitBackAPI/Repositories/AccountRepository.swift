@@ -46,6 +46,19 @@ struct AccountRepository {
         }
     }
 
+    /// Sets (or clears, with nil) the per-transaction category override and caches the response.
+    func setCategoryOverride(id: UUID, category: String?) async throws {
+        let output = try await client.update_transaction_transactions__transaction_id__patch(
+            path: .init(transaction_id: id.uuidString),
+            body: .json(.init(category_override: category))
+        )
+        switch output {
+        case let .ok(ok): try upsertTransactions([try ok.body.json])
+        case let .unprocessableContent(error): throw BackendError.validation(BackendError.validationMessage(try? error.body.json))
+        case let .undocumented(statusCode, _): throw BackendError.fromUndocumented(statusCode)
+        }
+    }
+
     /// Sets the Goals-analytics inclusion overrides on an account and caches the response.
     func updateFlags(id: UUID, includeInSpending: Bool?, includeInCashFlow: Bool?) async throws {
         let output = try await client.update_account_accounts__account_id__patch(
@@ -96,6 +109,7 @@ struct AccountRepository {
                 existing.currency = r.currency
                 existing.date = try Mapping.dateOnly(r.date, field: "Transaction.date")
                 existing.category = r.category
+                existing.categoryOverride = r.category_override
                 existing.pending = r.pending
                 existing.createdAt = r.created_at
                 existing.updatedAt = r.updated_at

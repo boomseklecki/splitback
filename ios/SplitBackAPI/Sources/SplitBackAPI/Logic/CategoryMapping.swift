@@ -8,10 +8,13 @@ enum CategoryMapping {
                    uniquingKeysWith: { first, _ in first })
     }
 
-    /// The canonical category for a transaction. Precedence: an explicit user/on-device override in the
-    /// synced map → a confident built-in Plaid mapping → the per-transaction on-device refinement (for
-    /// vague rows) → the built-in "Other"/raw string. Nil only when there's no category.
+    /// The canonical category for a transaction. Precedence: an explicit per-transaction override
+    /// (manual/AI on this row) → an explicit user/on-device override in the synced label map → a
+    /// confident built-in Plaid mapping → the per-transaction on-device refinement (for vague rows) →
+    /// the built-in "Other"/raw string. A per-transaction override applies even when the raw category is
+    /// empty (e.g. a manual transaction). Nil only when there's nothing to show.
     static func effectiveCategory(for transaction: Transaction, lookup: [String: String]) -> String? {
+        if let override = transaction.categoryOverride, !override.isEmpty { return override }
         guard let raw = transaction.category, !raw.isEmpty else { return nil }
         if let explicit = lookup[raw] { return explicit }
         let builtin = PlaidCategory.canonical(raw)
@@ -29,7 +32,8 @@ enum CategoryMapping {
     /// Whether a transaction's category is vague enough to benefit from a description-based refinement:
     /// no explicit override and the built-in map yields "Other" or nothing.
     static func needsRefinement(_ transaction: Transaction, lookup: [String: String]) -> Bool {
-        guard transaction.source == .plaid, let raw = transaction.category, !raw.isEmpty,
+        guard transaction.categoryOverride == nil,
+              transaction.source == .plaid, let raw = transaction.category, !raw.isEmpty,
               lookup[raw] == nil else { return false }
         let builtin = PlaidCategory.canonical(raw)
         return builtin == nil || builtin == "Other"

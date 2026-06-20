@@ -11,7 +11,7 @@ from app.db import get_session
 from app.models import Account, Transaction
 from app.models.enums import TransactionSource
 from app.schemas.account import AccountCreate, AccountResponse, AccountUpdate
-from app.schemas.transaction import TransactionCreate, TransactionResponse
+from app.schemas.transaction import TransactionCreate, TransactionResponse, TransactionUpdate
 from app.utils import ensure_utc
 
 router = APIRouter(tags=["accounts"])
@@ -102,6 +102,22 @@ async def get_transaction(
     transaction = await session.get(Transaction, transaction_id)
     if transaction is None:
         raise HTTPException(status_code=404, detail="Transaction not found")
+    return transaction
+
+
+@router.patch("/transactions/{transaction_id}", response_model=TransactionResponse)
+async def update_transaction(
+    transaction_id: UUID, body: TransactionUpdate, session: AsyncSession = Depends(get_session)
+) -> Transaction:
+    """Set (or clear, with null) the per-transaction category override. Plaid sync only touches
+    description/amount/currency/date/category/pending, so this survives a re-sync."""
+    transaction = await session.get(Transaction, transaction_id)
+    if transaction is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    # Single-field body: assign directly so an omitted field (the generated client drops nil) clears it.
+    transaction.category_override = body.category_override
+    await session.commit()
+    await session.refresh(transaction)
     return transaction
 
 

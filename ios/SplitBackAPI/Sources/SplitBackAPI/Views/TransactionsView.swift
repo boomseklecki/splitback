@@ -11,7 +11,6 @@ struct TransactionsView: View {
     @Query private var categoryMaps: [CategoryMap]
 
     @State private var showingManual = false
-    @State private var selected: Transaction?
     @State private var errorText: String?
 
     private var lookup: [String: String] { CategoryMapping.lookup(categoryMaps) }
@@ -42,7 +41,9 @@ struct TransactionsView: View {
                 )
             }
             ForEach(transactions) { transaction in
-                Button { selected = transaction } label: {
+                NavigationLink {
+                    TransactionDetailView(transaction: transaction)
+                } label: {
                     let category = CategoryMapping.effectiveCategory(for: transaction, lookup: lookup)
                     HStack(spacing: 12) {
                         Image(systemName: categorySymbol(category))
@@ -86,7 +87,6 @@ struct TransactionsView: View {
             }
         }
         .sheet(isPresented: $showingManual) { ManualTransactionView() }
-        .sheet(item: $selected) { NewExpenseFromTransactionView(transaction: $0) }
         .refreshable {
             do { try await env.accounts(context).refreshTransactions(accountId: account?.id) }
             catch { errorText = errorMessage(error) }
@@ -154,7 +154,8 @@ private struct ManualTransactionView: View {
 
 /// Pick a group, then open the expense editor prefilled from the transaction (links via transaction_id).
 /// The group list hides settled groups and sorts by recent activity, matching the Expenses tab.
-private struct NewExpenseFromTransactionView: View {
+/// Presented from `TransactionDetailView`'s "Add to a Group".
+struct NewExpenseFromTransactionView: View {
     let transaction: Transaction
 
     @Environment(AppEnvironment.self) private var env

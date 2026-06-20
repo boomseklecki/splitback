@@ -180,6 +180,7 @@ enum Mapping {
             currency: r.currency,
             date: try dateOnly(r.date, field: "Transaction.date"),
             category: r.category,
+            categoryOverride: r.category_override,
             pending: r.pending,
             createdAt: r.created_at,
             updatedAt: r.updated_at

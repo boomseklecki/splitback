@@ -55,6 +55,25 @@ final class GoalsAnalyticsTests: XCTestCase {
         XCTAssertEqual(CategoryMapping.effectiveCategory(for: vague, lookup: lookup), "Fees")
     }
 
+    func testPerTransactionOverrideWinsAndStopsRefinement() {
+        let checking = account(type: "checking")
+        // A label map AND a confident built-in would both apply, but the per-transaction override wins.
+        let lookup = ["FOOD_AND_DRINK_GROCERIES": "Household"]
+        let t = txn(20, category: "FOOD_AND_DRINK_GROCERIES", account: checking)
+        t.categoryOverride = "Dining"
+        XCTAssertEqual(CategoryMapping.effectiveCategory(for: t, lookup: lookup), "Dining")
+        // An override on a vague row removes it from the refinement candidates.
+        let vague = txn(20, category: "GENERAL_SERVICES_OTHER", account: checking)
+        XCTAssertTrue(CategoryMapping.needsRefinement(vague, lookup: [:]))
+        vague.categoryOverride = "Subscriptions"
+        XCTAssertFalse(CategoryMapping.needsRefinement(vague, lookup: [:]))
+        XCTAssertEqual(CategoryMapping.effectiveCategory(for: vague, lookup: [:]), "Subscriptions")
+        // An override applies even when the raw category is empty (e.g. a manual transaction).
+        let manual = txn(20, category: nil, account: checking, source: .manual)
+        manual.categoryOverride = "Pets"
+        XCTAssertEqual(CategoryMapping.effectiveCategory(for: manual, lookup: [:]), "Pets")
+    }
+
     func testPlaidCategoryMapping() {
         XCTAssertEqual(PlaidCategory.canonical("FOOD_AND_DRINK_GROCERIES"), "Groceries")
         XCTAssertEqual(PlaidCategory.canonical("FOOD_AND_DRINK_FAST_FOOD"), "Dining")  // primary default

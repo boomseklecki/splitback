@@ -18,6 +18,11 @@ class TransactionCreate(BaseModel):
     pending: bool = False
 
 
+class TransactionUpdate(BaseModel):
+    # Per-transaction canonical category override; null clears it (revert to the label map/auto).
+    category_override: str | None = None
+
+
 class TransactionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -30,6 +35,7 @@ class TransactionResponse(BaseModel):
     currency: str
     date: date_type
     category: str | None
+    category_override: str | None
     pending: bool
     created_at: datetime
     updated_at: datetime

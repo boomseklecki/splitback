@@ -17,6 +17,9 @@ final class Transaction {
     var currency: String
     var date: Date
     var category: String?
+    /// Explicit per-transaction canonical category (manual pick or on-device AI on this one row).
+    /// Backend-synced and independent of the label-wide category map — wins over it in `effectiveCategory`.
+    var categoryOverride: String?
     var pending: Bool
     /// On-device (Apple Intelligence) category refinement from the merchant description, for rows whose
     /// Plaid category is vague ("Other"/uncategorized). Client-only and derived — not synced, and the
@@ -35,6 +38,7 @@ final class Transaction {
         currency: String,
         date: Date,
         category: String? = nil,
+        categoryOverride: String? = nil,
         pending: Bool = false,
         refinedCategory: String? = nil,
         createdAt: Date,
@@ -49,6 +53,7 @@ final class Transaction {
         self.currency = currency
         self.date = date
         self.category = category
+        self.categoryOverride = categoryOverride
         self.pending = pending
         self.refinedCategory = refinedCategory
         self.createdAt = createdAt
