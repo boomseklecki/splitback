@@ -204,10 +204,14 @@ struct ExpenseRow: View {
     var groupName: String? = nil
 
     private var isSettleUp: Bool { expense.category == SettleUp.category }
+    private var isReimbursement: Bool { expense.category == Reimbursement.category }
 
     private var subtitle: String {
         var core: String
-        if isSettleUp, let payer = expense.splits.first(where: { $0.paidShare > 0 }) {
+        if isReimbursement, let recipient = expense.splits.max(by: { $0.owedShare < $1.owedShare }) {
+            core = "\(users.displayName(for: recipient.userIdentifier)) got "
+                + recipient.owedShare.formatted(.currency(code: expense.currency)) + " back"
+        } else if isSettleUp, let payer = expense.splits.first(where: { $0.paidShare > 0 }) {
             let payerName = users.displayName(for: payer.userIdentifier)
             if let recipient = expense.splits.first(where: { $0.owedShare > 0 && $0.paidShare == 0 }) {
                 core = "\(payerName) paid \(users.displayName(for: recipient.userIdentifier))"

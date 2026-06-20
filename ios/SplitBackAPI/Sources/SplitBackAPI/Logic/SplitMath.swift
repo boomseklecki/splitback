@@ -87,11 +87,14 @@ enum SplitMath {
         }
     }
 
-    /// Reimbursement: the reimbursed person (`payer`) fronts the full amount, which is then split
-    /// equally among all participants (each owes amount / member count, the payer included) — so the
-    /// payer is reimbursed their share by everyone else.
+    /// Reimbursement (the inverse of an expense): `payer` *received* the full amount (a windfall) and
+    /// splits it equally — so the payer ends up owing the others their shares. Encoded as an equal
+    /// split with each person's paid/owed swapped, which flips every balance while staying summed to
+    /// the amount. Net: the recipient owes; everyone else is owed their share ("gets back").
     static func reimbursementSplit(amount: Decimal, payer: String, participants: [String]) -> [SplitDraft] {
-        equalSplit(amount: amount, payer: payer, participants: participants)
+        equalSplit(amount: amount, payer: payer, participants: participants).map {
+            SplitDraft(userIdentifier: $0.userIdentifier, paidShare: $0.owedShare, owedShare: $0.paidShare)
+        }
     }
 
     /// Itemized: each person owes the sum of items assigned to them; any unassigned remainder
@@ -108,6 +111,12 @@ enum SplitMath {
                               owedShare: (assigned[identifier] ?? 0) + rem)
         }
     }
+}
+
+/// Marks an expense as a reimbursement (windfall split). Like `SettleUp`, it's flagged via the
+/// category so the detail view can render "gets back" phrasing.
+enum Reimbursement {
+    static let category = "Reimbursement"
 }
 
 /// Splitwise-style presentation: collapse expenses older than the most recent settle-up.

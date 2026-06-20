@@ -74,6 +74,15 @@ struct ExpenseDetailView: View {
         expense.splits.filter { $0.owedShare > 0 && $0.paidShare == 0 }.sorted { $0.userIdentifier < $1.userIdentifier }
     }
 
+    private var isReimbursement: Bool { expense.category == Reimbursement.category }
+    /// The reimbursed person (encoded with owedShare == the full amount).
+    private var reimbursementRecipient: Split? { expense.splits.max { $0.owedShare < $1.owedShare } }
+    private func getsBackText(_ split: Split, amount: Decimal) -> String {
+        let isMe = split.userIdentifier == meIdentifier
+        let name = isMe ? "You" : users.displayName(for: split.userIdentifier)
+        return "\(name) \(isMe ? "get back" : "gets back") \(currency(amount))"
+    }
+
     private var settleUpText: String {
         let amount = currency(expense.amount)
         guard let payer = payers.first else { return amount }
@@ -87,7 +96,18 @@ struct ExpenseDetailView: View {
         List {
             Section { header }
 
-            if isSettleUp {
+            if isReimbursement, let recipient = reimbursementRecipient {
+                Section("Reimbursement") {
+                    Text(getsBackText(recipient, amount: recipient.owedShare)).fontWeight(.medium)
+                    ForEach(expense.splits
+                        .filter { $0.userIdentifier != recipient.userIdentifier }
+                        .sorted { $0.userIdentifier < $1.userIdentifier }, id: \.userIdentifier) { split in
+                        Text(getsBackText(split, amount: split.paidShare))
+                            .font(.callout).foregroundStyle(.secondary)
+                            .padding(.leading, 28)
+                    }
+                }
+            } else if isSettleUp {
                 Section { Text(settleUpText).fontWeight(.medium) }
             } else {
                 Section("Split") {

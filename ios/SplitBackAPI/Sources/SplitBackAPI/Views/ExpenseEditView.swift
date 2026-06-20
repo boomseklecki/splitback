@@ -64,8 +64,10 @@ struct ExpenseEditView: View {
         } ?? prefill?.items ?? []
         _items = State(initialValue: seedItems)
         _transactionId = State(initialValue: editing?.transactionId ?? prefill?.transactionId)
-        // Preserve a stored (possibly uneven) split when editing; start new expenses on Equal.
-        _mode = State(initialValue: editing == nil ? .equal : .exact)
+        // Preserve a stored split when editing (Reimbursement if marked, else Exact); new expenses
+        // start on Equal.
+        let editingMode: SplitMode = editing?.category == Reimbursement.category ? .reimbursement : .exact
+        _mode = State(initialValue: editing == nil ? .equal : editingMode)
     }
 
     private var amount: Decimal { Decimal(string: amountString, locale: Locale(identifier: "en_US_POSIX")) ?? 0 }
@@ -171,9 +173,11 @@ struct ExpenseEditView: View {
                     TextField("Description", text: $details)
                     TextField("Amount", text: $amountString).keyboardType(.decimalPad)
                     DatePicker("Date", selection: $date, displayedComponents: .date)
-                    Picker("Category", selection: $category) {
-                        Text("None").tag(String?.none)
-                        ForEach(categories, id: \.self) { Text($0).tag(String?.some($0)) }
+                    if mode != .reimbursement {
+                        Picker("Category", selection: $category) {
+                            Text("None").tag(String?.none)
+                            ForEach(categories, id: \.self) { Text($0).tag(String?.some($0)) }
+                        }
                     }
                     TextField("Notes", text: $notes, axis: .vertical)
                 }
@@ -212,7 +216,7 @@ struct ExpenseEditView: View {
                     }
 
                     if mode == .reimbursement {
-                        Text("\(payer) fronts the full amount; it's split equally among everyone, so \(payer) is reimbursed their share.")
+                        Text("\(payer) was reimbursed the full amount and splits it equally — \(payer) owes the others their share.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
 
@@ -260,7 +264,7 @@ struct ExpenseEditView: View {
         let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
         let draft = ExpenseDraft(
             groupId: group.id, details: details, amount: amount,
-            date: date, category: category,
+            date: date, category: mode == .reimbursement ? Reimbursement.category : category,
             notes: trimmedNotes.isEmpty ? nil : trimmedNotes,
             createdBy: editing == nil ? me : nil,
             updatedBy: editing != nil ? me : nil,

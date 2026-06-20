@@ -7,6 +7,7 @@ func categorySymbol(_ category: String?) -> String {
     let map: [(String, String)] = [
         ("settle", "arrow.left.arrow.right"),
         ("payment", "arrow.left.arrow.right"),
+        ("reimburs", "arrow.uturn.backward.circle"),
         ("grocer", "cart.fill"),
         ("dining", "fork.knife"),
         ("restaurant", "fork.knife"),
