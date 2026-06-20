@@ -82,6 +82,7 @@ struct AccountsView: View {
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
                         Button("Blank Transaction", systemImage: "square.and.pencil") { showingManual = true }
+                        Divider()
                         Button("Link Bank", systemImage: "building.columns") { linkBank() }
                             .disabled(linking || env.currentUser == nil)
                     } label: {

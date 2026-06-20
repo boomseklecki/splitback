@@ -100,7 +100,9 @@ struct GroupDetailView: View {
                 Menu {
                     Button("Blank Expense", systemImage: "square.and.pencil") { showingNewExpense = true }
                     Button("Scan Receipt", systemImage: "doc.viewfinder") { showingReceiptScanner = true }
-                    PhotosPicker("Receipt from Photo", selection: $receiptPhoto, matching: .images)
+                    PhotosPicker(selection: $receiptPhoto, matching: .images) {
+                        Label("Receipt from Photo", systemImage: "photo")
+                    }
                 } label: {
                     Image(systemName: "plus")
                 }
