@@ -18,19 +18,21 @@ public struct RootView: View {
     }
 
     public var body: some View {
-        SwiftUI.Group {
-            switch phase {
-            case .checking:
-                ProgressView().controlSize(.large)
-            case .gate:
-                AuthGateView(isLaunchGate: true)
-            case .ready:
-                MainTabView()
+        LockGateView {
+            SwiftUI.Group {
+                switch phase {
+                case .checking:
+                    ProgressView().controlSize(.large)
+                case .gate:
+                    AuthGateView(isLaunchGate: true)
+                case .ready:
+                    MainTabView()
+                }
             }
-        }
-        .task {
-            await env.loadServerInfo()
-            checking = false
+            .task {
+                await env.loadServerInfo()
+                checking = false
+            }
         }
     }
 }

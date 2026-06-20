@@ -8,6 +8,7 @@ struct SettingsView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \User.displayName) private var users: [User]
 
+    @AppStorage(AppLock.enabledKey) private var lockEnabled = false
     @State private var token = ""
     @State private var baseURL = ""
     @State private var importing = false
@@ -50,6 +51,19 @@ struct SettingsView: View {
                         Text("Not signed in").foregroundStyle(.secondary)
                         Button("Sign In…") { showingSignIn = true }
                     }
+                }
+
+                Section {
+                    Toggle(isOn: $lockEnabled) {
+                        Label("Require Face ID / Passcode", systemImage: "faceid")
+                    }
+                    .disabled(!AppLock.isAvailable)
+                } header: {
+                    Text("Security")
+                } footer: {
+                    Text(AppLock.isAvailable
+                         ? "Lock the app on launch and when it returns from the background."
+                         : "Set a device passcode to enable app lock.")
                 }
 
                 Section {

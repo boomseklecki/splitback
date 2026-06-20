@@ -28,6 +28,7 @@ targets:
           NSAllowsLocalNetworking: true
         NSLocalNetworkUsageDescription: SplitBack connects to your self-hosted backend on the local network.
         NSCameraUsageDescription: Scan receipts with the camera.
+        NSFaceIDUsageDescription: Unlock SplitBack with Face ID.
         # Plaid Link app-to-app handoff to bank apps during OAuth.
         LSApplicationQueriesSchemes:
           - plaidlink

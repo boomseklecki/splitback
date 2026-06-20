@@ -48,6 +48,8 @@
 	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>Scan receipts with the camera.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Unlock SplitBack with Face ID.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>SplitBack connects to your self-hosted backend on the local network.</string>
 	<key>UIApplicationSceneManifest</key>
