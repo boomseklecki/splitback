@@ -28,6 +28,22 @@ struct SpendEvent: Identifiable {
     let countsInCashFlow: Bool
 }
 
+/// The concrete source behind a `ResolvedSpendEvent`, for drill-through navigation.
+enum EventSource {
+    case transaction(Transaction)
+    case expense(Expense)
+}
+
+/// A `SpendEvent` that keeps its source identity: the originating `Transaction`/`Expense` and, for an
+/// itemized expense's per-item contribution, the `itemId`. Used by the Goals/Trends drill-throughs to list
+/// and navigate to the rows behind each total. `spendEvents` is the identity-erased projection of this.
+struct ResolvedSpendEvent: Identifiable {
+    let event: SpendEvent
+    let source: EventSource
+    let itemId: UUID?
+    var id: UUID { event.id }
+}
+
 /// Pure spend/cash-flow aggregations over a unified `SpendEvent` stream, scoped by accounts' effective
 /// inclusion flags (`countsInSpending` / `countsInCashFlow`) and the canonical category map.
 enum SpendingAnalytics {
@@ -48,20 +64,30 @@ enum SpendingAnalytics {
     /// spend or cash flow. `me` nil ⇒ no expenses (we can't know your share).
     static func spendEvents(transactions: [Transaction], accounts: [Account], lookup: [String: String],
                             expenses: [Expense] = [], me: String? = nil) -> [SpendEvent] {
+        resolvedEvents(transactions: transactions, accounts: accounts, lookup: lookup,
+                       expenses: expenses, me: me).map(\.event)
+    }
+
+    /// The unified stream with source identity retained (see `ResolvedSpendEvent`). `spendEvents` is this
+    /// projected to `\.event`, so every analytics total is provably consistent with the drill-through rows.
+    static func resolvedEvents(transactions: [Transaction], accounts: [Account], lookup: [String: String],
+                               expenses: [Expense] = [], me: String? = nil) -> [ResolvedSpendEvent] {
         let byId = Dictionary(accounts.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        var events: [SpendEvent] = []
+        var events: [ResolvedSpendEvent] = []
 
         for t in transactions where t.source == .plaid || t.source == .manual {
             let account = t.accountId.flatMap { byId[$0] }
             // Plaid transactions always belong to an account; skip if it's missing. Manual transactions
             // may be cash with no account — those always count; on an account, honor its flags.
             if t.source == .plaid && account == nil { continue }
-            events.append(SpendEvent(
-                id: t.id, date: t.date, label: t.details,
-                category: CategoryMapping.effectiveCategory(for: t, lookup: lookup),
-                amount: t.amount,
-                countsInSpending: account?.countsInSpending ?? true,
-                countsInCashFlow: account?.countsInCashFlow ?? true))
+            events.append(ResolvedSpendEvent(
+                event: SpendEvent(
+                    id: t.id, date: t.date, label: t.details,
+                    category: CategoryMapping.effectiveCategory(for: t, lookup: lookup),
+                    amount: t.amount,
+                    countsInSpending: account?.countsInSpending ?? true,
+                    countsInCashFlow: account?.countsInCashFlow ?? true),
+                source: .transaction(t), itemId: nil))
         }
 
         if let me {
@@ -78,11 +104,14 @@ enum SpendingAnalytics {
                     guard inflow > 0 else { continue }
                     amount = -inflow
                 } else if !e.items.isEmpty {
-                    // Itemized outflow: attribute your share of each item to its own category.
-                    for c in ItemizedSpend.categoryContributions(for: e, me: me, lookup: lookup) {
-                        events.append(SpendEvent(
-                            id: e.id, date: e.date, label: e.details, category: c.category,
-                            amount: c.amount, countsInSpending: true, countsInCashFlow: true))
+                    // Itemized outflow: attribute your share of each item to its own category, keeping
+                    // each contributing item's id for the drill-through.
+                    for c in ItemizedSpend.detailed(for: e, me: me, lookup: lookup) {
+                        events.append(ResolvedSpendEvent(
+                            event: SpendEvent(
+                                id: e.id, date: e.date, label: e.details, category: c.category,
+                                amount: c.amount, countsInSpending: true, countsInCashFlow: true),
+                            source: .expense(e), itemId: c.itemId))
                     }
                     continue
                 } else {
@@ -90,9 +119,11 @@ enum SpendingAnalytics {
                     guard share > 0 else { continue }  // you consumed nothing (or aren't in this expense)
                     amount = share
                 }
-                events.append(SpendEvent(
-                    id: e.id, date: e.date, label: e.details, category: category,
-                    amount: amount, countsInSpending: true, countsInCashFlow: true))
+                events.append(ResolvedSpendEvent(
+                    event: SpendEvent(
+                        id: e.id, date: e.date, label: e.details, category: category,
+                        amount: amount, countsInSpending: true, countsInCashFlow: true),
+                    source: .expense(e), itemId: nil))
             }
         }
         return events

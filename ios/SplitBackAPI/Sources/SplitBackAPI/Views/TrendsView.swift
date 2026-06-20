@@ -33,13 +33,15 @@ struct TrendsView: View {
     var body: some View {
         List {
             Section {
-                chart(spending, positiveOnly: true)
+                MonthBarChart(series: spending, titlePrefix: "Spending", scope: .spending, positiveOnly: true)
             } header: {
                 Text("Spending  \(rangeLabel)").textCase(nil)
+            } footer: {
+                Text("Tap a month to see what it's made of.")
             }
 
             Section {
-                chart(netIncome, positiveOnly: false)
+                MonthBarChart(series: netIncome, titlePrefix: "Net Income", scope: .cashFlow, positiveOnly: false)
             } header: {
                 Text("Net Income  \(rangeLabel)").textCase(nil)
             }
@@ -47,8 +49,19 @@ struct TrendsView: View {
         .navigationTitle("Trends")
         .navigationBarTitleDisplayMode(.inline)
     }
+}
 
-    private func chart(_ series: [MonthlyValue], positiveOnly: Bool) -> some View {
+/// A month-bucketed bar chart whose bars drill through to the contributing items for that month. Owns its
+/// own selection + destination so the Spending and Net Income charts don't collide.
+private struct MonthBarChart: View {
+    let series: [MonthlyValue]
+    let titlePrefix: String
+    let scope: SpendContributors.Scope
+    let positiveOnly: Bool
+
+    @State private var selectedMonth: Date?
+
+    var body: some View {
         Chart(series) { point in
             BarMark(
                 x: .value("Month", point.month, unit: .month),
@@ -64,5 +77,28 @@ struct TrendsView: View {
         }
         .frame(height: 200)
         .padding(.vertical, 4)
+        .chartOverlay { proxy in
+            GeometryReader { geo in
+                Rectangle().fill(.clear).contentShape(Rectangle())
+                    .onTapGesture { location in
+                        guard let plotFrame = proxy.plotFrame else { return }
+                        let x = location.x - geo[plotFrame].origin.x
+                        guard let date: Date = proxy.value(atX: x) else { return }
+                        selectedMonth = nearestMonth(to: date)
+                    }
+            }
+        }
+        .navigationDestination(item: $selectedMonth) { month in
+            SpendContributorsView(
+                title: "\(titlePrefix) · \(month.formatted(.dateTime.month(.abbreviated).year()))",
+                month: month, scope: scope)
+        }
+    }
+
+    /// Snap a tapped x-position date to the nearest bar's month.
+    private func nearestMonth(to date: Date) -> Date? {
+        series.min {
+            abs($0.month.timeIntervalSince(date)) < abs($1.month.timeIntervalSince(date))
+        }?.month
     }
 }

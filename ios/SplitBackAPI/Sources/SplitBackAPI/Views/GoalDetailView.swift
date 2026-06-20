@@ -57,15 +57,10 @@ struct GoalDetailView: View {
                 accounts: accounts, lookup: lookup, expenses: expenses, me: me))
         }
     }
-    /// The spend events (transactions + unlinked expenses) feeding this month's budget standing.
-    private var thisMonthSpend: [SpendEvent] {
-        SpendingAnalytics.spendEvents(transactions: transactions, accounts: accounts, lookup: lookup,
-                                      expenses: expenses, me: me)
-            .filter {
-                SpendingAnalytics.monthStart($0.date) == month
-                    && SpendingAnalytics.isSpend($0)
-                    && $0.category == goal.category
-            }
+    /// The transactions, expenses, and items feeding this month's budget standing — each navigable.
+    private var thisMonthSpend: [SpendContributor] {
+        SpendContributors.of(scope: .category(goal.category ?? ""), month: month, transactions: transactions,
+                             accounts: accounts, expenses: expenses, lookup: lookup, me: me)
     }
 
     @ViewBuilder private var budgetContent: some View {
@@ -98,14 +93,7 @@ struct GoalDetailView: View {
             if thisMonthSpend.isEmpty {
                 Text("No spending in this category yet.").font(.caption).foregroundStyle(.secondary)
             } else {
-                ForEach(thisMonthSpend) { event in
-                    HStack {
-                        Text(event.label)
-                        Spacer()
-                        Text(event.amount.formatted(.currency(code: goal.currency)))
-                            .foregroundStyle(.secondary).monospacedDigit()
-                    }
-                }
+                ForEach(thisMonthSpend) { ContributorRow(row: $0) }
             }
         }
     }
@@ -144,6 +132,15 @@ struct GoalDetailView: View {
                 AxisValueLabel(format: .dateTime.month(.narrow))
             } }
             .frame(height: 180)
+        }
+        if let account {
+            Section {
+                NavigationLink {
+                    TransactionsView(account: account)
+                } label: {
+                    Label("Account Transactions", systemImage: "list.bullet")
+                }
+            }
         }
     }
 

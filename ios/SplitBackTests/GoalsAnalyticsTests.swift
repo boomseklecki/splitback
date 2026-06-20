@@ -361,6 +361,103 @@ final class GoalsAnalyticsTests: XCTestCase {
         XCTAssertEqual(net.first?.value, -25)                  // cash outflow only
     }
 
+    // MARK: Drill-through (SpendContributors)
+
+    /// An itemized $100 Shopping expense like `testItemizedAttribution`, for the detail breakdowns.
+    private func itemizedShopping(me: String = "me", splitwiseId: String? = nil) -> Expense {
+        Expense(
+            id: UUID(), groupId: UUID(), splitwiseExpenseId: splitwiseId, details: "Target run",
+            amount: 100, currency: "USD", date: Date(), category: "Shopping",
+            createdAt: Date(), updatedAt: Date(),
+            splits: [
+                Split(id: UUID(), userIdentifier: me, paidShare: 100, owedShare: 85),
+                Split(id: UUID(), userIdentifier: "friend", paidShare: 0, owedShare: 15),
+            ],
+            items: [
+                ExpenseItem(id: UUID(), name: "Milk", quantity: 1, price: 40, category: "Groceries", ownerIdentifier: me),
+                ExpenseItem(id: UUID(), name: "Soap", quantity: 1, price: 30, category: "Personal Care", ownerIdentifier: me),
+                ExpenseItem(id: UUID(), name: "Chips", quantity: 1, price: 20, category: "Snacks", ownerIdentifier: nil),
+            ])
+    }
+
+    func testDetailedSumsToContributions() {
+        let me = "me"
+        for exp in [itemizedShopping(me: me), itemizedShopping(me: me, splitwiseId: "sw-1")] {
+            let detailed = ItemizedSpend.detailed(for: exp, me: me, lookup: [:])
+            var summed: [String: Decimal] = [:]
+            for d in detailed { summed[d.category, default: 0] += d.amount }
+            let contrib = ItemizedSpend.categoryContributions(for: exp, me: me, lookup: [:])
+            XCTAssertEqual(summed, Dictionary(contrib.map { ($0.category, $0.amount) },
+                                              uniquingKeysWith: { a, _ in a }))
+        }
+    }
+
+    func testCategoryContributorsListSourcesAndSum() {
+        let checking = account(type: "checking")
+        let me = "me"
+        let t = txn(30, category: "Dining", account: checking)
+        let nonItem = expense(60, category: "Dining", owed: 20, details: "Dinner")
+        // An itemized expense with a single Dining item assigned to me (full price).
+        let itemized = Expense(
+            id: UUID(), groupId: UUID(), details: "Cafe", amount: 50, currency: "USD",
+            date: Date(), category: "Shopping", createdAt: Date(), updatedAt: Date(),
+            splits: [Split(id: UUID(), userIdentifier: me, paidShare: 50, owedShare: 50)],
+            items: [ExpenseItem(id: UUID(), name: "Latte", quantity: 1, price: 50,
+                                category: "Dining", ownerIdentifier: me)])
+        let txns = [t]; let exps = [nonItem, itemized]
+        let rows = SpendContributors.of(scope: .category("Dining"), month: Date(), transactions: txns,
+                                        accounts: [checking], expenses: exps, lookup: [:], me: me)
+        XCTAssertEqual(rows.count, 3)  // transaction + non-itemized expense + one item
+        let txnRows = rows.filter { if case .transaction = $0.source { return true }; return false }
+        let expRows = rows.filter { if case .expense = $0.source { return true }; return false }
+        XCTAssertEqual(txnRows.count, 1)
+        XCTAssertEqual(expRows.count, 2)
+        XCTAssertTrue(rows.contains { $0.label == "Cafe · Latte" })  // item row label
+        // Rows sum to the category total.
+        let total = rows.reduce(Decimal(0)) { $0 + $1.amount }
+        let byCat = SpendingAnalytics.byCategory(in: Date(), transactions: txns, accounts: [checking],
+                                                 lookup: [:], expenses: exps, me: me)
+        XCTAssertEqual(total, byCat.first { $0.category == "Dining" }?.total)
+        XCTAssertEqual(total, 100)  // 30 + 20 + 50
+    }
+
+    func testSpendingScopeSumsToMonthlySpending() {
+        let checking = account(type: "checking")
+        let me = "me"
+        let txns = [txn(30, category: "Dining", account: checking),
+                    txn(20, category: "Groceries", account: checking),
+                    txn(-100, category: "Income", account: checking)]  // inflow, excluded from spend
+        let exps = [expense(60, category: "Dining", owed: 20)]
+        let rows = SpendContributors.of(scope: .spending, month: Date(), transactions: txns,
+                                        accounts: [checking], expenses: exps, lookup: [:], me: me)
+        XCTAssertFalse(rows.contains { $0.isInflow })  // income not present
+        let total = rows.reduce(Decimal(0)) { $0 + $1.amount }
+        let monthly = SpendingAnalytics.monthlySpending(transactions: txns, accounts: [checking],
+                                                        lookup: [:], months: 1, expenses: exps, me: me)
+        XCTAssertEqual(total, monthly.first?.value)
+        XCTAssertEqual(total, 70)  // 30 + 20 + 20
+    }
+
+    func testCashFlowScopeSignedAndExcludesNeutral() {
+        let checking = account(type: "checking")
+        let me = "me"
+        let txns = [txn(-2000, category: "Income", account: checking),  // inflow
+                    txn(300, category: "Groceries", account: checking), // outflow
+                    txn(500, category: "Transfer", account: checking)]  // neutral, excluded
+        let exps = [expense(60, category: "Dining", owed: 20)]          // outflow
+        let rows = SpendContributors.of(scope: .cashFlow, month: Date(), transactions: txns,
+                                        accounts: [checking], expenses: exps, lookup: [:], me: me)
+        XCTAssertEqual(rows.count, 3)  // income + groceries + dining; transfer dropped
+        XCTAssertFalse(rows.contains { $0.category == "Transfer" })
+        XCTAssertTrue(rows.contains { $0.isInflow && $0.category == "Income" })
+        // Signed rows: net income = −Σ(amount).
+        let signed = rows.reduce(Decimal(0)) { $0 + $1.amount }
+        let net = SpendingAnalytics.monthlyNetIncome(transactions: txns, accounts: [checking],
+                                                     lookup: [:], months: 1, expenses: exps, me: me).first?.value
+        XCTAssertEqual(-signed, net)
+        XCTAssertEqual(net, 1680)  // 2000 in − 300 − 20
+    }
+
     // MARK: GoalProgress
 
     func testBudgetStatusAndFraction() {

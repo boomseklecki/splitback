@@ -43,14 +43,19 @@ struct GoalsView: View {
                         Text("No spending this month yet.").font(.caption).foregroundStyle(.secondary)
                     } else {
                         ForEach(categorySpend.prefix(6)) { slice in
-                            HStack(spacing: 8) {
-                                Circle().fill(categoryColor(slice.category)).frame(width: 10, height: 10)
-                                Text(slice.category)
-                                Spacer()
-                                Text(slice.total.formatted(.currency(code: "USD")))
-                                    .foregroundStyle(.secondary).monospacedDigit()
+                            NavigationLink {
+                                SpendContributorsView(title: slice.category, month: month,
+                                                      scope: .category(slice.category))
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Circle().fill(categoryColor(slice.category)).frame(width: 10, height: 10)
+                                    Text(slice.category)
+                                    Spacer()
+                                    Text(slice.total.formatted(.currency(code: "USD")))
+                                        .foregroundStyle(.secondary).monospacedDigit()
+                                }
+                                .font(.caption)
                             }
-                            .font(.caption)
                         }
                     }
                 }
