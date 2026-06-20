@@ -32,19 +32,28 @@ struct CategoryMappingView: View {
         return (nil, "unmapped")
     }
     private var unmappedCount: Int { rawCategories.filter { resolved($0).source == "unmapped" }.count }
+    /// Vague transactions (Other/uncategorized) not yet refined — candidates for a description-based pass.
+    private var refinable: [Transaction] {
+        let lookup = CategoryMapping.lookup(categoryMaps)
+        return transactions.filter {
+            $0.refinedCategory == nil && CategoryMapping.needsRefinement($0, lookup: lookup)
+        }
+    }
 
     var body: some View {
         List {
             if CategoryMapper.isAvailable {
+                let pending = unmappedCount + refinable.count
                 Section {
                     Button {
                         Task { await runOnDevice() }
                     } label: {
-                        Label(mapping ? "Mapping…" : "Map with Apple Intelligence", systemImage: "sparkles")
+                        Label(mapping ? "Categorizing…" : "Categorize with Apple Intelligence",
+                              systemImage: "sparkles")
                     }
-                    .disabled(mapping || unmappedCount == 0)
+                    .disabled(mapping || pending == 0)
                 } footer: {
-                    Text("Suggests categories on-device for the \(unmappedCount) unmapped label\(unmappedCount == 1 ? "" : "s"). Your manual choices are kept.")
+                    Text("On-device: maps \(unmappedCount) unmapped label\(unmappedCount == 1 ? "" : "s") and refines \(refinable.count) vague transaction\(refinable.count == 1 ? "" : "s") from their merchant. Your manual choices are kept.")
                 }
             }
 
@@ -96,6 +105,7 @@ struct CategoryMappingView: View {
     private func runOnDevice() async {
         mapping = true
         defer { mapping = false }
+        // 1) Map any raw category labels the built-in map doesn't cover.
         let unmapped = rawCategories.filter { resolved($0).source == "unmapped" }
         let suggestions = await CategoryMapper.suggest(for: unmapped)
         do {
@@ -105,6 +115,16 @@ struct CategoryMappingView: View {
         } catch {
             errorText = errorMessage(error)
         }
+        // 2) Refine vague transactions from their merchant description.
+        let items = refinable.map {
+            CategoryMapper.Item(id: $0.id, description: $0.details, rawCategory: $0.category)
+        }
+        let refined = await CategoryMapper.refine(items)
+        guard !refined.isEmpty else { return }
+        for transaction in transactions where refined[transaction.id] != nil {
+            transaction.refinedCategory = refined[transaction.id]
+        }
+        do { try context.save() } catch { errorText = errorMessage(error) }
     }
 
     private func setManual(raw: String, canonical: String) {

@@ -18,6 +18,10 @@ final class Transaction {
     var date: Date
     var category: String?
     var pending: Bool
+    /// On-device (Apple Intelligence) category refinement from the merchant description, for rows whose
+    /// Plaid category is vague ("Other"/uncategorized). Client-only and derived — not synced, and the
+    /// transaction upsert never clears it.
+    var refinedCategory: String?
     var createdAt: Date
     var updatedAt: Date
 
@@ -32,6 +36,7 @@ final class Transaction {
         date: Date,
         category: String? = nil,
         pending: Bool = false,
+        refinedCategory: String? = nil,
         createdAt: Date,
         updatedAt: Date
     ) {
@@ -45,6 +50,7 @@ final class Transaction {
         self.date = date
         self.category = category
         self.pending = pending
+        self.refinedCategory = refinedCategory
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }

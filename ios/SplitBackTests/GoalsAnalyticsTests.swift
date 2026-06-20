@@ -38,6 +38,23 @@ final class GoalsAnalyticsTests: XCTestCase {
             for: txn(5, category: nil, account: checking), lookup: [:]))
     }
 
+    func testRefinementUsedOnlyForVagueRows() {
+        let checking = account(type: "checking")
+        // Confident built-in mapping ignores any refinement.
+        let groceries = txn(20, category: "FOOD_AND_DRINK_GROCERIES", account: checking)
+        groceries.refinedCategory = "Dining"
+        XCTAssertEqual(CategoryMapping.effectiveCategory(for: groceries, lookup: [:]), "Groceries")
+        // A vague "Other" row uses the refinement when present.
+        let vague = txn(20, category: "GENERAL_SERVICES_OTHER", account: checking)
+        XCTAssertTrue(CategoryMapping.needsRefinement(vague, lookup: [:]))
+        vague.refinedCategory = "Subscriptions"
+        XCTAssertEqual(CategoryMapping.effectiveCategory(for: vague, lookup: [:]), "Subscriptions")
+        // A manual override still beats a refinement.
+        let lookup = ["GENERAL_SERVICES_OTHER": "Fees"]
+        XCTAssertFalse(CategoryMapping.needsRefinement(vague, lookup: lookup))
+        XCTAssertEqual(CategoryMapping.effectiveCategory(for: vague, lookup: lookup), "Fees")
+    }
+
     func testPlaidCategoryMapping() {
         XCTAssertEqual(PlaidCategory.canonical("FOOD_AND_DRINK_GROCERIES"), "Groceries")
         XCTAssertEqual(PlaidCategory.canonical("FOOD_AND_DRINK_FAST_FOOD"), "Dining")  // primary default
