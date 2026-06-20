@@ -108,11 +108,14 @@ struct SplitwiseCategoriesView: View {
 
     @Query private var expenses: [Expense]
     @Query private var categoryMaps: [CategoryMap]
+    @Query(sort: \SpendCategory.position) private var categoryModels: [SpendCategory]
 
+    @State private var mapping = false
     @State private var editing: EditingRaw?
     @State private var errorText: String?
 
     private struct EditingRaw: Identifiable { let id: String }
+    private var unmappedCount: Int { splitwiseCategories.filter { resolved($0).source == "unmapped" }.count }
 
     private var splitwiseCategories: [String] {
         let raws = expenses
@@ -133,8 +136,32 @@ struct SplitwiseCategoriesView: View {
         mapByRaw[raw]?.canonicalCategory ?? SplitwiseCategory.canonical(raw)
     }
 
+    /// On-device pass: classify any Splitwise category names the deterministic map doesn't cover.
+    private func runOnDevice() async {
+        mapping = true
+        defer { mapping = false }
+        let unmapped = splitwiseCategories.filter { resolved($0).source == "unmapped" }
+        let suggestions = await CategoryMapper.suggest(for: unmapped, allowed: categoryModels.map(\.name))
+        do {
+            for (raw, canonical) in suggestions {
+                try await env.categoryMaps(context).set(raw: raw, canonical: canonical, source: "ondevice")
+            }
+        } catch { errorText = errorMessage(error) }
+    }
+
     var body: some View {
         List {
+            if CategoryMapper.isAvailable {
+                Section {
+                    Button { Task { await runOnDevice() } } label: {
+                        Label(mapping ? "Categorizing…" : "Categorize with Apple Intelligence",
+                              systemImage: "sparkles")
+                    }
+                    .disabled(mapping || unmappedCount == 0)
+                } footer: {
+                    Text("On-device: maps \(unmappedCount) unmapped Splitwise categor\(unmappedCount == 1 ? "y" : "ies"). Your manual choices are kept.")
+                }
+            }
             Section {
                 if splitwiseCategories.isEmpty {
                     Text("No Splitwise expenses yet.").font(.caption).foregroundStyle(.secondary)
