@@ -11,6 +11,8 @@ struct TransactionDetailView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.modelContext) private var context
     @Query private var categoryMaps: [CategoryMap]
+    @Query private var accounts: [Account]
+    @Query private var expenses: [Expense]
 
     @State private var showingCategoryPicker = false
     @State private var showingCreate = false
@@ -22,18 +24,16 @@ struct TransactionDetailView: View {
         CategoryMapping.effectiveCategory(for: transaction, lookup: lookup)
     }
 
-    /// The account this transaction belongs to (for the name), fetched by id.
+    /// The account this transaction belongs to (for the name). Filtered in memory from the observed
+    /// query — never fetch from the context during `body`, which loops the view.
     private var account: Account? {
         guard let id = transaction.accountId else { return nil }
-        return try? context.fetch(FetchDescriptor<Account>(predicate: #Predicate { $0.id == id })).first
+        return accounts.first { $0.id == id }
     }
 
     /// An expense already created from this transaction, if any (links via `transactionId`).
     private var linkedExpense: Expense? {
-        let tid = transaction.id
-        return try? context.fetch(
-            FetchDescriptor<Expense>(predicate: #Predicate { $0.transactionId == tid })
-        ).first
+        expenses.first { $0.transactionId == transaction.id }
     }
 
     /// The raw Plaid label, humanized, shown only when it differs from the effective category.
