@@ -130,6 +130,8 @@ struct ManualTransactionView: View {
     @State private var errorText: String?
 
     private var amount: Decimal { Decimal(string: amountString, locale: Locale(identifier: "en_US_POSIX")) ?? 0 }
+    /// An income/reimbursement category means money in — store it as an inflow (negative), matching Plaid.
+    private var isIncome: Bool { category.map { CanonicalCategory.incomeLike.contains($0) } ?? false }
     private var canSave: Bool { !details.trimmingCharacters(in: .whitespaces).isEmpty && amount > 0 && !saving }
 
     var body: some View {
@@ -147,10 +149,15 @@ struct ManualTransactionView: View {
                         TextField("Description", text: $details).font(.title3)
                     }
                     HStack(spacing: 8) {
-                        Text("$").font(.title2).foregroundStyle(.secondary)
+                        Text(isIncome ? "+$" : "$").font(.title2)
+                            .foregroundStyle(isIncome ? Color.green : .secondary)
                         TextField("0.00", text: $amountString).keyboardType(.decimalPad).font(.title2)
                     }
                     DatePicker("Date", selection: $date, displayedComponents: .date)
+                } footer: {
+                    if isIncome {
+                        Text("Recorded as income (money in).").foregroundStyle(.green)
+                    }
                 }
                 Section {
                     Picker("Account", selection: $accountId) {
@@ -176,7 +183,8 @@ struct ManualTransactionView: View {
 
     private func save() {
         saving = true
-        let draft = TransactionDraft(accountId: accountId, details: details, amount: amount,
+        let draft = TransactionDraft(accountId: accountId, details: details,
+                                     amount: isIncome ? -amount : amount,
                                      date: date, category: category)
         Task {
             defer { saving = false }
