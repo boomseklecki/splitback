@@ -14,7 +14,6 @@ struct ExpenseEditView: View {
         case itemized = "Items"
     }
 
-    let group: ExpenseGroup
     let editing: Expense?
     let attachImageData: Data?
 
@@ -22,6 +21,11 @@ struct ExpenseEditView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
 
+    @Query private var users: [User]
+    @Query private var allGroups: [ExpenseGroup]
+    @Query private var allMembers: [GroupMember]
+
+    @State private var group: ExpenseGroup
     @State private var details: String
     @State private var amountString: String
     @State private var date: Date
@@ -34,18 +38,18 @@ struct ExpenseEditView: View {
     @State private var shareCounts: [String: String] = [:]
     @State private var adjustments: [String: String] = [:]
     @State private var itemOwners: [Int: String] = [:]
-    @State private var categories: [String] = []
     @State private var participants: [String]
     @State private var items: [ItemDraft]
     @State private var transactionId: UUID?
+    @State private var showingCategoryPicker = false
     @State private var saving = false
     @State private var errorText: String?
 
     init(group: ExpenseGroup, members: [String], editing: Expense? = nil,
          prefill: ExpensePrefill? = nil, attachImageData: Data? = nil) {
-        self.group = group
         self.editing = editing
         self.attachImageData = attachImageData
+        _group = State(initialValue: group)
         let people = members.isEmpty ? (editing?.splits.map(\.userIdentifier) ?? []) : members
         _participants = State(initialValue: people)
         _details = State(initialValue: editing?.details ?? prefill?.details ?? "")
@@ -73,10 +77,21 @@ struct ExpenseEditView: View {
     private var amount: Decimal { Decimal(string: amountString, locale: Locale(identifier: "en_US_POSIX")) ?? 0 }
     private var isSelfHosted: Bool { group.backendType == .selfHosted }
 
+    /// Groups the expense can be moved to (new expenses only — an existing expense stays in its group).
+    private var selectableGroups: [ExpenseGroup] {
+        allGroups.filter { $0.archivedAt == nil }.sorted { $0.name.localizedCompare($1.name) == .orderedAscending }
+    }
+
     /// Reimbursement is self-hosted only: it relies on a local "Reimbursement" marker + inverted shares
     /// that Splitwise can't represent and that's lost when an expense round-trips through Splitwise.
     private var availableModes: [SplitMode] {
         isSelfHosted ? SplitMode.allCases : SplitMode.allCases.filter { $0 != .reimbursement }
+    }
+
+    private func displayName(_ identifier: String) -> String { users.displayName(for: identifier) }
+    /// "you" for the current user, otherwise the person's display name (for the compact payer button).
+    private var payerLabel: String {
+        payer == env.currentUser?.identifier ? "you" : displayName(payer)
     }
 
     private func decimal(_ string: String?) -> Decimal {
@@ -189,15 +204,31 @@ struct ExpenseEditView: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("Description", text: $details)
-                    TextField("Amount", text: $amountString).keyboardType(.decimalPad)
-                    DatePicker("Date", selection: $date, displayedComponents: .date)
-                    if mode != .reimbursement {
-                        Picker("Category", selection: $category) {
-                            Text("None").tag(String?.none)
-                            ForEach(categories, id: \.self) { Text($0).tag(String?.some($0)) }
+                    HStack { Spacer(); groupSelector; Spacer() }
+                        .listRowBackground(Color.clear)
+                }
+
+                Section {
+                    HStack(spacing: 12) {
+                        if mode != .reimbursement {
+                            Button { showingCategoryPicker = true } label: {
+                                Image(systemName: categorySymbol(category))
+                                    .font(.title3)
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 36, height: 36)
+                                    .background(Circle().fill(.quaternary))
+                            }
+                            .buttonStyle(.plain)
                         }
+                        TextField("Description", text: $details)
+                            .font(.title3)
                     }
+                    HStack(spacing: 8) {
+                        Text("$").font(.title2).foregroundStyle(.secondary)
+                        TextField("0.00", text: $amountString)
+                            .keyboardType(.decimalPad).font(.title2)
+                    }
+                    DatePicker("Date", selection: $date, displayedComponents: .date)
                     TextField("Notes", text: $notes, axis: .vertical)
                 }
 
@@ -217,7 +248,7 @@ struct ExpenseEditView: View {
                                         set: { itemOwners[index] = $0.isEmpty ? nil : $0 }
                                     )) {
                                         Text("Unassigned").tag("")
-                                        ForEach(participants, id: \.self) { Text($0).tag($0) }
+                                        ForEach(participants, id: \.self) { Text(displayName($0)).tag($0) }
                                     }
                                     .font(.caption)
                                 }
@@ -227,21 +258,16 @@ struct ExpenseEditView: View {
                 }
 
                 Section("Split") {
-                    Picker(mode == .reimbursement ? "Reimbursed" : "Paid by", selection: $payer) {
-                        ForEach(participants, id: \.self) { Text($0).tag($0) }
-                    }
-                    Picker("Mode", selection: $mode) {
-                        ForEach(availableModes, id: \.self) { Text($0.rawValue).tag($0) }
-                    }
+                    splitSentence
 
                     if mode == .reimbursement {
-                        Text("\(payer) was reimbursed the full amount and splits it equally — \(payer) owes the others their share.")
+                        Text("\(payerLabel.capitalized) was reimbursed the full amount and splits it equally — \(payerLabel) owes the others their share.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
 
                     ForEach(participants, id: \.self) { person in
                         HStack {
-                            Text(person)
+                            Text(displayName(person))
                             Spacer()
                             splitInput(person)
                         }
@@ -264,17 +290,80 @@ struct ExpenseEditView: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) { Button("Save", action: save).disabled(!canSave) }
             }
+            .sheet(isPresented: $showingCategoryPicker) {
+                CategoryPickerView(current: category) { category = $0 }
+            }
             .task {
                 // For a new expense, default "Paid by" to you (from /me) when you're a participant —
-                // otherwise fall back to the first member chosen in init. Set before any await so it
-                // lands before the user can interact.
+                // otherwise keep the first member chosen in init.
                 if editing == nil, let me = env.currentUser?.identifier, participants.contains(me) {
                     payer = me
                 }
-                categories = (try? await env.categories.list()) ?? []
             }
             .errorAlert($errorText)
         }
+    }
+
+    /// Centered group name; a menu to switch groups when creating a new expense and more than one exists.
+    @ViewBuilder
+    private var groupSelector: some View {
+        if editing == nil, selectableGroups.count > 1 {
+            Menu {
+                ForEach(selectableGroups, id: \.id) { g in
+                    Button {
+                        selectGroup(g)
+                    } label: {
+                        if g.id == group.id { Label(g.name, systemImage: "checkmark") } else { Text(g.name) }
+                    }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Text(group.name).font(.headline)
+                    Image(systemName: "chevron.up.chevron.down").font(.caption2)
+                }
+            }
+        } else {
+            Text(group.name).font(.headline)
+        }
+    }
+
+    /// "Paid by [you] and split [Equally]" with the payer and mode as tappable capsule buttons.
+    private var splitSentence: some View {
+        HStack(spacing: 6) {
+            Text(mode == .reimbursement ? "Reimbursed to" : "Paid by").foregroundStyle(.secondary)
+            Menu {
+                ForEach(participants, id: \.self) { person in
+                    Button(displayName(person)) { payer = person }
+                }
+            } label: { capsule(payerLabel) }
+            Text("and split").foregroundStyle(.secondary)
+            Menu {
+                ForEach(availableModes, id: \.self) { m in
+                    Button(m.rawValue) { mode = m }
+                }
+            } label: { capsule(mode.rawValue) }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func capsule(_ text: String) -> some View {
+        Text(text)
+            .font(.subheadline.weight(.semibold))
+            .padding(.horizontal, 12).padding(.vertical, 6)
+            .background(Capsule().fill(Color.accentColor.opacity(0.15)))
+            .foregroundStyle(Color.accentColor)
+    }
+
+    /// Move a new expense to another group: reset participants/payer to that group's members and clear
+    /// the per-mode entry maps (they key on identifiers that no longer apply).
+    private func selectGroup(_ g: ExpenseGroup) {
+        group = g
+        let gid = g.id
+        let members = allMembers.filter { $0.groupId == gid }.map(\.userIdentifier).sorted()
+        participants = members
+        payer = (env.currentUser?.identifier).flatMap { members.contains($0) ? $0 : nil } ?? members.first ?? ""
+        customOwed = [:]; percents = [:]; shareCounts = [:]; adjustments = [:]; itemOwners = [:]
+        if !availableModes.contains(mode) { mode = .equal }
     }
 
     private func save() {
