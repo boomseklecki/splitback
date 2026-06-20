@@ -8,6 +8,7 @@ struct CategoryMappingView: View {
     @Environment(\.modelContext) private var context
 
     @Query private var transactions: [Transaction]
+    @Query private var expenses: [Expense]
     @Query private var categoryMaps: [CategoryMap]
 
     @State private var mapping = false
@@ -30,6 +31,26 @@ struct CategoryMappingView: View {
         if let m = mapByRaw[raw] { return (m.canonicalCategory, m.source) }
         if let auto = PlaidCategory.canonical(raw) { return (auto, "auto") }
         return (nil, "unmapped")
+    }
+
+    /// Distinct Splitwise expense categories (the names Splitwise sends), excluding settle-ups and
+    /// reimbursements which are handled structurally.
+    private var splitwiseCategories: [String] {
+        let raws = expenses
+            .filter { $0.splitwiseExpenseId != nil }
+            .compactMap { $0.category }
+            .filter { !$0.isEmpty && $0 != SettleUp.category && $0 != Reimbursement.category }
+        return Set(raws).sorted()
+    }
+    /// Same precedence as `resolved`, but the deterministic "auto" tier is the Splitwise taxonomy map.
+    private func resolvedSplitwise(_ raw: String) -> (canonical: String?, source: String) {
+        if let m = mapByRaw[raw] { return (m.canonicalCategory, m.source) }
+        if let auto = SplitwiseCategory.canonical(raw) { return (auto, "auto") }
+        return (nil, "unmapped")
+    }
+    /// The current canonical for the shared edit sheet, for either taxonomy (a manual override wins).
+    private func currentCanonical(_ raw: String) -> String? {
+        mapByRaw[raw]?.canonicalCategory ?? PlaidCategory.canonical(raw) ?? SplitwiseCategory.canonical(raw)
     }
     private var unmappedCount: Int { rawCategories.filter { resolved($0).source == "unmapped" }.count }
     /// Vague transactions (Other/uncategorized) not yet refined — candidates for a description-based pass.
@@ -57,29 +78,45 @@ struct CategoryMappingView: View {
                 }
             }
 
-            Section("Categories") {
+            Section("Bank Categories") {
                 if rawCategories.isEmpty {
                     Text("No Plaid transactions yet.").font(.caption).foregroundStyle(.secondary)
                 }
                 ForEach(rawCategories, id: \.self) { raw in
-                    Button { editing = EditingRaw(id: raw) } label: { row(raw) }
+                    Button { editing = EditingRaw(id: raw) } label: {
+                        categoryRow(label: PlaidCategory.humanized(raw), resolution: resolved(raw))
+                    }
                 }
+            }
+
+            Section {
+                if splitwiseCategories.isEmpty {
+                    Text("No Splitwise expenses yet.").font(.caption).foregroundStyle(.secondary)
+                }
+                ForEach(splitwiseCategories, id: \.self) { raw in
+                    Button { editing = EditingRaw(id: raw) } label: {
+                        categoryRow(label: raw, resolution: resolvedSplitwise(raw))
+                    }
+                }
+            } header: {
+                Text("Splitwise Categories")
+            } footer: {
+                Text("How imported Splitwise categories map into your spending categories.")
             }
         }
         .navigationTitle("Spending Categories")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $editing) { item in
-            CategoryPickerView(current: resolved(item.id).canonical) { canonical in
+            CategoryPickerView(current: currentCanonical(item.id)) { canonical in
                 setManual(raw: item.id, canonical: canonical)
             }
         }
         .errorAlert($errorText)
     }
 
-    private func row(_ raw: String) -> some View {
-        let resolution = resolved(raw)
-        return HStack(spacing: 10) {
-            Text(PlaidCategory.humanized(raw)).foregroundStyle(.primary)
+    private func categoryRow(label: String, resolution: (canonical: String?, source: String)) -> some View {
+        HStack(spacing: 10) {
+            Text(label).foregroundStyle(.primary)
             Spacer()
             if let canonical = resolution.canonical {
                 if let icon = sourceIcon(resolution.source) {
