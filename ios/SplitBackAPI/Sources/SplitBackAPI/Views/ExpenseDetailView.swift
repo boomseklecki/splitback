@@ -98,7 +98,10 @@ struct ExpenseDetailView: View {
 
             if isReimbursement, let recipient = reimbursementRecipient {
                 Section("Reimbursement") {
-                    Text(getsBackText(recipient, amount: recipient.owedShare)).fontWeight(.medium)
+                    // Main row: the recipient and the gross amount they got back ("Matt got back $100").
+                    Text("\(nameOrYou(recipient.userIdentifier)) got back \(currency(recipient.owedShare))")
+                        .fontWeight(.medium)
+                    // Indented: each other member's equal share ("Nikki gets back $50").
                     ForEach(expense.splits
                         .filter { $0.userIdentifier != recipient.userIdentifier }
                         .sorted { $0.userIdentifier < $1.userIdentifier }, id: \.userIdentifier) { split in
