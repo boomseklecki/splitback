@@ -24,7 +24,14 @@ struct CategoryMappingView: View {
     private var mapByRaw: [String: CategoryMap] {
         Dictionary(categoryMaps.map { ($0.rawCategory, $0) }, uniquingKeysWith: { a, _ in a })
     }
-    private var unmappedCount: Int { rawCategories.filter { mapByRaw[$0] == nil }.count }
+    /// How a raw label currently resolves: an explicit override, the built-in Plaid map ("auto"), or
+    /// nothing ("unmapped").
+    private func resolved(_ raw: String) -> (canonical: String?, source: String) {
+        if let m = mapByRaw[raw] { return (m.canonicalCategory, m.source) }
+        if let auto = PlaidCategory.canonical(raw) { return (auto, "auto") }
+        return (nil, "unmapped")
+    }
+    private var unmappedCount: Int { rawCategories.filter { resolved($0).source == "unmapped" }.count }
 
     var body: some View {
         List {
@@ -53,7 +60,7 @@ struct CategoryMappingView: View {
         .navigationTitle("Spending Categories")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $editing) { item in
-            CategoryPickerView(current: mapByRaw[item.id]?.canonicalCategory) { canonical in
+            CategoryPickerView(current: resolved(item.id).canonical) { canonical in
                 setManual(raw: item.id, canonical: canonical)
             }
         }
@@ -61,13 +68,15 @@ struct CategoryMappingView: View {
     }
 
     private func row(_ raw: String) -> some View {
-        HStack(spacing: 10) {
-            Text(raw).foregroundStyle(.primary)
+        let resolution = resolved(raw)
+        return HStack(spacing: 10) {
+            Text(PlaidCategory.humanized(raw)).foregroundStyle(.primary)
             Spacer()
-            if let m = mapByRaw[raw] {
-                Image(systemName: m.source == "ondevice" ? "sparkles" : "hand.point.up.left")
-                    .font(.caption2).foregroundStyle(.tertiary)
-                Text(m.canonicalCategory).foregroundStyle(.secondary)
+            if let canonical = resolution.canonical {
+                if let icon = sourceIcon(resolution.source) {
+                    Image(systemName: icon).font(.caption2).foregroundStyle(.tertiary)
+                }
+                Text(canonical).foregroundStyle(.secondary)
             } else {
                 Text("Unmapped").foregroundStyle(.tertiary)
             }
@@ -75,10 +84,19 @@ struct CategoryMappingView: View {
         }
     }
 
+    private func sourceIcon(_ source: String) -> String? {
+        switch source {
+        case "manual": return "hand.point.up.left"
+        case "ondevice": return "sparkles"
+        case "auto": return "wand.and.stars"
+        default: return nil
+        }
+    }
+
     private func runOnDevice() async {
         mapping = true
         defer { mapping = false }
-        let unmapped = rawCategories.filter { mapByRaw[$0] == nil }
+        let unmapped = rawCategories.filter { resolved($0).source == "unmapped" }
         let suggestions = await CategoryMapper.suggest(for: unmapped)
         do {
             for (raw, canonical) in suggestions {

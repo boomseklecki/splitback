@@ -18,18 +18,37 @@ final class GoalsAnalyticsTests: XCTestCase {
 
     // MARK: CategoryMapping
 
-    func testEffectiveCategoryUsesMapThenRaw() {
-        let map = [CategoryMap(id: UUID(), rawCategory: "Coffee Shop", canonicalCategory: "Dining",
-                              source: "manual", createdAt: Date(), updatedAt: Date())]
+    func testEffectiveCategoryPrecedence() {
+        // Override wins over the built-in Plaid map.
+        let map = [CategoryMap(id: UUID(), rawCategory: "FOOD_AND_DRINK_GROCERIES",
+                              canonicalCategory: "Household", source: "manual",
+                              createdAt: Date(), updatedAt: Date())]
         let lookup = CategoryMapping.lookup(map)
         let checking = account(type: "checking")
         XCTAssertEqual(CategoryMapping.effectiveCategory(
-            for: txn(5, category: "Coffee Shop", account: checking), lookup: lookup), "Dining")
-        // Unmapped falls through to the raw label.
+            for: txn(5, category: "FOOD_AND_DRINK_GROCERIES", account: checking), lookup: lookup), "Household")
+        // No override: the built-in Plaid map resolves a detailed label.
         XCTAssertEqual(CategoryMapping.effectiveCategory(
-            for: txn(5, category: "Groceries", account: checking), lookup: lookup), "Groceries")
+            for: txn(5, category: "PERSONAL_CARE_GYMS_AND_FITNESS_CENTERS", account: checking), lookup: [:]),
+            "Personal Care")
+        // Unrecognized label falls through to itself; nil category stays nil.
+        XCTAssertEqual(CategoryMapping.effectiveCategory(
+            for: txn(5, category: "Groceries", account: checking), lookup: [:]), "Groceries")
         XCTAssertNil(CategoryMapping.effectiveCategory(
-            for: txn(5, category: nil, account: checking), lookup: lookup))
+            for: txn(5, category: nil, account: checking), lookup: [:]))
+    }
+
+    func testPlaidCategoryMapping() {
+        XCTAssertEqual(PlaidCategory.canonical("FOOD_AND_DRINK_GROCERIES"), "Groceries")
+        XCTAssertEqual(PlaidCategory.canonical("FOOD_AND_DRINK_FAST_FOOD"), "Dining")  // primary default
+        XCTAssertEqual(PlaidCategory.canonical("TRANSPORTATION_GAS"), "Fuel")
+        XCTAssertEqual(PlaidCategory.canonical("TRANSPORTATION_PUBLIC_TRANSIT"), "Transport")
+        XCTAssertEqual(PlaidCategory.canonical("INCOME_WAGES"), "Income")
+        XCTAssertEqual(PlaidCategory.canonical("LOAN_PAYMENTS_CREDIT_CARD_PAYMENT"), "Transfer")
+        XCTAssertEqual(PlaidCategory.canonical("LOAN_PAYMENTS_MORTGAGE_PAYMENT"), "Mortgage")
+        XCTAssertNil(PlaidCategory.canonical("Some Random Merchant"))
+        XCTAssertEqual(PlaidCategory.humanized("PERSONAL_CARE_GYMS_AND_FITNESS_CENTERS"),
+                       "Personal Care Gyms And Fitness Centers")
     }
 
     // MARK: Account inclusion defaults + overrides

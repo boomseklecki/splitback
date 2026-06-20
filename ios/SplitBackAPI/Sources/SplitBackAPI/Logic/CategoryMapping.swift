@@ -8,11 +8,18 @@ enum CategoryMapping {
                    uniquingKeysWith: { first, _ in first })
     }
 
-    /// The canonical category for a transaction: the mapped value, else the raw string itself (so an
-    /// already-canonical or unmapped label still groups sensibly). Nil only when there's no category.
+    /// The canonical category for a transaction. Precedence: an explicit user/on-device override in the
+    /// synced map, else the built-in deterministic Plaid taxonomy map, else the raw string itself (so an
+    /// already-canonical or unrecognized label still groups). Nil only when there's no category.
     static func effectiveCategory(for transaction: Transaction, lookup: [String: String]) -> String? {
         guard let raw = transaction.category, !raw.isEmpty else { return nil }
-        return lookup[raw] ?? raw
+        return canonical(raw, lookup: lookup)
+    }
+
+    /// Resolves a raw category string the same way (used where only the string is available).
+    static func canonical(_ raw: String, lookup: [String: String]) -> String? {
+        guard !raw.isEmpty else { return nil }
+        return lookup[raw] ?? PlaidCategory.canonical(raw) ?? raw
     }
 }
 
