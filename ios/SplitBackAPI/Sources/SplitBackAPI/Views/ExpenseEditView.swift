@@ -73,6 +73,12 @@ struct ExpenseEditView: View {
     private var amount: Decimal { Decimal(string: amountString, locale: Locale(identifier: "en_US_POSIX")) ?? 0 }
     private var isSelfHosted: Bool { group.backendType == .selfHosted }
 
+    /// Reimbursement is self-hosted only: it relies on a local "Reimbursement" marker + inverted shares
+    /// that Splitwise can't represent and that's lost when an expense round-trips through Splitwise.
+    private var availableModes: [SplitMode] {
+        isSelfHosted ? SplitMode.allCases : SplitMode.allCases.filter { $0 != .reimbursement }
+    }
+
     private func decimal(_ string: String?) -> Decimal {
         // Tolerate a leading "+" (the adjustment field's placeholder invites it) — Decimal(string:)
         // returns nil for "+6", which would silently drop the adjustment.
@@ -225,7 +231,7 @@ struct ExpenseEditView: View {
                         ForEach(participants, id: \.self) { Text($0).tag($0) }
                     }
                     Picker("Mode", selection: $mode) {
-                        ForEach(SplitMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                        ForEach(availableModes, id: \.self) { Text($0.rawValue).tag($0) }
                     }
 
                     if mode == .reimbursement {
