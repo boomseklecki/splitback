@@ -17,11 +17,15 @@ struct AccountsView: View {
 
     @AppStorage("accounts.sortMode") private var sortModeRaw = SortMode.balance.rawValue
 
-    @State private var syncing = false
     @State private var errorText: String?
+    @State private var showingManual = false
+    @State private var linkSession: LinkSession?
+    @State private var linking = false
     /// Latest transaction date per account (account id → date), for the last-transaction sort. Loaded
     /// on demand with a `fetchLimit: 1` query per account.
     @State private var lastTransaction: [UUID: Date] = [:]
+
+    struct LinkSession: Identifiable { let id = UUID(); let token: String }
 
     private var sortMode: SortMode { SortMode(rawValue: sortModeRaw) ?? .balance }
 
@@ -76,11 +80,27 @@ struct AccountsView: View {
                     }
                 }
                 ToolbarItem(placement: .primaryAction) {
-                    Button(action: sync) {
-                        Label("Sync", systemImage: "arrow.triangle.2.circlepath")
+                    Menu {
+                        Button("Blank Transaction", systemImage: "square.and.pencil") { showingManual = true }
+                        Button("Link Bank", systemImage: "building.columns") { linkBank() }
+                            .disabled(linking || env.currentUser == nil)
+                    } label: {
+                        Image(systemName: linking ? "ellipsis" : "plus")
                     }
-                    .disabled(syncing)
                 }
+            }
+            .sheet(isPresented: $showingManual) { ManualTransactionView() }
+            .fullScreenCover(item: $linkSession) { session in
+                PlaidLinkView(
+                    linkToken: session.token,
+                    onSuccess: { publicToken in
+                        linkSession = nil
+                        PlaidLinkSession.shared.finish()
+                        Task { await exchange(publicToken) }
+                    },
+                    onExit: { linkSession = nil; PlaidLinkSession.shared.finish() }
+                )
+                .ignoresSafeArea()
             }
             .refreshable { await reload() }
             .task { await reload() }
@@ -133,12 +153,28 @@ struct AccountsView: View {
         lastTransaction = result
     }
 
-    private func sync() {
-        syncing = true
-        Task {
-            defer { syncing = false }
-            do { try await env.plaid(context).sync(); await reload() }
-            catch { errorText = errorMessage(error) }
+    /// Start Plaid Link to add a bank (the global bank Sync now lives in Settings → Linked Banks).
+    private func linkBank() {
+        guard let me = env.currentUser?.identifier else {
+            errorText = "Sign in to link a bank."
+            return
         }
+        linking = true
+        Task {
+            defer { linking = false }
+            do {
+                let token = try await env.plaid(context).linkToken(userIdentifier: me)
+                PlaidLinkSession.shared.begin(token: token)  // persist so a terminated OAuth can resume
+                linkSession = LinkSession(token: token)
+            } catch { errorText = errorMessage(error) }
+        }
+    }
+
+    private func exchange(_ publicToken: String) async {
+        guard let me = env.currentUser?.identifier else { return }
+        do {
+            try await env.plaid(context).exchange(publicToken: publicToken, userIdentifier: me)
+            await reload()
+        } catch { errorText = errorMessage(error) }
     }
 }

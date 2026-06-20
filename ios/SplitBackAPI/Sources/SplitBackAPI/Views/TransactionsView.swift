@@ -112,14 +112,20 @@ struct TransactionsView: View {
 }
 
 /// A minimal manual-transaction form (source = manual on the backend).
-private struct ManualTransactionView: View {
+/// A manual (cash/self-entered) transaction. Conforms to our other forms: a tappable category icon
+/// top-left, plus an optional account. Categorized manual transactions count toward budgets/Trends.
+struct ManualTransactionView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
+    @Query(sort: \Account.name) private var accounts: [Account]
 
     @State private var details = ""
     @State private var amountString = ""
     @State private var date = Date()
+    @State private var category: String?
+    @State private var accountId: UUID?
+    @State private var showingCategoryPicker = false
     @State private var saving = false
     @State private var errorText: String?
 
@@ -129,9 +135,31 @@ private struct ManualTransactionView: View {
     var body: some View {
         NavigationStack {
             Form {
-                TextField("Description", text: $details)
-                TextField("Amount", text: $amountString).keyboardType(.decimalPad)
-                DatePicker("Date", selection: $date, displayedComponents: .date)
+                Section {
+                    HStack(spacing: 12) {
+                        Button { showingCategoryPicker = true } label: {
+                            Image(systemName: categorySymbol(category))
+                                .font(.title3).foregroundStyle(.secondary)
+                                .frame(width: 36, height: 36)
+                                .background(Circle().fill(.quaternary))
+                        }
+                        .buttonStyle(.plain)
+                        TextField("Description", text: $details).font(.title3)
+                    }
+                    HStack(spacing: 8) {
+                        Text("$").font(.title2).foregroundStyle(.secondary)
+                        TextField("0.00", text: $amountString).keyboardType(.decimalPad).font(.title2)
+                    }
+                    DatePicker("Date", selection: $date, displayedComponents: .date)
+                }
+                Section {
+                    Picker("Account", selection: $accountId) {
+                        Text("None (cash)").tag(UUID?.none)
+                        ForEach(accounts) { Text($0.name).tag(UUID?.some($0.id)) }
+                    }
+                } footer: {
+                    Text("Optional — scope it to an account, or leave as cash. Either way it counts toward your budgets by category.")
+                }
             }
             .navigationTitle("Manual Transaction")
             .navigationBarTitleDisplayMode(.inline)
@@ -139,13 +167,17 @@ private struct ManualTransactionView: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) { Button("Add", action: save).disabled(!canSave) }
             }
+            .sheet(isPresented: $showingCategoryPicker) {
+                CategoryPickerView(current: category) { category = $0 }
+            }
             .errorAlert($errorText)
         }
     }
 
     private func save() {
         saving = true
-        let draft = TransactionDraft(details: details, amount: amount, date: date)
+        let draft = TransactionDraft(accountId: accountId, details: details, amount: amount,
+                                     date: date, category: category)
         Task {
             defer { saving = false }
             do {

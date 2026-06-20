@@ -51,14 +51,17 @@ enum SpendingAnalytics {
         let byId = Dictionary(accounts.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         var events: [SpendEvent] = []
 
-        for t in transactions where t.source == .plaid {
-            guard let accountId = t.accountId, let account = byId[accountId] else { continue }
+        for t in transactions where t.source == .plaid || t.source == .manual {
+            let account = t.accountId.flatMap { byId[$0] }
+            // Plaid transactions always belong to an account; skip if it's missing. Manual transactions
+            // may be cash with no account — those always count; on an account, honor its flags.
+            if t.source == .plaid && account == nil { continue }
             events.append(SpendEvent(
                 id: t.id, date: t.date, label: t.details,
                 category: CategoryMapping.effectiveCategory(for: t, lookup: lookup),
                 amount: t.amount,
-                countsInSpending: account.countsInSpending,
-                countsInCashFlow: account.countsInCashFlow))
+                countsInSpending: account?.countsInSpending ?? true,
+                countsInCashFlow: account?.countsInCashFlow ?? true))
         }
 
         if let me {

@@ -19,6 +19,7 @@ struct SettingsView: View {
     @State private var items: [Components.Schemas.PlaidItemResponse] = []
     @State private var linkSession: LinkSession?
     @State private var linking = false
+    @State private var syncing = false
     @State private var errorText: String?
 
     struct LinkSession: Identifiable { let id = UUID(); let token: String }
@@ -169,6 +170,13 @@ struct SettingsView: View {
                         Label(linking ? "Preparing…" : "Link Bank", systemImage: "building.columns")
                     }
                     .disabled(linking || env.currentUser == nil)
+                    if !items.isEmpty {
+                        Button(action: syncBanks) {
+                            Label(syncing ? "Syncing…" : "Sync All Banks",
+                                  systemImage: "arrow.triangle.2.circlepath")
+                        }
+                        .disabled(syncing)
+                    }
                     if env.currentUser == nil {
                         Text("Sign in to link a bank.").font(.caption).foregroundStyle(.secondary)
                     }
@@ -221,6 +229,19 @@ struct SettingsView: View {
                 importSummary = "Imported \(count.formatted()) expense\(count == 1 ? "" : "s")."
                 await env.refreshSplitwiseStatus()
                 try await env.refreshAll(context)
+            } catch { errorText = errorMessage(error) }
+        }
+    }
+
+    /// Global Plaid sync across all linked banks (moved here from the Accounts tab).
+    private func syncBanks() {
+        syncing = true
+        Task {
+            defer { syncing = false }
+            do {
+                try await env.plaid(context).sync()
+                try await env.refreshAll(context)
+                await loadItems()
             } catch { errorText = errorMessage(error) }
         }
     }

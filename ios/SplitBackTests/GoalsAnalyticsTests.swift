@@ -344,6 +344,23 @@ final class GoalsAnalyticsTests: XCTestCase {
         XCTAssertEqual(result.reduce(Decimal(0)) { $0 + $1.total }, 85)
     }
 
+    func testManualTransactionsCount() {
+        let checking = account(type: "checking")
+        let holdings = account(type: "investment")  // excluded from spend + cash flow
+        // Cash manual transaction (no account) counts toward spend + reduces net income.
+        let cash = txn(25, category: "Dining", account: checking, source: .manual)
+        cash.accountId = nil
+        // Manual transaction on an excluded (holdings) account does NOT count.
+        let onExcluded = txn(40, category: "Shopping", account: holdings, source: .manual)
+        let result = SpendingAnalytics.byCategory(in: Date(), transactions: [cash, onExcluded],
+                                                  accounts: [checking, holdings], lookup: [:])
+        XCTAssertEqual(result.map(\.category), ["Dining"])     // only the cash one
+        XCTAssertEqual(result.first?.total, 25)
+        let net = SpendingAnalytics.monthlyNetIncome(transactions: [cash, onExcluded],
+                                                     accounts: [checking, holdings], lookup: [:], months: 1)
+        XCTAssertEqual(net.first?.value, -25)                  // cash outflow only
+    }
+
     // MARK: GoalProgress
 
     func testBudgetStatusAndFraction() {
