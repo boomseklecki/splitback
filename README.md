@@ -141,9 +141,26 @@ https://splitback.app/join?api=https://<your-public-hostname>&name=Your%20Househ
   your Apple Developer **Team ID** (the app's `applinks:` entitlement uses the same domain). With the app
   installed, tapping the link opens it and pre-fills the endpoint; otherwise the page guides installation.
 
+- `web/_headers` — forces `Content-Type: application/json` on the AASA (it has no file extension, so
+  Cloudflare won't infer it). **Required** — Universal Links silently fail without it.
+
 The backend exposes an unguarded `GET /server-info` (`{app, version, name, requires_auth, auth_providers}`)
 that the app pings to verify a URL is a real SplitBack server before adopting it (`PUBLIC_HOSTNAME` sets
 the friendly label).
+
+### Deploy the join site (Cloudflare Pages)
+
+Cloudflare folded Pages into "Workers & Pages"; the CLI is the most reliable path:
+
+```bash
+npx wrangler login                                   # one-time browser auth
+npx wrangler pages deploy web --project-name splitback
+```
+
+Then in the Pages project → **Custom domains** → add the apex `splitback.app` (the tunnel uses a separate
+subdomain like `api.splitback.app`). Re-run the deploy command to publish updates. Verify the AASA after
+deploy: `curl -I https://splitback.app/.well-known/apple-app-site-association` should show
+`content-type: application/json` over HTTPS with no redirect.
 
 ## Running tests
 
