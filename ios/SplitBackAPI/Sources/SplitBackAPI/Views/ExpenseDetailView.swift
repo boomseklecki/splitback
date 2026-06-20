@@ -31,18 +31,6 @@ struct ExpenseDetailView: View {
         return try? context.fetch(FetchDescriptor<ExpenseGroup>(predicate: #Predicate { $0.id == gid })).first
     }
 
-    /// Our backend proxy that fetches the Splitwise receipt with the OAuth token — the raw Splitwise
-    /// URL is auth-gated (HTTP 401) and can't be loaded directly by the app. `size` (e.g. "original")
-    /// requests a higher resolution for the full-screen view.
-    private func splitwiseReceiptProxyURL(size: String? = nil) -> URL? {
-        guard expense.splitwiseReceiptURL != nil else { return nil }
-        var url = APIConfig.baseURL.appendingPathComponent("splitwise/expenses/\(expense.id.uuidString)/receipt")
-        if let size {
-            url.append(queryItems: [URLQueryItem(name: "size", value: size)])
-        }
-        return url
-    }
-
     /// "Added by Matt on Jun 19" using the real Splitwise added-on date (falling back to our import
     /// time when unknown).
     private var addedText: String {
@@ -208,26 +196,7 @@ struct ExpenseDetailView: View {
             }
         }
         .sheet(isPresented: $showingSplitwiseReceipt) {
-            if let url = splitwiseReceiptProxyURL(size: "original") {
-                NavigationStack {
-                    AsyncImage(url: url) { phase in
-                        switch phase {
-                        case let .success(image):
-                            image.resizable().scaledToFit()
-                        case .failure:
-                            ContentUnavailableView("Couldn't load receipt", systemImage: "exclamationmark.triangle",
-                                                   description: Text("The Splitwise receipt couldn't be fetched."))
-                        case .empty:
-                            ProgressView()
-                        @unknown default:
-                            EmptyView()
-                        }
-                    }
-                    .navigationTitle("Receipt")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { showingSplitwiseReceipt = false } } }
-                }
-            }
+            SplitwiseReceiptViewerView(expenseId: expense.id)
         }
         .confirmationDialog("Delete this expense?", isPresented: $confirmingDelete, titleVisibility: .visible) {
             Button("Delete", role: .destructive, action: delete)
@@ -291,18 +260,11 @@ struct ExpenseDetailView: View {
                 .frame(width: 48, height: 48)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .onTapGesture { viewingReceipt = receipt }
-        } else if let url = splitwiseReceiptProxyURL() {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case let .success(image): image.resizable().scaledToFill()
-                case .failure: Image(systemName: "doc.text.image").foregroundStyle(.secondary)
-                case .empty: ProgressView()
-                @unknown default: Color.gray.opacity(0.15)
-                }
-            }
-            .frame(width: 48, height: 48)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            .onTapGesture { showingSplitwiseReceipt = true }
+        } else if expense.splitwiseReceiptURL != nil {
+            SplitwiseReceiptThumbnail(expenseId: expense.id)
+                .frame(width: 48, height: 48)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .onTapGesture { showingSplitwiseReceipt = true }
         }
     }
 

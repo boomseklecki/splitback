@@ -47,6 +47,89 @@ struct ReceiptThumbnail: View {
     }
 }
 
+/// Loads Splitwise receipt images through our backend proxy (`/splitwise/expenses/{id}/receipt`),
+/// attaching the bearer token. The proxy is auth-gated, and the OpenAPI declares its 200 as JSON, so
+/// it can go through neither the generated client nor a bare `AsyncImage` (neither sends the token).
+@MainActor
+final class SplitwiseReceiptImageStore {
+    static let shared = SplitwiseReceiptImageStore()
+    private let cache = NSCache<NSString, UIImage>()
+
+    func image(expenseId: UUID, size: String? = nil) async -> UIImage? {
+        let key = "\(expenseId.uuidString)#\(size ?? "")" as NSString
+        if let cached = cache.object(forKey: key) { return cached }
+
+        let base = APIConfig.baseURL.appendingPathComponent("splitwise/expenses/\(expenseId.uuidString)/receipt")
+        guard var components = URLComponents(url: base, resolvingAgainstBaseURL: false) else { return nil }
+        if let size { components.queryItems = [URLQueryItem(name: "size", value: size)] }
+        guard let url = components.url else { return nil }
+
+        var request = URLRequest(url: url)
+        if let token = KeychainTokenStore().load(), !token.isEmpty {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              (response as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? false,
+              let image = UIImage(data: data) else { return nil }
+        cache.setObject(image, forKey: key)
+        return image
+    }
+}
+
+/// A Splitwise receipt thumbnail, loaded through the authenticated proxy.
+struct SplitwiseReceiptThumbnail: View {
+    let expenseId: UUID
+    @State private var image: UIImage?
+    @State private var loading = true
+
+    var body: some View {
+        SwiftUI.Group {
+            if let image {
+                Image(uiImage: image).resizable().scaledToFill()
+            } else if loading {
+                ProgressView()
+            } else {
+                Image(systemName: "doc.text.image").foregroundStyle(.secondary)
+            }
+        }
+        .task {
+            defer { loading = false }
+            image = await SplitwiseReceiptImageStore.shared.image(expenseId: expenseId)
+        }
+    }
+}
+
+/// Full-screen Splitwise receipt viewer (requests the higher-resolution "original").
+struct SplitwiseReceiptViewerView: View {
+    let expenseId: UUID
+    @Environment(\.dismiss) private var dismiss
+    @State private var image: UIImage?
+    @State private var loading = true
+
+    var body: some View {
+        NavigationStack {
+            SwiftUI.Group {
+                if let image {
+                    Image(uiImage: image).resizable().scaledToFit()
+                } else if loading {
+                    ProgressView()
+                } else {
+                    ContentUnavailableView("Couldn't load receipt", systemImage: "exclamationmark.triangle",
+                                           description: Text("The Splitwise receipt couldn't be fetched."))
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .navigationTitle("Receipt")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
+            .task {
+                defer { loading = false }
+                image = await SplitwiseReceiptImageStore.shared.image(expenseId: expenseId, size: "original")
+            }
+        }
+    }
+}
+
 /// Full-screen receipt image viewer.
 struct ReceiptViewerView: View {
     let receipt: Receipt
