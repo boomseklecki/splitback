@@ -237,7 +237,7 @@ struct ExpenseEditView: View {
                 }
                 .buttonStyle(.borderless)
                 Spacer()
-                if mode == .itemized {
+                if mode == .itemized && isSelfHosted {  // item ownership is local-only (won't drift from Splitwise splits)
                     Picker("Assigned to", selection: itemOwnerBinding(index)) {
                         Text("Shared").tag("")
                         ForEach(participants, id: \.self) { Text(displayName($0)).tag($0) }

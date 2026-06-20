@@ -315,6 +315,35 @@ final class GoalsAnalyticsTests: XCTestCase {
         XCTAssertEqual(result.reduce(Decimal(0)) { $0 + $1.total }, 85)  // sums to my owed share
     }
 
+    func testItemizedSplitwiseIgnoresOwners() {
+        let checking = account(type: "checking")
+        let me = "me"
+        // Same itemized layout, but a Splitwise expense: owners are ignored → my owed share ($85) is
+        // spread proportionally across all item categories by price (90 of items + 10 remainder = 100).
+        let exp = Expense(
+            id: UUID(), groupId: UUID(), splitwiseExpenseId: "sw-1", details: "Target run",
+            amount: 100, currency: "USD", date: Date(), category: "Shopping",
+            createdAt: Date(), updatedAt: Date(),
+            splits: [
+                Split(id: UUID(), userIdentifier: me, paidShare: 100, owedShare: 85),
+                Split(id: UUID(), userIdentifier: "friend", paidShare: 0, owedShare: 15),
+            ],
+            items: [
+                ExpenseItem(id: UUID(), name: "Milk", quantity: 1, price: 40, category: "Groceries", ownerIdentifier: me),
+                ExpenseItem(id: UUID(), name: "Soap", quantity: 1, price: 30, category: "Personal Care", ownerIdentifier: me),
+                ExpenseItem(id: UUID(), name: "Chips", quantity: 1, price: 20, category: "Snacks", ownerIdentifier: nil),
+            ])
+        let result = SpendingAnalytics.byCategory(in: Date(), transactions: [], accounts: [checking],
+                                                  lookup: [:], expenses: [exp], me: me)
+        let byCat = Dictionary(result.map { ($0.category, $0.total) }, uniquingKeysWith: { a, _ in a })
+        // Proportional: 85 × price/100. Groceries 34, Personal Care 25.5, Snacks 17, Shopping (rem) 8.5.
+        XCTAssertEqual(byCat["Groceries"], Decimal(string: "34"))
+        XCTAssertEqual(byCat["Personal Care"], Decimal(string: "25.5"))
+        XCTAssertEqual(byCat["Snacks"], Decimal(string: "17"))
+        XCTAssertEqual(byCat["Shopping"], Decimal(string: "8.5"))
+        XCTAssertEqual(result.reduce(Decimal(0)) { $0 + $1.total }, 85)
+    }
+
     // MARK: GoalProgress
 
     func testBudgetStatusAndFraction() {

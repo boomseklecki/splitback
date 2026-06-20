@@ -135,7 +135,9 @@ struct ExpenseDetailView: View {
                                 Text(item.name)
                                 HStack(spacing: 4) {
                                     if let category = item.category { Text(category) }
-                                    if let owner = item.ownerIdentifier {
+                                    // Item ownership is local-only (see ItemizedSpend); don't show a
+                                    // (possibly stale) assignee on Splitwise items.
+                                    if expense.splitwiseExpenseId == nil, let owner = item.ownerIdentifier {
                                         Text("· \(nameOrYou(owner))")
                                     }
                                 }

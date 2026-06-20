@@ -21,15 +21,21 @@ enum ItemizedSpend {
             totals[c, default: 0] += amount
         }
 
+        // Item ownership is local-only: for a Splitwise expense the split syncs (and can change there)
+        // while items don't, so honoring owners would drift from the owed share. Treat all items as
+        // shared → fully proportional, matching the synced owed share.
+        let honorOwners = expense.splitwiseExpenseId == nil
+        func owner(_ item: ExpenseItem) -> String? { honorOwners ? item.ownerIdentifier : nil }
+
         // Items assigned to me → full price under their category.
-        let mine = items.filter { $0.ownerIdentifier == me }
+        let mine = items.filter { owner($0) == me }
         for item in mine { add(item.category, item.price) }
         let assignedToMe = mine.reduce(Decimal(0)) { $0 + $1.price }
 
         // My share of the shared pool (unassigned items + non-item remainder), spread by price.
         let poolShare = max(owed - assignedToMe, 0)
         if poolShare > 0 {
-            let shared = items.filter { $0.ownerIdentifier == nil }
+            let shared = items.filter { owner($0) == nil }
             let itemsTotal = items.reduce(Decimal(0)) { $0 + $1.price }
             let nonItemRemainder = max(expense.amount - itemsTotal, 0)
             let poolTotal = shared.reduce(Decimal(0)) { $0 + $1.price } + nonItemRemainder
