@@ -17,7 +17,9 @@ public enum SplitBackStore {
             Receipt.self,
             User.self,
             GroupMember.self,
-            SyncCursor.self
+            SyncCursor.self,
+            Goal.self,
+            CategoryMap.self
         ])
     }
 

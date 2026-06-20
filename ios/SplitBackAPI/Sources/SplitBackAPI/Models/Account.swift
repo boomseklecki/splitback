@@ -12,6 +12,9 @@ final class Account {
     var plaidItemId: UUID?
     var balance: Decimal
     var currency: String
+    /// Goals-analytics inclusion overrides; nil = derive from the account's classification (subtype).
+    var includeInSpending: Bool?
+    var includeInCashFlow: Bool?
     var createdAt: Date
     var updatedAt: Date
 
@@ -23,6 +26,8 @@ final class Account {
         plaidItemId: UUID? = nil,
         balance: Decimal,
         currency: String,
+        includeInSpending: Bool? = nil,
+        includeInCashFlow: Bool? = nil,
         createdAt: Date,
         updatedAt: Date
     ) {
@@ -33,6 +38,8 @@ final class Account {
         self.plaidItemId = plaidItemId
         self.balance = balance
         self.currency = currency
+        self.includeInSpending = includeInSpending
+        self.includeInCashFlow = includeInCashFlow
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }

@@ -72,6 +72,8 @@ public final class AppEnvironment {
     func users(_ context: ModelContext) -> UserRepository { .init(client: client, context: context) }
     func receipts(_ context: ModelContext) -> ReceiptRepository { .init(client: client, context: context) }
     func accounts(_ context: ModelContext) -> AccountRepository { .init(client: client, context: context) }
+    func goals(_ context: ModelContext) -> GoalRepository { .init(client: client, context: context) }
+    func categoryMaps(_ context: ModelContext) -> CategoryMapRepository { .init(client: client, context: context) }
     func plaid(_ context: ModelContext) -> PlaidRepository { .init(client: client, context: context) }
     var balances: BalanceService { .init(client: client) }
     var categories: CategoryService { .init(client: client) }
@@ -83,5 +85,7 @@ public final class AppEnvironment {
         try await groups(context).reconcileAll()
         try await users(context).refresh()
         try await expenses(context).reconcileAll()
+        try await goals(context).refresh()
+        try await categoryMaps(context).refresh()
     }
 }

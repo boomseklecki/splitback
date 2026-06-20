@@ -54,6 +54,16 @@ enum Mapping {
         return decimal
     }
 
+    static func optionalDecimal(_ value: String?, field: String) throws -> Decimal? {
+        guard let value else { return nil }
+        return try decimal(value, field: field)
+    }
+
+    static func optionalDateOnly(_ value: String?, field: String) throws -> Date? {
+        guard let value else { return nil }
+        return try dateOnly(value, field: field)
+    }
+
     static func dateOnly(_ value: String, field: String) throws -> Date {
         // Round-trip check: DateFormatter is lenient about separators ("2026/06/18" would parse),
         // so require the value to format back identically.
@@ -122,6 +132,38 @@ enum Mapping {
             plaidItemId: nil,
             balance: try decimal(r.balance, field: "Account.balance"),
             currency: r.currency,
+            includeInSpending: r.include_in_spending,
+            includeInCashFlow: r.include_in_cash_flow,
+            createdAt: r.created_at,
+            updatedAt: r.updated_at
+        )
+    }
+
+    static func goal(_ r: Components.Schemas.GoalResponse) throws -> Goal {
+        Goal(
+            id: try uuid(r.id, field: "Goal.id"),
+            kind: r.kind,
+            name: r.name,
+            category: r.category,
+            accountId: try optionalUUID(r.account_id, field: "Goal.account_id"),
+            targetAmount: try decimal(r.target_amount, field: "Goal.target_amount"),
+            saveTargetType: r.save_target_type,
+            startingBalance: try optionalDecimal(r.starting_balance, field: "Goal.starting_balance"),
+            startingDate: try optionalDateOnly(r.starting_date, field: "Goal.starting_date"),
+            period: r.period,
+            currency: r.currency,
+            archivedAt: r.archived_at,
+            createdAt: r.created_at,
+            updatedAt: r.updated_at
+        )
+    }
+
+    static func categoryMap(_ r: Components.Schemas.CategoryMapResponse) throws -> CategoryMap {
+        CategoryMap(
+            id: try uuid(r.id, field: "CategoryMap.id"),
+            rawCategory: r.raw_category,
+            canonicalCategory: r.canonical_category,
+            source: r.source,
             createdAt: r.created_at,
             updatedAt: r.updated_at
         )
@@ -327,6 +369,45 @@ enum Mapping {
             pending: d.pending
         )
     }
+
+    static func goalCreate(_ d: GoalDraft) -> Components.Schemas.GoalCreate {
+        .init(
+            kind: d.kind.rawValue,
+            name: d.name,
+            category: d.category,
+            account_id: d.accountId?.uuidString,
+            target_amount: decimalString(d.targetAmount),
+            save_target_type: d.saveTargetType?.rawValue,
+            starting_balance: d.startingBalance.map(decimalString),
+            starting_date: d.startingDate.map(dateOnlyString),
+            period: d.period,
+            currency: d.currency
+        )
+    }
+
+    static func goalUpdate(_ d: GoalDraft) -> Components.Schemas.GoalUpdate {
+        .init(
+            name: d.name,
+            category: d.category,
+            account_id: d.accountId?.uuidString,
+            target_amount: decimalString(d.targetAmount),
+            save_target_type: d.saveTargetType?.rawValue,
+            starting_balance: d.startingBalance.map(decimalString),
+            starting_date: d.startingDate.map(dateOnlyString),
+            period: d.period,
+            currency: d.currency
+        )
+    }
+
+    static func categoryMapUpsert(raw: String, canonical: String, source: String)
+        -> Components.Schemas.CategoryMapUpsert {
+        .init(raw_category: raw, canonical_category: canonical, source: source)
+    }
+
+    static func accountUpdate(includeInSpending: Bool?, includeInCashFlow: Bool?)
+        -> Components.Schemas.AccountUpdate {
+        .init(include_in_spending: includeInSpending, include_in_cash_flow: includeInCashFlow)
+    }
 }
 
 /// A computed balance row for a participant (value type; fetched on demand, not cached).
@@ -386,4 +467,17 @@ struct TransactionDraft {
     var date: Date
     var category: String? = nil
     var pending: Bool = false
+}
+
+struct GoalDraft {
+    var kind: GoalKind
+    var name: String
+    var category: String? = nil
+    var accountId: UUID? = nil
+    var targetAmount: Decimal
+    var saveTargetType: SaveTargetType? = nil
+    var startingBalance: Decimal? = nil
+    var startingDate: Date? = nil
+    var period: String = "monthly"
+    var currency: String? = nil
 }

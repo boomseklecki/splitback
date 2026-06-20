@@ -34,3 +34,19 @@ enum AccountKind {
         return .cashFlow
     }
 }
+
+extension Account {
+    var kind: AccountKind { AccountKind.classify(type) }
+
+    /// Whether this account's outflows count toward budgets/spending. Defaults to cash-flow + credit
+    /// (true spend wherever it happens); the user can override per account.
+    var countsInSpending: Bool {
+        includeInSpending ?? (kind == .cashFlow || kind == .liability)
+    }
+
+    /// Whether this account counts in the net-income / cash-flow view. Defaults to cash-flow accounts
+    /// only (so a card payment from checking isn't double-counted); the user can override.
+    var countsInCashFlow: Bool {
+        includeInCashFlow ?? (kind == .cashFlow)
+    }
+}

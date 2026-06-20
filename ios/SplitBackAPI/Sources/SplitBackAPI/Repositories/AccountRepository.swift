@@ -46,6 +46,20 @@ struct AccountRepository {
         }
     }
 
+    /// Sets the Goals-analytics inclusion overrides on an account and caches the response.
+    func updateFlags(id: UUID, includeInSpending: Bool?, includeInCashFlow: Bool?) async throws {
+        let output = try await client.update_account_accounts__account_id__patch(
+            path: .init(account_id: id.uuidString),
+            body: .json(Mapping.accountUpdate(
+                includeInSpending: includeInSpending, includeInCashFlow: includeInCashFlow))
+        )
+        switch output {
+        case let .ok(ok): try upsertAccounts([try ok.body.json])
+        case let .unprocessableContent(error): throw BackendError.validation(BackendError.validationMessage(try? error.body.json))
+        case let .undocumented(statusCode, _): throw BackendError.fromUndocumented(statusCode)
+        }
+    }
+
     func upsertAccounts(_ responses: [Components.Schemas.AccountResponse]) throws {
         for r in responses {
             let id = try Mapping.uuid(r.id, field: "Account.id")
@@ -57,6 +71,8 @@ struct AccountRepository {
                 existing.plaidAccountId = r.plaid_account_id
                 existing.balance = try Mapping.decimal(r.balance, field: "Account.balance")
                 existing.currency = r.currency
+                existing.includeInSpending = r.include_in_spending
+                existing.includeInCashFlow = r.include_in_cash_flow
                 existing.createdAt = r.created_at
                 existing.updatedAt = r.updated_at
             } else {

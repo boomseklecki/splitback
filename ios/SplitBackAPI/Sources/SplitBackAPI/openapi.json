@@ -1469,6 +1469,63 @@
       }
     },
     "/accounts/{account_id}": {
+      "patch": {
+        "tags": [
+          "accounts"
+        ],
+        "summary": "Update Account",
+        "description": "Set the Goals-analytics inclusion overrides. Plaid sync only touches name/type/balance/\ncurrency, so these survive a re-sync.",
+        "operationId": "update_account_accounts__account_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
       "delete": {
         "tags": [
           "accounts"
@@ -2377,7 +2434,7 @@
           "splitwise"
         ],
         "summary": "Import Group Local",
-        "description": "Clone a Splitwise-linked group into a new self-hosted group (native, full-featured\ncopies), then archive the source so balances don't double-count. Archived source\nexpenses are not copied; receipts/line items copy if present.",
+        "description": "Clone a Splitwise-linked group into a new self-hosted group (native, full-featured copies of\nexpenses incl. provenance, splits, items, and receipts), then archive the source so balances don't\ndouble-count. With SPLITWISE_RECEIPT_DOWNLOAD_ENABLED, each Splitwise receipt's original image is\ndownloaded into MinIO so the local copy is self-contained.",
         "operationId": "import_group_local_splitwise_groups__group_id__import_local_post",
         "security": [
           {
@@ -2430,6 +2487,55 @@
         }
       }
     },
+    "/splitwise/groups/{group_id}/download-receipts": {
+      "post": {
+        "tags": [
+          "splitwise"
+        ],
+        "summary": "Download Group Receipts",
+        "description": "Standalone flow: download original Splitwise receipt images for a group's expenses into MinIO as\nnative Receipt rows. Gated by SPLITWISE_RECEIPT_DOWNLOAD_ENABLED; skips expenses that already have\na receipt (idempotent).",
+        "operationId": "download_group_receipts_splitwise_groups__group_id__download_receipts_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Group Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReceiptDownloadResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/categories": {
       "get": {
         "tags": [
@@ -2458,6 +2564,274 @@
             "HTTPBearer": []
           }
         ]
+      }
+    },
+    "/category-map": {
+      "get": {
+        "tags": [
+          "category-map"
+        ],
+        "summary": "List Category Map",
+        "operationId": "list_category_map_category_map_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CategoryMapResponse"
+                  },
+                  "type": "array",
+                  "title": "Response List Category Map Category Map Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "category-map"
+        ],
+        "summary": "Upsert Category Map",
+        "description": "Store a raw\u2192canonical mapping. `source` distinguishes a user's manual pick from an on-device\n(Apple Intelligence) suggestion the app generated; the app decides whether to overwrite a row\n(it leaves manual picks alone and only refreshes its own suggestions).",
+        "operationId": "upsert_category_map_category_map_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CategoryMapUpsert"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryMapResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/goals": {
+      "post": {
+        "tags": [
+          "goals"
+        ],
+        "summary": "Create Goal",
+        "operationId": "create_goal_goals_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GoalCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoalResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "goals"
+        ],
+        "summary": "List Goals",
+        "operationId": "list_goals_goals_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "include_archived",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Archived"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GoalResponse"
+                  },
+                  "title": "Response List Goals Goals Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/goals/{goal_id}": {
+      "patch": {
+        "tags": [
+          "goals"
+        ],
+        "summary": "Update Goal",
+        "operationId": "update_goal_goals__goal_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "goal_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Goal Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GoalUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoalResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "goals"
+        ],
+        "summary": "Delete Goal",
+        "operationId": "delete_goal_goals__goal_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "goal_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Goal Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/": {
@@ -2540,6 +2914,14 @@
             "type": "string",
             "title": "Currency"
           },
+          "include_in_spending": {
+            "type": "boolean",
+            "title": "Include In Spending"
+          },
+          "include_in_cash_flow": {
+            "type": "boolean",
+            "title": "Include In Cash Flow"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -2561,6 +2943,20 @@
           "updated_at"
         ],
         "title": "AccountResponse"
+      },
+      "AccountUpdate": {
+        "properties": {
+          "include_in_spending": {
+            "type": "boolean",
+            "title": "Include In Spending"
+          },
+          "include_in_cash_flow": {
+            "type": "boolean",
+            "title": "Include In Cash Flow"
+          }
+        },
+        "type": "object",
+        "title": "AccountUpdate"
       },
       "AppleAuthRequest": {
         "properties": {
@@ -2638,6 +3034,70 @@
           "net"
         ],
         "title": "BalanceEntry"
+      },
+      "CategoryMapResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "raw_category": {
+            "type": "string",
+            "title": "Raw Category"
+          },
+          "canonical_category": {
+            "type": "string",
+            "title": "Canonical Category"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "raw_category",
+          "canonical_category",
+          "source",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "CategoryMapResponse"
+      },
+      "CategoryMapUpsert": {
+        "properties": {
+          "raw_category": {
+            "type": "string",
+            "title": "Raw Category"
+          },
+          "canonical_category": {
+            "type": "string",
+            "title": "Canonical Category"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source",
+            "default": "manual"
+          }
+        },
+        "type": "object",
+        "required": [
+          "raw_category",
+          "canonical_category"
+        ],
+        "title": "CategoryMapUpsert"
       },
       "ExchangeRequest": {
         "properties": {
@@ -2959,6 +3419,188 @@
         "type": "object",
         "title": "ExpenseUpdate"
       },
+      "GoalCreate": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "target_amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Target Amount"
+          },
+          "save_target_type": {
+            "type": "string",
+            "title": "Save Target Type"
+          },
+          "starting_balance": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Starting Balance"
+          },
+          "starting_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Starting Date"
+          },
+          "period": {
+            "type": "string",
+            "title": "Period",
+            "default": "monthly"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "name",
+          "target_amount"
+        ],
+        "title": "GoalCreate"
+      },
+      "GoalResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "target_amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Target Amount"
+          },
+          "save_target_type": {
+            "type": "string",
+            "title": "Save Target Type"
+          },
+          "starting_balance": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Starting Balance"
+          },
+          "starting_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Starting Date"
+          },
+          "period": {
+            "type": "string",
+            "title": "Period"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency"
+          },
+          "archived_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Archived At"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "name",
+          "target_amount",
+          "period",
+          "currency",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "GoalResponse"
+      },
+      "GoalUpdate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "target_amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Target Amount"
+          },
+          "save_target_type": {
+            "type": "string",
+            "title": "Save Target Type"
+          },
+          "starting_balance": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Starting Balance"
+          },
+          "starting_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Starting Date"
+          },
+          "period": {
+            "type": "string",
+            "title": "Period"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency"
+          }
+        },
+        "type": "object",
+        "title": "GoalUpdate"
+      },
       "GoogleAuthRequest": {
         "properties": {
           "id_token": {
@@ -3223,6 +3865,11 @@
           "expenses_copied": {
             "type": "integer",
             "title": "Expenses Copied"
+          },
+          "receipts_downloaded": {
+            "type": "integer",
+            "title": "Receipts Downloaded",
+            "default": 0
           }
         },
         "type": "object",
@@ -3298,6 +3945,29 @@
           "updated_at"
         ],
         "title": "PlaidItemResponse"
+      },
+      "ReceiptDownloadResult": {
+        "properties": {
+          "downloaded": {
+            "type": "integer",
+            "title": "Downloaded"
+          },
+          "skipped": {
+            "type": "integer",
+            "title": "Skipped"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "downloaded",
+          "skipped",
+          "enabled"
+        ],
+        "title": "ReceiptDownloadResult"
       },
       "ReceiptResponse": {
         "properties": {
