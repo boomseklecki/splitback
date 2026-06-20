@@ -28,7 +28,11 @@ struct TransactionsView: View {
     }
 
     var body: some View {
-        List {
+        // Build the raw→canonical map ONCE per render. Referencing the `lookup` computed property from
+        // inside the row closure rebuilt this dictionary for every transaction — O(rows × maps) of
+        // dictionary construction on the main thread, which froze long lists.
+        let lookup = self.lookup
+        return List {
             if let account {
                 AccountSummaryHeader(account: account, transactions: transactions)
             }
