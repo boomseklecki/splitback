@@ -1,5 +1,7 @@
 import SwiftUI
 import SwiftData
+import PhotosUI
+import UIKit
 
 /// The Expenses tab: your active groups with your per-group net, plus an "All Expenses" link.
 /// Settled groups (zero balance or a settle-up as the latest expense) are hidden by default; sort
@@ -18,6 +20,7 @@ struct GroupsListView: View {
     @Query(filter: #Predicate<ExpenseGroup> { $0.archivedAt == nil && $0.hidden == false },
            sort: \ExpenseGroup.name)
     private var groups: [ExpenseGroup]
+    @Query private var members: [GroupMember]
 
     @AppStorage("expenses.sortMode") private var sortModeRaw = SortMode.activity.rawValue
     @AppStorage("expenses.showSettled") private var showSettled = false
@@ -25,6 +28,10 @@ struct GroupsListView: View {
     @State private var showingNewGroup = false
     @State private var newGroupName = ""
     @State private var errorText: String?
+    @State private var showingNewExpense = false
+    @State private var showingReceiptScanner = false
+    @State private var receiptPhoto: PhotosPickerItem?
+    @State private var scan = ReceiptScanModel()
     /// Your net balance per group (group id → net), keyed by the signed-in user from `/me`.
     @State private var myNets: [UUID: Decimal] = [:]
     /// Latest-expense summary per group (date for activity sort, settle-up flag for hiding). Loaded on
@@ -63,6 +70,14 @@ struct GroupsListView: View {
         case .name:
             return shown.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         }
+    }
+
+    /// The group a "+"-launched expense starts in (most-recent active, falling back to any group).
+    /// The editor lets you switch from here. Nil when there are no groups, which hides the expense actions.
+    private var defaultGroup: ExpenseGroup? { visibleGroups.first ?? groups.first }
+    private var defaultMembers: [String] {
+        guard let id = defaultGroup?.id else { return [] }
+        return members.filter { $0.groupId == id }.map(\.userIdentifier)
     }
 
     var body: some View {
@@ -122,7 +137,17 @@ struct GroupsListView: View {
                     }
                 }
                 ToolbarItem(placement: .primaryAction) {
-                    Button { showingNewGroup = true } label: { Image(systemName: "plus") }
+                    Menu {
+                        if defaultGroup != nil {
+                            Button("Blank Expense", systemImage: "square.and.pencil") { showingNewExpense = true }
+                            Button("Scan Receipt", systemImage: "doc.viewfinder") { showingReceiptScanner = true }
+                            PhotosPicker("Receipt from Photo", selection: $receiptPhoto, matching: .images)
+                            Divider()
+                        }
+                        Button("Add Group", systemImage: "person.2.badge.plus") { showingNewGroup = true }
+                    } label: {
+                        Image(systemName: "plus")
+                    }
                 }
             }
             .refreshable {
@@ -147,6 +172,51 @@ struct GroupsListView: View {
                 Button("Create", action: createGroup)
                 Button("Cancel", role: .cancel) { newGroupName = "" }
             }
+            .sheet(isPresented: $showingNewExpense) {
+                if let defaultGroup {
+                    ExpenseEditView(group: defaultGroup, members: defaultMembers)
+                }
+            }
+            .sheet(isPresented: $showingReceiptScanner) {
+                DocumentScannerView(
+                    onComplete: { images in
+                        showingReceiptScanner = false
+                        if let first = images.first {
+                            Task { await scan.process(image: first, categories: []) }
+                        }
+                    },
+                    onCancel: { showingReceiptScanner = false }
+                )
+                .ignoresSafeArea()
+            }
+            .sheet(isPresented: $scan.presentEditor) {
+                if let defaultGroup, let prefill = scan.prefill {
+                    ExpenseEditView(group: defaultGroup, members: defaultMembers,
+                                    prefill: prefill, attachImageData: scan.imageData)
+                }
+            }
+            .onChange(of: receiptPhoto) { _, item in
+                guard let item else { return }
+                Task {
+                    defer { receiptPhoto = nil }
+                    guard let data = try? await item.loadTransferable(type: Data.self),
+                          let image = UIImage(data: data) else { return }
+                    await scan.process(image: image, categories: [])
+                }
+            }
+            .overlay {
+                if scan.isScanning {
+                    ProgressView("Reading receipt…")
+                        .padding(24)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                }
+            }
+            .alert("Heads up", isPresented: Binding(
+                get: { scan.infoMessage != nil }, set: { if !$0 { scan.infoMessage = nil } }
+            )) {
+                Button("OK") {}
+            } message: { Text(scan.infoMessage ?? "") }
+            .errorAlert(Binding(get: { scan.errorText }, set: { scan.errorText = $0 }))
             .errorAlert($errorText)
         }
     }
