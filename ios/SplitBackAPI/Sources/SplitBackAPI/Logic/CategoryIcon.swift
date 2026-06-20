@@ -1,9 +1,12 @@
 import Foundation
 
-/// Best-effort SF Symbol for an expense category (Splitwise or self-hosted names), keyword-matched.
-/// Unknown/empty categories fall back to a generic tag.
+/// SF Symbol for a category: a user-chosen icon from the synced catalog if set, otherwise a
+/// keyword match on the name (Splitwise or self-hosted), falling back to a generic tag.
+@MainActor
 func categorySymbol(_ category: String?) -> String {
-    guard let c = category?.lowercased(), !c.isEmpty else { return "tag" }
+    guard let name = category, !name.isEmpty else { return "tag" }
+    if let custom = CategoryCatalog.shared.icon(for: name) { return custom }
+    let c = name.lowercased()
     let map: [(String, String)] = [
         ("settle", "arrow.left.arrow.right"),
         ("payment", "arrow.left.arrow.right"),
@@ -58,3 +61,18 @@ func categorySymbol(_ category: String?) -> String {
     }
     return "tag"
 }
+
+/// Curated SF Symbols offered when picking a category icon.
+let categoryIconChoices: [String] = [
+    "tag", "cart.fill", "fork.knife", "cup.and.saucer.fill", "wineglass.fill",
+    "house.fill", "sofa.fill", "bolt.fill", "drop.fill", "flame.fill", "trash.fill",
+    "wifi", "tv", "phone.fill", "fuelpump.fill", "car.fill", "bus.fill", "tram.fill",
+    "bicycle", "airplane", "bed.double.fill", "film.fill", "gamecontroller.fill",
+    "music.note", "headphones", "tshirt.fill", "bag.fill", "gift.fill", "cross.case.fill",
+    "pills.fill", "heart.fill", "figure.run", "dumbbell.fill", "pawprint.fill",
+    "book.fill", "graduationcap.fill", "doc.text.fill", "creditcard.fill", "banknote.fill",
+    "dollarsign.circle.fill", "building.columns.fill", "briefcase.fill", "hammer.fill",
+    "wrench.and.screwdriver.fill", "scissors", "comb", "sparkles", "leaf.fill",
+    "shippingbox.fill", "takeoutbag.and.cup.and.straw.fill", "popcorn.fill",
+    "shield.fill", "umbrella.fill", "star.fill", "ticket.fill",
+]

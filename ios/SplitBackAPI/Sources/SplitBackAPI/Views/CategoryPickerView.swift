@@ -1,24 +1,24 @@
 import SwiftUI
+import SwiftData
 
 /// A searchable category list — each row shows the category's icon next to its name. Reports the
-/// chosen category via `onSelect`. Reached by tapping the category icon on the expense detail.
+/// chosen category via `onSelect`. Reads the synced, editable taxonomy from the cache.
 struct CategoryPickerView: View {
     let current: String?
     let onSelect: (String) -> Void
 
-    @Environment(AppEnvironment.self) private var env
     @Environment(\.dismiss) private var dismiss
-    @State private var categories: [String] = []
+    @Query(sort: \SpendCategory.position) private var categories: [SpendCategory]
     @State private var query = ""
 
-    private var filtered: [String] {
-        query.isEmpty ? categories
-            : categories.filter { $0.localizedCaseInsensitiveContains(query) }
+    private var names: [String] {
+        let all = categories.map(\.name)
+        return query.isEmpty ? all : all.filter { $0.localizedCaseInsensitiveContains(query) }
     }
 
     var body: some View {
         NavigationStack {
-            List(filtered, id: \.self) { category in
+            List(names, id: \.self) { category in
                 Button {
                     onSelect(category)
                     dismiss()
@@ -44,7 +44,6 @@ struct CategoryPickerView: View {
             .navigationTitle("Category")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
-            .task { categories = (try? await env.categories.list()) ?? [] }
         }
     }
 }

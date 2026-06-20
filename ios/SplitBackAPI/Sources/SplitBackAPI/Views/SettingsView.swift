@@ -144,6 +144,11 @@ struct SettingsView: View {
                     } label: {
                         Label("Spending Categories", systemImage: "tag")
                     }
+                    NavigationLink {
+                        ManageCategoriesView()
+                    } label: {
+                        Label("Manage Categories", systemImage: "square.grid.2x2")
+                    }
                 }
 
                 Section("Linked Banks") {

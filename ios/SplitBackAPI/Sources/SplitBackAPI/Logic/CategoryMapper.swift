@@ -27,10 +27,9 @@ enum CategoryMapper {
     /// Refines vague transactions using the **merchant description** (plus the Plaid category as a hint)
     /// — more accurate than the bare category for buckets like "General Merchandise / Other". Returns
     /// {transactionId: canonical} for the ones it could confidently place.
-    static func refine(_ items: [Item]) async -> [UUID: String] {
+    static func refine(_ items: [Item], allowed: [String] = CanonicalCategory.all) async -> [UUID: String] {
         #if canImport(FoundationModels)
         if #available(iOS 26, *), case .available = SystemLanguageModel.default.availability {
-            let allowed = CanonicalCategory.all
             let instructions = """
             You categorize bank transactions into a fixed taxonomy from the merchant/description. Reply \
             with ONLY the single best-matching category name from the allowed list — no punctuation, no \
@@ -59,10 +58,9 @@ enum CategoryMapper {
 
     /// Classifies each raw label into one canonical category. Skips anything the model can't confidently
     /// place in the allowed set. Returns {raw: canonical}.
-    static func suggest(for rawLabels: [String]) async -> [String: String] {
+    static func suggest(for rawLabels: [String], allowed: [String] = CanonicalCategory.all) async -> [String: String] {
         #if canImport(FoundationModels)
         if #available(iOS 26, *), case .available = SystemLanguageModel.default.availability {
-            let allowed = CanonicalCategory.all
             let instructions = """
             You classify bank-transaction category labels into a fixed taxonomy. Reply with ONLY the \
             single best-matching category name from the allowed list — no punctuation, no explanation.

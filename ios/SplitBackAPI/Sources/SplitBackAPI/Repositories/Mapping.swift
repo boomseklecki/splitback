@@ -169,6 +169,16 @@ enum Mapping {
         )
     }
 
+    static func category(_ r: Components.Schemas.CategoryResponse) throws -> SpendCategory {
+        SpendCategory(
+            id: try uuid(r.id, field: "Category.id"),
+            name: r.name,
+            builtin: r.builtin,
+            position: r.position,
+            icon: r.icon
+        )
+    }
+
     static func transaction(_ r: Components.Schemas.TransactionResponse) throws -> Transaction {
         Transaction(
             id: try uuid(r.id, field: "Transaction.id"),

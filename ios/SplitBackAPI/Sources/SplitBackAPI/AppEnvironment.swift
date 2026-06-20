@@ -108,7 +108,7 @@ public final class AppEnvironment {
     func categoryMaps(_ context: ModelContext) -> CategoryMapRepository { .init(client: client, context: context) }
     func plaid(_ context: ModelContext) -> PlaidRepository { .init(client: client, context: context) }
     var balances: BalanceService { .init(client: client) }
-    var categories: CategoryService { .init(client: client) }
+    func categories(_ context: ModelContext) -> CategoryRepository { .init(client: client, context: context) }
     var splitwise: SplitwiseService { .init(client: client) }
     func auth(_ context: ModelContext) -> AuthService { .init(client: client, context: context) }
 
@@ -119,5 +119,6 @@ public final class AppEnvironment {
         try await expenses(context).reconcileAll()
         try await goals(context).refresh()
         try await categoryMaps(context).refresh()
+        try await categories(context).refresh()
     }
 }

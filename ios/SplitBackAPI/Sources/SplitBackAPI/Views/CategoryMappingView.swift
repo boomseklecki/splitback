@@ -10,6 +10,7 @@ struct CategoryMappingView: View {
     @Query private var transactions: [Transaction]
     @Query private var expenses: [Expense]
     @Query private var categoryMaps: [CategoryMap]
+    @Query(sort: \SpendCategory.position) private var categoryModels: [SpendCategory]
 
     @State private var mapping = false
     @State private var editing: EditingRaw?
@@ -144,7 +145,8 @@ struct CategoryMappingView: View {
         defer { mapping = false }
         // 1) Map any raw category labels the built-in map doesn't cover.
         let unmapped = rawCategories.filter { resolved($0).source == "unmapped" }
-        let suggestions = await CategoryMapper.suggest(for: unmapped)
+        let allowed = categoryModels.map(\.name)
+        let suggestions = await CategoryMapper.suggest(for: unmapped, allowed: allowed)
         do {
             for (raw, canonical) in suggestions {
                 try await env.categoryMaps(context).set(raw: raw, canonical: canonical, source: "ondevice")
@@ -156,7 +158,7 @@ struct CategoryMappingView: View {
         let items = refinable.map {
             CategoryMapper.Item(id: $0.id, description: $0.details, rawCategory: $0.category)
         }
-        let refined = await CategoryMapper.refine(items)
+        let refined = await CategoryMapper.refine(items, allowed: allowed)
         guard !refined.isEmpty else { return }
         for transaction in transactions where refined[transaction.id] != nil {
             transaction.refinedCategory = refined[transaction.id]
