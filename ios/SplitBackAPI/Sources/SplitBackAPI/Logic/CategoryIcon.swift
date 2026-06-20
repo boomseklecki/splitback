@@ -8,6 +8,7 @@ func categorySymbol(_ category: String?) -> String {
         ("settle", "arrow.left.arrow.right"),
         ("payment", "arrow.left.arrow.right"),
         ("reimburs", "arrow.uturn.backward.circle"),
+        ("personal care", "comb"),  // before "car" — "personal care".contains("car")
         ("grocer", "cart.fill"),
         ("dining", "fork.knife"),
         ("restaurant", "fork.knife"),
