@@ -53,6 +53,17 @@ def test_build_payload():
     assert {u["user_id"] for u in payload["users"]} == {"11", "22"}
 
 
+def test_build_payload_marks_settleup_as_payment():
+    swids = {"matt": "11", "nikki": "22"}
+    splits = [
+        {"user_identifier": "matt", "paid_share": Decimal("50.00"), "owed_share": Decimal("0")},
+        {"user_identifier": "nikki", "paid_share": Decimal("0"), "owed_share": Decimal("50.00")},
+    ]
+    assert writer.build_payload(_expense_dict(splits), "1", swids)["payment"] is False
+    settle = {**_expense_dict(splits), "category": "Settle-up"}
+    assert writer.build_payload(settle, "1", swids)["payment"] is True
+
+
 def test_build_payload_missing_swid():
     try:
         writer.build_payload(_expense_dict([{"user_identifier": "matt", "paid_share": Decimal("40"), "owed_share": Decimal("40")}]), "1", {})

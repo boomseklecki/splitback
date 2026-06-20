@@ -46,7 +46,13 @@ enum CategoryMapping {
 /// (for Transfer) from net income, so card payments and account-to-account moves don't distort it.
 /// Mirrors `backend/app/categories.py`.
 enum CanonicalCategory {
-    static let excludedFromSpend: Set<String> = ["Transfer", "Income", "Settle-up"]
+    /// Never counted toward spend (donut/budgets).
+    static let excludedFromSpend: Set<String> = ["Transfer", "Income", "Settle-up", "Reimbursement"]
+    /// No economic event — money just moving between people/accounts (settle-ups, transfers, card
+    /// payments). Excluded from both spend and net income.
+    static let neutral: Set<String> = ["Transfer", "Settle-up"]
+    /// Money coming in — counts as a net-income inflow (your share), excluded from spend.
+    static let incomeLike: Set<String> = ["Income", "Reimbursement"]
     static let transfer = "Transfer"
 
     /// The app's canonical taxonomy (kept in sync with the backend list). Used by the on-device mapper

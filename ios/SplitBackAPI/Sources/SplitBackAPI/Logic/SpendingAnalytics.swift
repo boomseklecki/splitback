@@ -63,13 +63,25 @@ enum SpendingAnalytics {
 
         if let me {
             for e in expenses where e.transactionId == nil && e.archivedAt == nil {
-                let share = e.splits.first { $0.userIdentifier == me }?.owedShare ?? 0
-                guard share > 0 else { continue }  // you consumed nothing (or aren't in this expense)
                 guard let category = e.category.flatMap({ CategoryMapping.canonical($0, lookup: lookup) }),
-                      !CanonicalCategory.excludedFromSpend.contains(category) else { continue }
+                      !CanonicalCategory.neutral.contains(category) else { continue }  // settle-up/transfer
+                let mySplit = e.splits.first { $0.userIdentifier == me }
+                let amount: Decimal
+                if CanonicalCategory.incomeLike.contains(category) {
+                    // Inflow (negative): your share of received money. Reimbursement encodes the
+                    // "gets back" as paidShare; income items use your owed share.
+                    let inflow = category == Reimbursement.category ? (mySplit?.paidShare ?? 0)
+                                                                    : (mySplit?.owedShare ?? 0)
+                    guard inflow > 0 else { continue }
+                    amount = -inflow
+                } else {
+                    let share = mySplit?.owedShare ?? 0
+                    guard share > 0 else { continue }  // you consumed nothing (or aren't in this expense)
+                    amount = share
+                }
                 events.append(SpendEvent(
                     id: e.id, date: e.date, label: e.details, category: category,
-                    amount: share, countsInSpending: true, countsInCashFlow: true))
+                    amount: amount, countsInSpending: true, countsInCashFlow: true))
             }
         }
         return events
@@ -113,8 +125,9 @@ enum SpendingAnalytics {
             .map { MonthlyValue(month: $0, value: totals[$0] ?? 0) }
     }
 
-    /// Net income (inflow − outflow) per month over cash-flow sources, excluding transfers. Negative in
-    /// deficit months. Last `months` months, oldest → newest, zero-filled.
+    /// Net income (inflow − outflow) per month over cash-flow sources, excluding transfers/settle-ups
+    /// (income & reimbursements count as inflow). Negative in deficit months. Last `months` months,
+    /// oldest → newest, zero-filled.
     static func monthlyNetIncome(transactions: [Transaction], accounts: [Account],
                                  lookup: [String: String], months: Int, ending: Date = .now,
                                  expenses: [Expense] = [], me: String? = nil) -> [MonthlyValue] {
@@ -123,7 +136,7 @@ enum SpendingAnalytics {
                                  expenses: expenses, me: me)
         var totals: [Date: Decimal] = [:]
         for e in events where e.countsInCashFlow {
-            if e.category == CanonicalCategory.transfer { continue }
+            if let c = e.category, CanonicalCategory.neutral.contains(c) { continue }  // settle-up/transfer
             // inflow (amount<0) adds to income, outflow (amount>0) subtracts.
             totals[monthStart(e.date, cal), default: 0] -= e.amount
         }

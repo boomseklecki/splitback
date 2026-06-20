@@ -12,6 +12,7 @@ struct ExpenseEditView: View {
         case adjustment = "+/−"
         case reimbursement = "Reimburse"
         case itemized = "Items"
+        case settleUp = "Settle Up"
     }
 
     let editing: Expense?
@@ -37,6 +38,9 @@ struct ExpenseEditView: View {
     @State private var category: String?
     @State private var notes: String
     @State private var payer: String
+    @State private var multiPayer: Bool
+    @State private var paidBy: [String: String]
+    @State private var settleUpTo: String
     @State private var mode: SplitMode = .equal
     @State private var customOwed: [String: String]
     @State private var percents: [String: String] = [:]
@@ -63,8 +67,16 @@ struct ExpenseEditView: View {
         _date = State(initialValue: editing?.date ?? prefill?.date ?? Date())
         _category = State(initialValue: editing?.category ?? prefill?.category)
         _notes = State(initialValue: editing?.notes ?? "")
-        let payerFromEdit = editing?.splits.first(where: { $0.paidShare > 0 })?.userIdentifier
-        _payer = State(initialValue: payerFromEdit ?? people.first ?? "")
+        let payingSplits = (editing?.splits ?? []).filter { $0.paidShare > 0 }
+        _payer = State(initialValue: payingSplits.first?.userIdentifier ?? people.first ?? "")
+        // Preserve multiple payers from an imported/edited expense.
+        _multiPayer = State(initialValue: payingSplits.count > 1)
+        var paid: [String: String] = [:]
+        for split in payingSplits { paid[split.userIdentifier] = Mapping.decimalString(split.paidShare) }
+        _paidBy = State(initialValue: paid)
+        // Settle-up: the recipient is the participant who owes (paid nothing).
+        let settleTo = editing?.splits.first { $0.owedShare > 0 && $0.paidShare == 0 }?.userIdentifier
+        _settleUpTo = State(initialValue: settleTo ?? people.first { $0 != payingSplits.first?.userIdentifier } ?? "")
         var owed: [String: String] = [:]
         for split in editing?.splits ?? [] { owed[split.userIdentifier] = Mapping.decimalString(split.owedShare) }
         _customOwed = State(initialValue: owed)
@@ -73,9 +85,12 @@ struct ExpenseEditView: View {
         } ?? prefill?.items ?? []
         _items = State(initialValue: seedItems)
         _transactionId = State(initialValue: editing?.transactionId ?? prefill?.transactionId)
-        // Preserve a stored split when editing (Reimbursement if marked, else Exact); new expenses
-        // start on Equal.
-        let editingMode: SplitMode = editing?.category == Reimbursement.category ? .reimbursement : .exact
+        // Preserve a stored split when editing (Reimbursement / Settle-up if marked, else Exact); new
+        // expenses start on Equal.
+        let editingMode: SplitMode
+        if editing?.category == Reimbursement.category { editingMode = .reimbursement }
+        else if editing?.category == SettleUp.category { editingMode = .settleUp }
+        else { editingMode = .exact }
         _mode = State(initialValue: editing == nil ? .equal : editingMode)
     }
 
@@ -100,7 +115,8 @@ struct ExpenseEditView: View {
     private func displayName(_ identifier: String) -> String { users.displayName(for: identifier) }
     /// "you" for the current user, otherwise the person's display name (for the compact payer button).
     private var payerLabel: String {
-        payer == env.currentUser?.identifier ? "you" : displayName(payer)
+        if multiPayer { return "multiple" }
+        return payer == env.currentUser?.identifier ? "you" : displayName(payer)
     }
 
     private func decimal(_ string: String?) -> Decimal {
@@ -122,30 +138,51 @@ struct ExpenseEditView: View {
         return totals
     }
 
-    private var splits: [SplitDraft] {
+    /// Who paid how much: the multi-payer map, or the single payer for the whole amount.
+    private var paidShares: [String: Decimal] {
+        multiPayer ? numeric(paidBy) : [payer: amount]
+    }
+
+    /// A settle-up is a one-way payment: the payer paid, the recipient owes it back.
+    private var settleUpSplits: [SplitDraft] {
+        [SplitDraft(userIdentifier: payer, paidShare: amount, owedShare: 0),
+         SplitDraft(userIdentifier: settleUpTo, paidShare: 0, owedShare: amount)]
+    }
+
+    /// Owed shares per participant for the current split mode (paid shares are layered on separately).
+    private var owedDrafts: [SplitDraft] {
+        let nominal = participants.first ?? payer  // SplitMath needs a payer for paid, which we override
         switch mode {
         case .equal:
-            return SplitMath.equalSplit(amount: amount, payer: payer, participants: participants)
+            return SplitMath.equalSplit(amount: amount, payer: nominal, participants: participants)
         case .exact:
-            return participants.map { person in
-                SplitDraft(userIdentifier: person,
-                           paidShare: person == payer ? amount : 0,
-                           owedShare: decimal(customOwed[person]))
-            }
+            return participants.map { SplitDraft(userIdentifier: $0, paidShare: 0, owedShare: decimal(customOwed[$0])) }
         case .percentage:
-            return SplitMath.weightedSplit(amount: amount, payer: payer, participants: participants,
-                                           weights: numeric(percents))
+            return SplitMath.weightedSplit(amount: amount, payer: nominal, participants: participants, weights: numeric(percents))
         case .shares:
-            return SplitMath.weightedSplit(amount: amount, payer: payer, participants: participants,
-                                           weights: numeric(shareCounts))
+            return SplitMath.weightedSplit(amount: amount, payer: nominal, participants: participants, weights: numeric(shareCounts))
         case .adjustment:
-            return SplitMath.adjustmentSplit(amount: amount, payer: payer, participants: participants,
-                                             adjustments: numeric(adjustments))
+            return SplitMath.adjustmentSplit(amount: amount, payer: nominal, participants: participants, adjustments: numeric(adjustments))
+        case .itemized:
+            return SplitMath.itemizedSplit(amount: amount, payer: nominal, participants: participants, assigned: assignedItemTotals)
+        case .reimbursement, .settleUp:
+            return []  // handled in `splits`
+        }
+    }
+
+    private var splits: [SplitDraft] {
+        switch mode {
         case .reimbursement:
             return SplitMath.reimbursementSplit(amount: amount, payer: payer, participants: participants)
-        case .itemized:
-            return SplitMath.itemizedSplit(amount: amount, payer: payer, participants: participants,
-                                           assigned: assignedItemTotals)
+        case .settleUp:
+            return settleUpSplits
+        default:
+            // Owed from the mode; paid from the (multi-)payer map.
+            return owedDrafts.map { draft in
+                SplitDraft(userIdentifier: draft.userIdentifier,
+                           paidShare: paidShares[draft.userIdentifier] ?? 0,
+                           owedShare: draft.owedShare)
+            }
         }
     }
 
@@ -171,7 +208,7 @@ struct ExpenseEditView: View {
     @ViewBuilder
     private func splitInput(_ person: String) -> some View {
         switch mode {
-        case .equal, .itemized:
+        case .equal, .itemized, .settleUp:
             Text(owedText(person)).foregroundStyle(.secondary)
         case .reimbursement:
             Text(reimbursementGetsBackText(person)).foregroundStyle(.secondary)
@@ -204,9 +241,14 @@ struct ExpenseEditView: View {
     }
 
     private var balanced: Bool { SplitMath.isBalanced(amount: amount, splits: splits) }
+    private var paidBalanced: Bool { abs(SplitMath.paidSum(splits) - amount) <= SplitMath.tolerance }
     private var canSave: Bool {
-        !details.trimmingCharacters(in: .whitespaces).isEmpty && amount > 0 && !payer.isEmpty
-            && (!isSelfHosted || balanced) && !saving
+        guard amount > 0, !saving else { return false }
+        if mode == .settleUp {
+            return !payer.isEmpty && !settleUpTo.isEmpty && payer != settleUpTo
+        }
+        return !details.trimmingCharacters(in: .whitespaces).isEmpty && !payer.isEmpty
+            && (!isSelfHosted || balanced)
     }
 
     var body: some View {
@@ -219,7 +261,7 @@ struct ExpenseEditView: View {
 
                 Section {
                     HStack(spacing: 12) {
-                        if mode != .reimbursement {
+                        if mode != .reimbursement && mode != .settleUp {
                             Button { showingCategoryPicker = true } label: {
                                 Image(systemName: categorySymbol(category))
                                     .font(.title3)
@@ -266,30 +308,62 @@ struct ExpenseEditView: View {
                     }
                 }
 
-                Section("Split") {
+                if multiPayer && mode != .reimbursement && mode != .settleUp {
+                    Section("Paid by") {
+                        ForEach(participants, id: \.self) { person in
+                            HStack {
+                                Text(displayName(person))
+                                Spacer()
+                                TextField("0.00", text: entry($paidBy, person))
+                                    .keyboardType(.decimalPad).multilineTextAlignment(.trailing)
+                            }
+                        }
+                        Label(
+                            paidBalanced ? "Paid \(amount.formatted(.currency(code: "USD")))"
+                                : "Paid \(SplitMath.paidSum(splits).formatted(.currency(code: "USD"))) of \(amount.formatted(.currency(code: "USD")))",
+                            systemImage: paidBalanced ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
+                        )
+                        .foregroundStyle(paidBalanced ? .green : .orange)
+                        Button("Single payer") { multiPayer = false }
+                    }
+                }
+
+                Section(mode == .settleUp ? "Settle Up" : "Split") {
                     splitSentence
 
-                    if mode == .reimbursement {
-                        Text("\(payerLabel.capitalized) was reimbursed the full amount and splits it equally — \(payerLabel) owes the others their share.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-
-                    ForEach(participants, id: \.self) { person in
-                        HStack {
-                            Text(displayName(person))
-                            Spacer()
-                            splitInput(person)
+                    if mode == .settleUp {
+                        Picker("From", selection: $payer) {
+                            ForEach(participants, id: \.self) { Text(displayName($0)).tag($0) }
                         }
-                    }
-
-                    if isSelfHosted {
-                        Label(
-                            balanced ? "Balanced" : "Off by \((amount - SplitMath.owedSum(splits)).formatted(.currency(code: "USD")))",
-                            systemImage: balanced ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
-                        )
-                        .foregroundStyle(balanced ? .green : .orange)
+                        Picker("To", selection: $settleUpTo) {
+                            ForEach(participants, id: \.self) { Text(displayName($0)).tag($0) }
+                        }
+                        if payer == settleUpTo {
+                            Text("Pick two different people.").font(.caption).foregroundStyle(.orange)
+                        }
                     } else {
-                        Text("Splitwise validates this split on save.").font(.caption).foregroundStyle(.secondary)
+                        if mode == .reimbursement {
+                            Text("\(payerLabel.capitalized) was reimbursed the full amount and splits it equally — \(payerLabel) owes the others their share.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+
+                        ForEach(participants, id: \.self) { person in
+                            HStack {
+                                Text(displayName(person))
+                                Spacer()
+                                splitInput(person)
+                            }
+                        }
+
+                        if isSelfHosted {
+                            Label(
+                                balanced ? "Balanced" : "Off by \((amount - SplitMath.owedSum(splits)).formatted(.currency(code: "USD")))",
+                                systemImage: balanced ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
+                            )
+                            .foregroundStyle(balanced ? .green : .orange)
+                        } else {
+                            Text("Splitwise validates this split on save.").font(.caption).foregroundStyle(.secondary)
+                        }
                     }
                 }
             }
@@ -344,22 +418,43 @@ struct ExpenseEditView: View {
         }
     }
 
-    /// "Paid by [you] and split [Equally]" with the payer and mode as tappable capsule buttons.
+    /// "Paid by [you] and split [Equally]" with the payer and mode as tappable capsule buttons. For
+    /// settle-up the payer/payee live in the From/To pickers below, so only the mode capsule shows.
     private var splitSentence: some View {
         HStack(spacing: 6) {
-            Text(mode == .reimbursement ? "Reimbursed to" : "Paid by").foregroundStyle(.secondary)
-            Menu {
-                ForEach(participants, id: \.self) { person in
-                    Button(displayName(person)) { payer = person }
-                }
-            } label: { capsule(payerLabel) }
-            Text("and split").foregroundStyle(.secondary)
+            if mode != .settleUp {
+                Text(mode == .reimbursement ? "Reimbursed to" : "Paid by").foregroundStyle(.secondary)
+                Menu {
+                    ForEach(participants, id: \.self) { person in
+                        Button(displayName(person)) { payer = person; multiPayer = false }
+                    }
+                    if participants.count > 1 && mode != .reimbursement {
+                        Divider()
+                        Button("Multiple people…") { enableMultiPayer() }
+                    }
+                } label: { capsule(payerLabel) }
+                Text("and split").foregroundStyle(.secondary)
+            }
             Menu {
                 ForEach(availableModes, id: \.self) { m in
-                    Button(m.rawValue) { mode = m }
+                    Button(m.rawValue) { selectMode(m) }
                 }
             } label: { capsule(mode.rawValue) }
             Spacer(minLength: 0)
+        }
+    }
+
+    private func enableMultiPayer() {
+        if numeric(paidBy).values.reduce(0, +) == 0 { paidBy = [payer: amountString] }
+        multiPayer = true
+    }
+
+    /// Switch split mode; reimbursement and settle-up are single-payer, so leave multi-payer entry.
+    private func selectMode(_ m: SplitMode) {
+        mode = m
+        if m == .reimbursement || m == .settleUp { multiPayer = false }
+        if m == .settleUp, settleUpTo.isEmpty || settleUpTo == payer {
+            settleUpTo = participants.first { $0 != payer } ?? ""
         }
     }
 
@@ -379,6 +474,8 @@ struct ExpenseEditView: View {
         let members = allMembers.filter { $0.groupId == gid }.map(\.userIdentifier).sorted()
         participants = members
         payer = (env.currentUser?.identifier).flatMap { members.contains($0) ? $0 : nil } ?? members.first ?? ""
+        multiPayer = false; paidBy = [:]
+        settleUpTo = members.first { $0 != payer } ?? ""
         customOwed = [:]; percents = [:]; shareCounts = [:]; adjustments = [:]; itemOwners = [:]
         if !availableModes.contains(mode) { mode = .equal }
     }
@@ -387,9 +484,18 @@ struct ExpenseEditView: View {
         saving = true
         let me = env.currentUser?.identifier
         let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        let savedCategory: String?
+        switch mode {
+        case .reimbursement: savedCategory = Reimbursement.category
+        case .settleUp: savedCategory = SettleUp.category
+        default: savedCategory = category
+        }
+        // Settle-ups commonly have no description; give it a sensible default.
+        let trimmedDetails = details.trimmingCharacters(in: .whitespaces)
+        let savedDetails = (mode == .settleUp && trimmedDetails.isEmpty) ? "Settle up" : details
         let draft = ExpenseDraft(
-            groupId: group.id, details: details, amount: amount,
-            date: date, category: mode == .reimbursement ? Reimbursement.category : category,
+            groupId: group.id, details: savedDetails, amount: amount,
+            date: date, category: savedCategory,
             notes: trimmedNotes.isEmpty ? nil : trimmedNotes,
             createdBy: editing == nil ? me : nil,
             updatedBy: editing != nil ? me : nil,

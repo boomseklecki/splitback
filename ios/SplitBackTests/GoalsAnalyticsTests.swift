@@ -201,6 +201,33 @@ final class GoalsAnalyticsTests: XCTestCase {
                                                    lookup: [:], expenses: archived, me: "me").isEmpty)
     }
 
+    func testIncomeAndReimbursementCountAsInflow() {
+        let checking = account(type: "checking")
+        // Income item: your owed share is an income inflow, not spend.
+        let income = expense(100, category: "Income", owed: 40, splitwiseId: "i1")
+        XCTAssertTrue(SpendingAnalytics.byCategory(in: Date(), transactions: [], accounts: [checking],
+                                                   lookup: [:], expenses: [income], me: "me").isEmpty)
+        XCTAssertEqual(SpendingAnalytics.monthlyNetIncome(transactions: [], accounts: [checking],
+                          lookup: [:], months: 1, expenses: [income], me: "me").first?.value, 40)
+        // Reimbursement: your "gets back" (paidShare) is an inflow, not spend.
+        let reimb = expense(50, category: "Reimbursement", owed: 0)  // helper sets paidShare = amount
+        XCTAssertTrue(SpendingAnalytics.byCategory(in: Date(), transactions: [], accounts: [checking],
+                                                   lookup: [:], expenses: [reimb], me: "me").isEmpty)
+        XCTAssertEqual(SpendingAnalytics.monthlyNetIncome(transactions: [], accounts: [checking],
+                          lookup: [:], months: 1, expenses: [reimb], me: "me").first?.value, 50)
+    }
+
+    func testSettleUpAndTransferExpensesAreNeutral() {
+        let checking = account(type: "checking")
+        let exps = [expense(50, category: "Settle-up", owed: 50, splitwiseId: "s1"),
+                    expense(50, category: "Transfer", owed: 50)]
+        XCTAssertTrue(SpendingAnalytics.byCategory(in: Date(), transactions: [], accounts: [checking],
+                                                   lookup: [:], expenses: exps, me: "me").isEmpty)
+        // Neither inflow nor outflow.
+        XCTAssertEqual(SpendingAnalytics.monthlyNetIncome(transactions: [], accounts: [checking],
+                          lookup: [:], months: 1, expenses: exps, me: "me").first?.value, 0)
+    }
+
     func testUnlinkedExpenseReducesNetIncome() {
         let checking = account(type: "checking")
         let txns = [txn(-2000, category: "Income", account: checking)]  // paycheck in

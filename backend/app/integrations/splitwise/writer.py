@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.integrations.splitwise import client as sw_client
+from app.integrations.splitwise import mapper
 from app.models import SplitwiseToken, User
 
 
@@ -39,6 +40,8 @@ def build_payload(expense: dict, splitwise_group_id: str, id_to_swid: dict[str, 
         "date": expense["date"],
         "group_id": int(splitwise_group_id),
         "users": users,
+        # Settle-ups push as Splitwise *payments* (so they settle balances rather than add a cost).
+        "payment": expense.get("category") == mapper.SETTLEUP_CATEGORY,
     }
 
 
@@ -48,6 +51,7 @@ def _expense_to_dict(expense) -> dict:
         "description": expense.description,
         "currency": expense.currency,
         "date": expense.date.isoformat(),
+        "category": expense.category,
         "splits": [
             {
                 "user_identifier": s.user_identifier,

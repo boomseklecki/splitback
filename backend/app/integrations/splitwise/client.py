@@ -221,6 +221,8 @@ def _build_sw_expense(payload: dict, sw_id: str | None = None) -> SplitwiseExpen
     expense.setCurrencyCode(payload["currency_code"])
     expense.setDate(payload["date"])
     expense.setGroupId(payload["group_id"])
+    if payload.get("payment"):
+        expense.setPayment(True)
     for member in payload["users"]:
         user = ExpenseUser()
         user.setId(int(member["user_id"]))
