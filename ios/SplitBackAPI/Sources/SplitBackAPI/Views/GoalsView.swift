@@ -3,7 +3,8 @@ import SwiftData
 import Charts
 
 /// The Goals tab, modeled on Mint: a monthly spending donut, a budgets tracker (category spend
-/// goals), savings goals, and a link to Trends. All figures derive from Plaid transactions/accounts.
+/// goals), savings goals, and a link to Trends. Figures derive from Plaid transactions/accounts plus
+/// your owed share of expenses that aren't linked to a transaction (cash splits, Splitwise).
 struct GoalsView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.modelContext) private var context
@@ -11,6 +12,7 @@ struct GoalsView: View {
     @Query private var goals: [Goal]
     @Query private var accounts: [Account]
     @Query(sort: \Transaction.date, order: .reverse) private var transactions: [Transaction]
+    @Query private var expenses: [Expense]
     @Query private var categoryMaps: [CategoryMap]
 
     @State private var month: Date = SpendingAnalytics.monthStart(Date())
@@ -18,13 +20,15 @@ struct GoalsView: View {
     @State private var errorText: String?
 
     private var lookup: [String: String] { CategoryMapping.lookup(categoryMaps) }
+    private var me: String? { env.currentUser?.identifier }
     private var spendGoals: [Goal] { goals.filter { $0.goalKind == .spend }.sorted { $0.name < $1.name } }
     private var saveGoals: [Goal] { goals.filter { $0.goalKind == .save }.sorted { $0.name < $1.name } }
     private var accountsById: [UUID: Account] {
         Dictionary(accounts.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
     }
     private var categorySpend: [CategorySpend] {
-        SpendingAnalytics.byCategory(in: month, transactions: transactions, accounts: accounts, lookup: lookup)
+        SpendingAnalytics.byCategory(in: month, transactions: transactions, accounts: accounts,
+                                     lookup: lookup, expenses: expenses, me: me)
     }
     private var monthTotal: Decimal { categorySpend.reduce(0) { $0 + $1.total } }
 
@@ -56,7 +60,7 @@ struct GoalsView: View {
                         NavigationLink(value: goal) {
                             BudgetRow(goal: goal, spent: GoalProgress.spent(
                                 for: goal.category ?? "", in: month, transactions: transactions,
-                                accounts: accounts, lookup: lookup))
+                                accounts: accounts, lookup: lookup, expenses: expenses, me: me))
                         }
                     }
                     if spendGoals.isEmpty {

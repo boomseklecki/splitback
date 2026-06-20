@@ -3,24 +3,27 @@ import SwiftData
 import Charts
 
 /// Mint-style Trends: monthly spending bars and net-income bars (green positive / red negative) over
-/// the recent months, derived from Plaid transactions.
+/// the recent months, derived from Plaid transactions plus your owed share of expenses not linked to a
+/// transaction (cash splits, Splitwise).
 struct TrendsView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.modelContext) private var context
 
     @Query private var accounts: [Account]
     @Query(sort: \Transaction.date, order: .reverse) private var transactions: [Transaction]
+    @Query private var expenses: [Expense]
     @Query private var categoryMaps: [CategoryMap]
 
     private let months = 6
     private var lookup: [String: String] { CategoryMapping.lookup(categoryMaps) }
+    private var me: String? { env.currentUser?.identifier }
     private var spending: [MonthlyValue] {
         SpendingAnalytics.monthlySpending(transactions: transactions, accounts: accounts,
-                                          lookup: lookup, months: months)
+                                          lookup: lookup, months: months, expenses: expenses, me: me)
     }
     private var netIncome: [MonthlyValue] {
         SpendingAnalytics.monthlyNetIncome(transactions: transactions, accounts: accounts,
-                                           lookup: lookup, months: months)
+                                           lookup: lookup, months: months, expenses: expenses, me: me)
     }
     private var rangeLabel: String {
         guard let first = spending.first?.month, let last = spending.last?.month else { return "" }

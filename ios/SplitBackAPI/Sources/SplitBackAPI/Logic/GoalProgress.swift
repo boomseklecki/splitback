@@ -10,11 +10,14 @@ enum BudgetStatus: Equatable {
 /// Pure progress math for goals. Spend goals sum the month's spend in a category; save goals measure
 /// growth from the creation-time snapshot (no balance history to look back on).
 enum GoalProgress {
-    /// Spend in `category` (canonical) during `month`, across spending-included Plaid accounts.
+    /// Spend in `category` (canonical) during `month`, across spending-included Plaid accounts plus
+    /// unlinked expenses (your owed share).
     static func spent(for category: String, in month: Date, transactions: [Transaction],
-                      accounts: [Account], lookup: [String: String]) -> Decimal {
+                      accounts: [Account], lookup: [String: String],
+                      expenses: [Expense] = [], me: String? = nil) -> Decimal {
         SpendingAnalytics.byCategory(in: month, transactions: transactions, accounts: accounts,
-                                     lookup: lookup).first { $0.category == category }?.total ?? 0
+                                     lookup: lookup, expenses: expenses, me: me)
+            .first { $0.category == category }?.total ?? 0
     }
 
     static func budgetStatus(spent: Decimal, target: Decimal) -> BudgetStatus {

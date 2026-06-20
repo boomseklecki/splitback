@@ -14,9 +14,22 @@ struct MonthlyValue: Identifiable, Equatable {
     var id: Date { month }
 }
 
-/// Pure spend/cash-flow aggregations over Plaid transactions, scoped by the accounts' effective
-/// inclusion flags (`countsInSpending` / `countsInCashFlow`) and the canonical category map.
+/// A normalized spend/cash-flow item from either a Plaid transaction or an expense. Unifying the two
+/// lets the Goals/Trends analytics count expenses that never showed up in the bank sync (cash splits,
+/// Splitwise) without double-counting the ones already represented by a linked transaction.
 /// Sign convention: `amount > 0` is an outflow (spend), `amount < 0` is an inflow.
+struct SpendEvent: Identifiable {
+    let id: UUID
+    let date: Date
+    let label: String
+    let category: String?
+    let amount: Decimal
+    let countsInSpending: Bool
+    let countsInCashFlow: Bool
+}
+
+/// Pure spend/cash-flow aggregations over a unified `SpendEvent` stream, scoped by accounts' effective
+/// inclusion flags (`countsInSpending` / `countsInCashFlow`) and the canonical category map.
 enum SpendingAnalytics {
     private static var calendar: Calendar {
         var c = Calendar(identifier: .gregorian)
@@ -28,27 +41,58 @@ enum SpendingAnalytics {
         cal.date(from: cal.dateComponents([.year, .month], from: date)) ?? date
     }
 
-    /// Whether a transaction is spend that counts toward budgets/donut: an outflow on a Plaid,
-    /// spending-included account whose effective category isn't an internal/transfer/income one.
-    static func isSpend(_ t: Transaction, accounts: [UUID: Account], lookup: [String: String]) -> Bool {
-        guard t.source == .plaid, t.amount > 0,
-              let accountId = t.accountId, accounts[accountId]?.countsInSpending == true,
-              let category = CategoryMapping.effectiveCategory(for: t, lookup: lookup) else { return false }
+    /// Builds the unified event stream: every Plaid transaction (gross, scoped by its account's flags)
+    /// **plus** each non-archived expense that isn't already linked to a transaction (`transactionId ==
+    /// nil`), counted at the current user's owed share. Expenses have no account, so they always count;
+    /// internal/transfer/income categories are dropped so settle-ups and reimbursements don't distort
+    /// spend or cash flow. `me` nil ⇒ no expenses (we can't know your share).
+    static func spendEvents(transactions: [Transaction], accounts: [Account], lookup: [String: String],
+                            expenses: [Expense] = [], me: String? = nil) -> [SpendEvent] {
+        let byId = Dictionary(accounts.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        var events: [SpendEvent] = []
+
+        for t in transactions where t.source == .plaid {
+            guard let accountId = t.accountId, let account = byId[accountId] else { continue }
+            events.append(SpendEvent(
+                id: t.id, date: t.date, label: t.details,
+                category: CategoryMapping.effectiveCategory(for: t, lookup: lookup),
+                amount: t.amount,
+                countsInSpending: account.countsInSpending,
+                countsInCashFlow: account.countsInCashFlow))
+        }
+
+        if let me {
+            for e in expenses where e.transactionId == nil && e.archivedAt == nil {
+                let share = e.splits.first { $0.userIdentifier == me }?.owedShare ?? 0
+                guard share > 0 else { continue }  // you consumed nothing (or aren't in this expense)
+                guard let category = e.category.flatMap({ CategoryMapping.canonical($0, lookup: lookup) }),
+                      !CanonicalCategory.excludedFromSpend.contains(category) else { continue }
+                events.append(SpendEvent(
+                    id: e.id, date: e.date, label: e.details, category: category,
+                    amount: share, countsInSpending: true, countsInCashFlow: true))
+            }
+        }
+        return events
+    }
+
+    /// Whether an event is spend that counts toward budgets/donut: an outflow on a spending-included
+    /// source whose category isn't an internal/transfer/income one.
+    static func isSpend(_ e: SpendEvent) -> Bool {
+        guard e.countsInSpending, e.amount > 0, let category = e.category else { return false }
         return !CanonicalCategory.excludedFromSpend.contains(category)
     }
 
     /// Spend by canonical category in the given month, descending.
     static func byCategory(in month: Date, transactions: [Transaction], accounts: [Account],
-                           lookup: [String: String]) -> [CategorySpend] {
+                           lookup: [String: String], expenses: [Expense] = [],
+                           me: String? = nil) -> [CategorySpend] {
         let cal = calendar
         let target = monthStart(month, cal)
-        let byId = Dictionary(accounts.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let events = spendEvents(transactions: transactions, accounts: accounts, lookup: lookup,
+                                 expenses: expenses, me: me)
         var totals: [String: Decimal] = [:]
-        for t in transactions where monthStart(t.date, cal) == target
-            && isSpend(t, accounts: byId, lookup: lookup) {
-            if let category = CategoryMapping.effectiveCategory(for: t, lookup: lookup) {
-                totals[category, default: 0] += t.amount
-            }
+        for e in events where monthStart(e.date, cal) == target && isSpend(e) {
+            if let category = e.category { totals[category, default: 0] += e.amount }
         }
         return totals.map { CategorySpend(category: $0.key, total: $0.value) }
             .sorted { $0.total > $1.total }
@@ -56,29 +100,32 @@ enum SpendingAnalytics {
 
     /// Total monthly spend for the last `months` months (oldest → newest), zero-filled.
     static func monthlySpending(transactions: [Transaction], accounts: [Account],
-                                lookup: [String: String], months: Int, ending: Date = .now) -> [MonthlyValue] {
+                                lookup: [String: String], months: Int, ending: Date = .now,
+                                expenses: [Expense] = [], me: String? = nil) -> [MonthlyValue] {
         let cal = calendar
-        let byId = Dictionary(accounts.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let events = spendEvents(transactions: transactions, accounts: accounts, lookup: lookup,
+                                 expenses: expenses, me: me)
         var totals: [Date: Decimal] = [:]
-        for t in transactions where isSpend(t, accounts: byId, lookup: lookup) {
-            totals[monthStart(t.date, cal), default: 0] += t.amount
+        for e in events where isSpend(e) {
+            totals[monthStart(e.date, cal), default: 0] += e.amount
         }
         return monthRange(months: months, ending: ending, cal: cal)
             .map { MonthlyValue(month: $0, value: totals[$0] ?? 0) }
     }
 
-    /// Net income (inflow − outflow) per month over cash-flow accounts, excluding transfers. Negative
-    /// in deficit months. Last `months` months, oldest → newest, zero-filled.
+    /// Net income (inflow − outflow) per month over cash-flow sources, excluding transfers. Negative in
+    /// deficit months. Last `months` months, oldest → newest, zero-filled.
     static func monthlyNetIncome(transactions: [Transaction], accounts: [Account],
-                                 lookup: [String: String], months: Int, ending: Date = .now) -> [MonthlyValue] {
+                                 lookup: [String: String], months: Int, ending: Date = .now,
+                                 expenses: [Expense] = [], me: String? = nil) -> [MonthlyValue] {
         let cal = calendar
-        let byId = Dictionary(accounts.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let events = spendEvents(transactions: transactions, accounts: accounts, lookup: lookup,
+                                 expenses: expenses, me: me)
         var totals: [Date: Decimal] = [:]
-        for t in transactions where t.source == .plaid {
-            guard let accountId = t.accountId, byId[accountId]?.countsInCashFlow == true else { continue }
-            if CategoryMapping.effectiveCategory(for: t, lookup: lookup) == CanonicalCategory.transfer { continue }
+        for e in events where e.countsInCashFlow {
+            if e.category == CanonicalCategory.transfer { continue }
             // inflow (amount<0) adds to income, outflow (amount>0) subtracts.
-            totals[monthStart(t.date, cal), default: 0] -= t.amount
+            totals[monthStart(e.date, cal), default: 0] -= e.amount
         }
         return monthRange(months: months, ending: ending, cal: cal)
             .map { MonthlyValue(month: $0, value: totals[$0] ?? 0) }

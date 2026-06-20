@@ -13,6 +13,7 @@ struct GoalDetailView: View {
 
     @Query private var accounts: [Account]
     @Query(sort: \Transaction.date, order: .reverse) private var transactions: [Transaction]
+    @Query private var expenses: [Expense]
     @Query private var categoryMaps: [CategoryMap]
 
     @State private var showingEdit = false
@@ -21,6 +22,7 @@ struct GoalDetailView: View {
 
     private let months = 6
     private var lookup: [String: String] { CategoryMapping.lookup(categoryMaps) }
+    private var me: String? { env.currentUser?.identifier }
     private var month: Date { SpendingAnalytics.monthStart(Date()) }
     private var account: Account? { goal.accountId.flatMap { id in accounts.first { $0.id == id } } }
 
@@ -46,22 +48,24 @@ struct GoalDetailView: View {
 
     private var spentThisMonth: Decimal {
         GoalProgress.spent(for: goal.category ?? "", in: month, transactions: transactions,
-                           accounts: accounts, lookup: lookup)
+                           accounts: accounts, lookup: lookup, expenses: expenses, me: me)
     }
     private var monthlyCategorySpend: [MonthlyValue] {
         SpendingAnalytics.monthRange(months: months, ending: Date(), cal: .current).map { m in
             MonthlyValue(month: m, value: GoalProgress.spent(
                 for: goal.category ?? "", in: m, transactions: transactions,
-                accounts: accounts, lookup: lookup))
+                accounts: accounts, lookup: lookup, expenses: expenses, me: me))
         }
     }
-    private var thisMonthTransactions: [Transaction] {
-        let byId = Dictionary(accounts.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        return transactions.filter {
-            SpendingAnalytics.monthStart($0.date) == month
-                && SpendingAnalytics.isSpend($0, accounts: byId, lookup: lookup)
-                && CategoryMapping.effectiveCategory(for: $0, lookup: lookup) == goal.category
-        }
+    /// The spend events (transactions + unlinked expenses) feeding this month's budget standing.
+    private var thisMonthSpend: [SpendEvent] {
+        SpendingAnalytics.spendEvents(transactions: transactions, accounts: accounts, lookup: lookup,
+                                      expenses: expenses, me: me)
+            .filter {
+                SpendingAnalytics.monthStart($0.date) == month
+                    && SpendingAnalytics.isSpend($0)
+                    && $0.category == goal.category
+            }
     }
 
     @ViewBuilder private var budgetContent: some View {
@@ -91,14 +95,14 @@ struct GoalDetailView: View {
             .frame(height: 180)
         }
         Section("This Month") {
-            if thisMonthTransactions.isEmpty {
-                Text("No transactions in this category yet.").font(.caption).foregroundStyle(.secondary)
+            if thisMonthSpend.isEmpty {
+                Text("No spending in this category yet.").font(.caption).foregroundStyle(.secondary)
             } else {
-                ForEach(thisMonthTransactions) { t in
+                ForEach(thisMonthSpend) { event in
                     HStack {
-                        Text(t.details)
+                        Text(event.label)
                         Spacer()
-                        Text(t.amount.formatted(.currency(code: t.currency)))
+                        Text(event.amount.formatted(.currency(code: goal.currency)))
                             .foregroundStyle(.secondary).monospacedDigit()
                     }
                 }

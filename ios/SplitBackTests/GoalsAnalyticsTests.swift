@@ -16,6 +16,16 @@ final class GoalsAnalyticsTests: XCTestCase {
                     createdAt: Date(), updatedAt: Date())
     }
 
+    /// An expense with a single split for `me` owing `owed`, optionally linked to a transaction/archived.
+    private func expense(_ amount: Decimal, category: String?, me: String = "me", owed: Decimal,
+                         transactionId: UUID? = nil, archived: Date? = nil,
+                         date: Date = Date(), details: String = "e") -> Expense {
+        let split = Split(id: UUID(), userIdentifier: me, paidShare: amount, owedShare: owed)
+        return Expense(id: UUID(), groupId: UUID(), transactionId: transactionId, details: details,
+                       amount: amount, currency: "USD", date: date, category: category,
+                       archivedAt: archived, createdAt: Date(), updatedAt: Date(), splits: [split])
+    }
+
     // MARK: CategoryMapping
 
     func testEffectiveCategoryPrecedence() {
@@ -144,6 +154,59 @@ final class GoalsAnalyticsTests: XCTestCase {
         XCTAssertEqual(series.count, 3)
         XCTAssertEqual(series.last?.value, 25)   // current month
         XCTAssertEqual(series.first?.value, 0)   // two months ago, zero-filled
+    }
+
+    // MARK: Expenses↔transactions merge
+
+    func testUnlinkedExpenseCountsAtOwedShare() {
+        let checking = account(type: "checking")
+        let txns = [txn(30, category: "Dining", account: checking)]
+        // A $60 dinner split — my share is $20 — with no linked transaction.
+        let exps = [expense(60, category: "Dining", owed: 20)]
+        let result = SpendingAnalytics.byCategory(in: Date(), transactions: txns,
+                                                  accounts: [checking], lookup: [:], expenses: exps, me: "me")
+        XCTAssertEqual(result.first?.category, "Dining")
+        XCTAssertEqual(result.first?.total, 50)  // 30 transaction + 20 owed share
+        // Monthly spending picks it up too.
+        let series = SpendingAnalytics.monthlySpending(transactions: txns, accounts: [checking],
+                                                       lookup: [:], months: 1, expenses: exps, me: "me")
+        XCTAssertEqual(series.first?.value, 50)
+    }
+
+    func testLinkedExpenseNotDoubleCounted() {
+        let checking = account(type: "checking")
+        let t = txn(60, category: "Dining", account: checking)
+        // Expense linked to the transaction — already represented by it, so it must not add again.
+        let exps = [expense(60, category: "Dining", owed: 20, transactionId: t.id)]
+        let result = SpendingAnalytics.byCategory(in: Date(), transactions: [t],
+                                                  accounts: [checking], lookup: [:], expenses: exps, me: "me")
+        XCTAssertEqual(result.first?.total, 60)  // transaction only
+    }
+
+    func testExcludedAndZeroShareExpensesIgnored() {
+        let checking = account(type: "checking")
+        let exps = [
+            expense(100, category: "Settle-up", owed: 50),  // internal, excluded
+            expense(100, category: "Income", owed: 50),     // not spend, excluded
+            expense(40, category: "Dining", owed: 0),        // you owe nothing → skip
+            expense(40, category: "Dining", me: "other", owed: 40),  // no split for me → skip
+        ]
+        let result = SpendingAnalytics.byCategory(in: Date(), transactions: [],
+                                                  accounts: [checking], lookup: [:], expenses: exps, me: "me")
+        XCTAssertTrue(result.isEmpty)
+        // And nil `me` means no expenses are attributed at all.
+        let archived = [expense(40, category: "Dining", owed: 20, archived: Date())]
+        XCTAssertTrue(SpendingAnalytics.byCategory(in: Date(), transactions: [], accounts: [checking],
+                                                   lookup: [:], expenses: archived, me: "me").isEmpty)
+    }
+
+    func testUnlinkedExpenseReducesNetIncome() {
+        let checking = account(type: "checking")
+        let txns = [txn(-2000, category: "Income", account: checking)]  // paycheck in
+        let exps = [expense(60, category: "Dining", owed: 20)]          // cash dinner share out
+        let series = SpendingAnalytics.monthlyNetIncome(transactions: txns, accounts: [checking],
+                                                        lookup: [:], months: 1, expenses: exps, me: "me")
+        XCTAssertEqual(series.first?.value, 1980)  // 2000 in − 20 owed share
     }
 
     // MARK: GoalProgress
