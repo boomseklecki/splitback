@@ -31,6 +31,9 @@ public final class AppEnvironment {
     public private(set) var serverReachable: Bool?
     /// The backend's friendly name from `/server-info` (e.g. "Matt's Household"); used as the join link label.
     public private(set) var serverName: String?
+    /// Whether the configured backend is a public DEMO instance (guest login + sample data). Drives the
+    /// gate's "Start Demo" path and the persistent "sample data" banner.
+    public private(set) var serverIsDemo = false
 
     public init() {
         let store = KeychainTokenStore()
@@ -66,6 +69,7 @@ public final class AppEnvironment {
             serverRequiresAuth = info.requires_auth
             authProviders = info.auth_providers
             serverName = info.name
+            serverIsDemo = info.demo ?? false
             serverReachable = true
         } catch {
             serverReachable = false  // wrong URL / unreachable / not a SplitBack backend

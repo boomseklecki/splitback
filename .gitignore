@@ -1,6 +1,7 @@
 # Secrets
 .env
 .env.prod
+.env.demo
 .env.*.local
 
 # Local Claude Code settings (machine-local permissions)

@@ -31,6 +31,7 @@ async def server_info() -> ServerInfo:
         name=settings.public_hostname or settings.app_name,
         requires_auth=bool(settings.auth_required or settings.api_tokens),
         auth_providers=providers,
+        demo=settings.demo_mode,
     )
 
 

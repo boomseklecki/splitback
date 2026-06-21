@@ -63,6 +63,18 @@ public struct RootView: View {
     }
 }
 
+/// Persistent reminder that the current backend is a public demo with sample data.
+private struct DemoBanner: View {
+    var body: some View {
+        Label("Demo — sample data, nothing real is linked", systemImage: "wand.and.stars")
+            .font(.footnote.weight(.medium))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 6)
+            .background(.tint.opacity(0.15))
+            .foregroundStyle(.tint)
+    }
+}
+
 /// The signed-in app: the four tabs plus the on-launch data refresh.
 private struct MainTabView: View {
     @Environment(AppEnvironment.self) private var env
@@ -71,15 +83,18 @@ private struct MainTabView: View {
     @State private var errorMessageText: String?
 
     var body: some View {
-        TabView {
-            AccountsView()
-                .tabItem { Label("Accounts", systemImage: "building.columns.fill") }
-            GroupsListView()
-                .tabItem { Label("Splits", systemImage: "person.2.fill") }
-            GoalsView()
-                .tabItem { Label("Goals", systemImage: "target") }
-            SettingsView()
-                .tabItem { Label("Settings", systemImage: "gearshape.fill") }
+        VStack(spacing: 0) {
+            if env.serverIsDemo { DemoBanner() }
+            TabView {
+                AccountsView()
+                    .tabItem { Label("Accounts", systemImage: "building.columns.fill") }
+                GroupsListView()
+                    .tabItem { Label("Splits", systemImage: "person.2.fill") }
+                GoalsView()
+                    .tabItem { Label("Goals", systemImage: "target") }
+                SettingsView()
+                    .tabItem { Label("Settings", systemImage: "gearshape.fill") }
+            }
         }
         .errorAlert($errorMessageText)
         .task {

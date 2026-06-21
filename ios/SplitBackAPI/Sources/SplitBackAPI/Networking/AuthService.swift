@@ -43,6 +43,20 @@ struct AuthService {
         }
     }
 
+    /// Demo guest login (name only, no OAuth) → backend session JWT. Only the demo backend exposes
+    /// `POST /auth/demo`; elsewhere it 404s (surfaced as `.failed`).
+    func startDemo(displayName: String?) async throws -> String {
+        let name = displayName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let output = try await client.auth_demo_auth_demo_post(
+            body: .json(.init(display_name: (name?.isEmpty == false) ? name : nil))
+        )
+        switch output {
+        case let .ok(ok): return try ok.body.json.token
+        case .unprocessableContent: throw AuthError.rejected
+        case let .undocumented(statusCode, _): throw Self.error(statusCode)
+        }
+    }
+
     /// Google ID token → backend session JWT.
     func exchangeGoogle(idToken: String) async throws -> String {
         let output = try await client.auth_google_auth_google_post(body: .json(.init(id_token: idToken)))

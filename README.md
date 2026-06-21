@@ -69,6 +69,26 @@ Splitwise import; bank data untouched):
 docker compose exec api-dev python -m app.cli.seed_dev --as <your-identifier> --wipe
 ```
 
+### Demo stack (TestFlight)
+
+A public, disposable **demo** backend (`api-demo` on :8002, own DB volume + `receipts-demo` bucket) lets
+TestFlight testers explore the app with sample data before linking real accounts. It runs guest login
+(`DEMO_MODE` → `POST /auth/demo`, name only, no OAuth): each guest gets an isolated, auto-seeded sample app;
+Plaid is **sandbox**; there is no Splitwise. Bring it up with the `demo` profile and a third Cloudflare
+hostname (`demo.splitback.app → http://api-demo:8000`):
+
+```bash
+cp .env.demo.example .env.demo     # fill: sandbox Plaid creds, a FRESH AUTH_JWT_SECRET (DEMO_MODE=true preset)
+docker compose --profile demo up -d
+docker compose exec api-demo alembic upgrade head
+```
+
+Guest rows accumulate; prune old ones on a cron to bound growth:
+
+```bash
+docker compose exec api-demo python -m app.cli.prune_demo --days 7
+```
+
 ## Apply migrations
 
 Once a stack is up, run Alembic inside its api container (`api-dev` for dev, `api-prod` for prod):
@@ -145,6 +165,7 @@ tunnel. Use a **remotely-managed** tunnel so everything stays manageable from th
    stacks' network:
    - `splitback.app` → `http://api-prod:8000` (production)
    - `dev.splitback.app` → `http://api-dev:8000` (development)
+   - `demo.splitback.app` → `http://api-demo:8000` (demo)
 3. Put the token in `.env`: `CLOUDFLARE_TUNNEL_TOKEN=<token>`.
 4. Start the connector: `docker compose --profile tunnel up -d cloudflared`.
 

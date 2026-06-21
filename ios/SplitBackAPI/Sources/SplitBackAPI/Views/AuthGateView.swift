@@ -16,6 +16,7 @@ public struct AuthGateView: View {
 
     @State private var baseURL = ""
     @State private var accessToken = ""
+    @State private var demoName = ""
     @State private var busy = false
     @State private var errorText: String?
 
@@ -29,6 +30,24 @@ public struct AuthGateView: View {
     public var body: some View {
         NavigationStack {
             Form {
+                if env.serverIsDemo {
+                    Section {
+                        TextField("Your name (optional)", text: $demoName)
+                            .textContentType(.givenName)
+                        Button {
+                            run { try await env.auth(context).startDemo(displayName: demoName) }
+                        } label: {
+                            Label("Start Demo", systemImage: "play.circle.fill")
+                        }
+                        .disabled(busy)
+                    } header: {
+                        Text("Try the Demo")
+                    } footer: {
+                        Text("Explore SplitBack with sample data — no account needed. Nothing real is "
+                             + "linked, and your demo data is private to you.")
+                    }
+                }
+
                 Section {
                     TextField("API base URL", text: $baseURL)
                         .textInputAutocapitalization(.never)
@@ -49,7 +68,8 @@ public struct AuthGateView: View {
                     }
                 }
 
-                Section("Sign In") {
+                if !env.serverIsDemo {
+                  Section("Sign In") {
                     if offers("apple") {
                         SignInWithAppleButton(.signIn,
                             onRequest: { $0.requestedScopes = [.fullName, .email] },
@@ -68,8 +88,9 @@ public struct AuthGateView: View {
                             Label("Continue with Splitwise", systemImage: "arrow.triangle.2.circlepath")
                         }
                     }
+                  }
+                  .disabled(busy)
                 }
-                .disabled(busy)
 
                 Section {
                     DisclosureGroup("Have an access token?") {

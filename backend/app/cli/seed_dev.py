@@ -1,37 +1,24 @@
-"""Seed the DEVELOPMENT backend with synthetic data: Splitwise-style groups/expenses PLUS personal
-accounts/transactions/goals owned by the self identifier, so impersonating that user (via an API_TOKENS
-mapping) shows a fully-populated app — Accounts/Splits/Goals/Trends with correct balances.
+"""Seed the DEVELOPMENT backend with a populated, isolated sample app for one identifier (groups with
+synthetic co-members + expenses, plus that identifier's accounts/transactions/goals). Same `seed_identity`
+the demo guest login uses (app.integrations.dev_seed.seeder), so `--as matt` makes you a fully-populated
+test user.
 
-With --wipe it resets to a clean synthetic state: all groups (cascading expenses/splits/items), group
-members, every user EXCEPT the self identifier, stored Splitwise tokens, AND the synthetic personal data
-(manual accounts — plaid_item_id NULL — with their transactions, plus goals). It NEVER touches Plaid-linked
+With --wipe it first resets the synthetic state: all groups (cascading expenses/splits/items), group
+members, every user EXCEPT the self identifier, Splitwise tokens, and the synthetic personal data (manual
+accounts — plaid_item_id NULL — with their transactions, plus goals). It NEVER touches Plaid-linked
 accounts/transactions/plaid_items (sandbox banks a tester linked stay) or receipts.
 
 Usage (inside the DEV api container — never run against production):
     python -m app.cli.seed_dev --as matt --wipe
-    python -m app.cli.seed_dev --as matt          # add a fresh synthetic set without wiping
 """
 import argparse
 import asyncio
-from uuid import UUID
 
 from sqlalchemy import delete, select
 
 from app.db import async_session
-from app.integrations.dev_seed import generator
-from app.models import (
-    Account,
-    Expense,
-    ExpenseItem,
-    Goal,
-    Group,
-    GroupMember,
-    Split,
-    SplitwiseToken,
-    Transaction,
-    User,
-)
-from app.models.enums import BackendType, TransactionSource, UserSource
+from app.integrations.dev_seed.seeder import seed_identity
+from app.models import Account, Goal, Group, GroupMember, SplitwiseToken, Transaction, User
 
 
 async def _wipe(session, self_identifier: str) -> None:
@@ -49,76 +36,19 @@ async def _wipe(session, self_identifier: str) -> None:
     await session.flush()
 
 
-async def _ensure_user(session, u: generator.SeedUser) -> None:
-    existing = await session.scalar(select(User).where(User.identifier == u.identifier))
-    if existing is None:
-        session.add(User(identifier=u.identifier, display_name=u.display_name,
-                         source=UserSource(u.source)))
-
-
 async def seed(session, *, self_identifier: str, wipe: bool, seed_value: int = 1234) -> dict:
-    """Apply the synthetic seed to an open session (committed). Returns simple counts. Reused by tests."""
-    data = generator.generate(self_identifier, seed=seed_value)
+    """Seed a populated isolated sample app for `self_identifier` (committed). Reused by tests."""
     if wipe:
         await _wipe(session, self_identifier)
-
-    for u in data.users:
-        await _ensure_user(session, u)
-    await session.flush()
-
-    expense_count = 0
-    for g in data.groups:
-        group = Group(name=g.name, backend_type=BackendType.self_hosted, group_type=g.group_type)
-        session.add(group)
-        await session.flush()  # assign group.id for members + expenses
-        for ident in g.members:
-            session.add(GroupMember(group_id=group.id, user_identifier=ident))
-        for e in g.expenses:
-            session.add(Expense(
-                group_id=group.id, description=e.description, amount=e.amount,
-                currency=e.currency, date=e.date, category=e.category, created_by=e.created_by,
-                splits=[Split(user_identifier=s.user_identifier,
-                              paid_share=s.paid_share, owed_share=s.owed_share) for s in e.splits],
-                items=[ExpenseItem(name=i.name, quantity=i.quantity,
-                                   price=i.price, category=i.category) for i in e.items],
-            ))
-            expense_count += 1
-
-    # Personal finances, each owned by its persona (so per-caller scoping shows them to that user — every
-    # impersonation token lands in a populated app).
-    account_ids: dict[str, UUID] = {}
-    for a in data.accounts:
-        account = Account(name=a.name, type=a.type, balance=a.balance, currency="USD",
-                          owner_identifier=a.owner)
-        session.add(account)
-        await session.flush()
-        account_ids[a.key] = account.id
-    for t in data.transactions:
-        session.add(Transaction(
-            account_id=account_ids.get(t.account_key) if t.account_key else None,
-            source=TransactionSource.manual, description=t.description, amount=t.amount,
-            currency=t.currency, date=t.date, category=t.category,
-            owner_identifier=t.owner))
-    for go in data.goals:
-        session.add(Goal(
-            kind=go.kind, name=go.name, category=go.category,
-            account_id=account_ids.get(go.account_key) if go.account_key else None,
-            target_amount=go.target_amount, save_target_type=go.save_target_type,
-            starting_balance=go.starting_balance, owner_identifier=go.owner))
-
+    seeded = await seed_identity(session, self_identifier, seed_value=seed_value)
     await session.commit()
-    return {
-        "users": len(data.users), "groups": len(data.groups), "expenses": expense_count,
-        "accounts": len(data.accounts), "transactions": len(data.transactions), "goals": len(data.goals),
-    }
+    return {"self": self_identifier, "seeded": seeded}
 
 
 async def _run(args: argparse.Namespace) -> None:
     async with async_session() as session:
         stats = await seed(session, self_identifier=args.as_user, wipe=args.wipe, seed_value=args.seed)
-    print(f"Seeded {stats['users']} users, {stats['groups']} groups, {stats['expenses']} expenses, "
-          f"{stats['accounts']} accounts, {stats['transactions']} transactions, {stats['goals']} goals "
-          f"(self={args.as_user}, wipe={args.wipe}).")
+    print(f"Seeded sample app for {stats['self']} (seeded={stats['seeded']}, wipe={args.wipe}).")
 
 
 def main() -> None:

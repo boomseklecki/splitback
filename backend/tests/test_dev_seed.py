@@ -88,13 +88,10 @@ async def test_seed_wipe_resets_synthetic_keeps_plaid():
 
         async with async_session() as session:
             stats = await seed(session, self_identifier="matt", wipe=True)
-        assert stats["groups"] == 2 and stats["expenses"] > 0
-        # Every persona gets 3 accounts + 2 goals.
-        assert stats["accounts"] == 3 * stats["users"] and stats["transactions"] > 0
-        assert stats["goals"] == 2 * stats["users"]
+        assert stats["self"] == "matt" and stats["seeded"] is True
 
         async with async_session() as session:
-            # Plaid-linked survives; manual gone; Splitwise reset; self kept.
+            # Plaid-linked survives; manual gone; Splitwise reset; self kept; groups present.
             assert await session.scalar(
                 select(func.count()).select_from(Transaction)
                 .where(Transaction.plaid_transaction_id == "seed-tx-zzz")) == 1
@@ -105,13 +102,18 @@ async def test_seed_wipe_resets_synthetic_keeps_plaid():
             assert await session.scalar(select(func.count()).select_from(SplitwiseToken)) == 0
             assert await session.scalar(select(User).where(User.identifier == "stranger")) is None
             assert await session.scalar(select(User).where(User.identifier == "matt")) is not None
-            # Synthetic personal data present per persona (matt AND a fake member each own accounts/goals).
-            for ident in ("matt", "robin"):
-                assert await session.scalar(
-                    select(func.count()).select_from(Account)
-                    .where(Account.owner_identifier == ident, Account.plaid_item_id.is_(None))) == 3
-                assert await session.scalar(
-                    select(func.count()).select_from(Goal).where(Goal.owner_identifier == ident)) == 2
+            assert await session.scalar(select(func.count()).select_from(Group)) == 2
+            # Only the seeded self has personal finances; co-members are directory-only.
+            assert await session.scalar(
+                select(func.count()).select_from(Account)
+                .where(Account.owner_identifier == "matt", Account.plaid_item_id.is_(None))) == 3
+            assert await session.scalar(
+                select(func.count()).select_from(Goal).where(Goal.owner_identifier == "matt")) == 2
+            assert await session.scalar(
+                select(func.count()).select_from(Account).where(Account.owner_identifier == "robin")) == 0
+            # Re-seeding is idempotent (no duplicate finances).
+            async with async_session() as s2:
+                assert await seed(s2, self_identifier="matt", wipe=False) == {"self": "matt", "seeded": False}
     finally:
         async with async_session() as session:
             for model in (Goal, Transaction, GroupMember, Group, Account, PlaidItem, SplitwiseToken):

@@ -11,6 +11,34 @@ this file reproduces what matters so the Linux instance needs nothing else.
 
 ---
 
+## NEW WORK — demo backend for TestFlight (guest login + per-tester seed) (2026-06-21)
+
+A public, disposable **demo** stack so TestFlight testers explore the app with sample data before linking
+real accounts. Guest login (no OAuth), per-tester isolated auto-seed, Plaid **sandbox**, no Splitwise.
+
+- **`docker-compose.yml`**: `demo` profile — `db-demo` (volume `db_data_demo`) + `api-demo` (`:8002`,
+  `env_file: .env.demo`, `DATABASE_URL`→`db-demo`, `MINIO_BUCKET=receipts-demo`), shared `minio`.
+- **`.env.demo.example`** → copy to `.env.demo`: `DEMO_MODE=true`, `AUTH_REQUIRED=true` + a **fresh**
+  `AUTH_JWT_SECRET`, `AUTH_ALLOWED_USERS=[]`, `PLAID_ENV=sandbox` + sandbox creds, **no Splitwise creds**.
+- **`POST /auth/demo`** (`app/routers/auth.py`, **404 unless `DEMO_MODE`**): body `{display_name?}` → mints
+  `demo-<hex>` user + `seed_identity` (isolated sample app) → returns a JWT. Allowlist-exempt by design.
+- **`app/integrations/dev_seed/seeder.py::seed_identity`**: idempotent per-identity seed (groups + scoped
+  accounts/transactions/goals); reused by `seed_dev` (now seeds only the `--as` self; robin/sam/alex are
+  directory-only co-members). **`ServerInfo.demo`** exposes the flag to the app.
+- **`app/cli/prune_demo.py`**: cron-prune `demo-*` users older than `--days` (+ their data).
+- **Tests:** `tests/test_demo.py` (`seed_identity` idempotent; `/auth/demo` gated + seeds).
+
+**Linux steps (uplink):**
+1. `cp .env.demo.example .env.demo`; fill sandbox Plaid creds + a fresh `AUTH_JWT_SECRET`.
+2. `docker compose --profile demo up -d` then `docker compose exec api-demo alembic upgrade head`;
+   `curl localhost:8002/health`.
+3. Add the Cloudflare hostname `demo.splitback.app → http://api-demo:8000`, then bring up `--profile tunnel`.
+4. Smoke: `POST /auth/demo {"display_name":"Casey"}` → token; with it `/me` is the guest and
+   `/accounts` + `/groups` are populated + isolated; confirm `/auth/demo` **404s** on prod/dev.
+5. Run `tests/test_demo.py` + `tests/test_dev_seed.py`. Cron: `python -m app.cli.prune_demo --days 7`.
+
+---
+
 ## NEW WORK — token encryption at rest + /users co-member scoping + admin flag (2026-06-21)
 
 - **Encrypt access tokens (Fernet)**: `app/security/crypto.py::EncryptedString` applied to

@@ -13,6 +13,10 @@ class GoogleAuthRequest(BaseModel):
     id_token: str
 
 
+class DemoAuthRequest(BaseModel):
+    display_name: str | None = None  # optional; a friendly name for the guest, no email/OAuth
+
+
 class AuthResponse(BaseModel):
     token: str
     user: UserResponse

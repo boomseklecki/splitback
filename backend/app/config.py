@@ -76,6 +76,10 @@ class Settings(BaseSettings):
     # Local identifiers granted admin (see all people; reserved for gating settings/features). Set to your
     # /me identifier (Settings -> Account shows it). Empty = no admins.
     admin_users: list[str] = []
+    # Demo backend: enables the guest login (POST /auth/demo, name only — no OAuth) that mints an ephemeral
+    # user and auto-seeds isolated sample data. Surfaced on /server-info so the app shows the demo UX. Keep
+    # FALSE on dev/prod (the endpoint 404s when off).
+    demo_mode: bool = False
 
     @model_validator(mode="after")
     def _require_strong_jwt_secret(self) -> "Settings":

@@ -133,11 +133,48 @@ services:
     ports:
       - "8000:8000"     # LAN: uplink.local:8000 ; public: https://splitback.app
 
+  # --- Demo stack (profile: demo) ---
+  # Public, disposable demo for TestFlight: guest login (DEMO_MODE) auto-seeds each tester an isolated
+  # sample app; Plaid sandbox; no Splitwise. `docker compose --profile demo up -d`; migrate api-demo.
+  db-demo:
+    image: postgres:16
+    pull_policy: never
+    profiles: ["demo"]
+    environment:
+      POSTGRES_USER: splitback
+      POSTGRES_PASSWORD: splitback
+      POSTGRES_DB: splitback
+    volumes:
+      - db_data_demo:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U splitback"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api-demo:
+    build: ./backend
+    pull_policy: never
+    profiles: ["demo"]
+    env_file:
+      - .env.demo
+    environment:
+      DATABASE_URL: postgresql+asyncpg://splitback:splitback@db-demo:5432/splitback
+      MINIO_BUCKET: receipts-demo
+    depends_on:
+      db-demo:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    ports:
+      - "8002:8000"     # LAN: uplink.local:8002 ; public: https://demo.splitback.app
+
   # --- Cloudflare tunnel connector (profile: tunnel) ---
-  # Exposes the stacks publicly over HTTPS via a *remotely-managed* tunnel. Add TWO public hostnames in the
-  # Cloudflare dashboard (DNS is auto-created), both internal targets on the container's own :8000:
+  # Exposes the stacks publicly over HTTPS via a *remotely-managed* tunnel. Add public hostnames in the
+  # Cloudflare dashboard (DNS is auto-created), each an internal target on the container's own :8000:
   #   splitback.app       -> http://api-prod:8000   (production)
   #   dev.splitback.app   -> http://api-dev:8000    (development)
+  #   demo.splitback.app  -> http://api-demo:8000   (demo)
   # The connector is environment-agnostic; the dashboard routes decide what's public. Reads
   # CLOUDFLARE_TUNNEL_TOKEN from .env. Start with `--profile tunnel` (combine with prod:
   # `docker compose --profile prod --profile tunnel up -d`).
@@ -152,3 +189,4 @@ volumes:
   db_data:
   minio_data:
   db_data_prod:
+  db_data_demo:

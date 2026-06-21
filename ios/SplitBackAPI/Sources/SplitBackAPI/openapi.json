@@ -3140,6 +3140,47 @@
           }
         }
       }
+    },
+    "/auth/demo": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Auth Demo",
+        "operationId": "auth_demo_auth_demo_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DemoAuthRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -4420,6 +4461,11 @@
             },
             "type": "array",
             "title": "Auth Providers"
+          },
+          "demo": {
+            "type": "boolean",
+            "title": "Demo",
+            "default": false
           }
         },
         "type": "object",
@@ -5065,6 +5111,16 @@
         },
         "type": "object",
         "title": "SyncRequest"
+      },
+      "DemoAuthRequest": {
+        "properties": {
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          }
+        },
+        "type": "object",
+        "title": "DemoAuthRequest"
       }
     },
     "securitySchemes": {
