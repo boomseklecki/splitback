@@ -91,6 +91,12 @@ struct TransactionsView: View {
             }
         }
         .sheet(isPresented: $showingManual) { ManualTransactionView() }
+        .task {
+            // Load on appear so manual/synthetic transactions (e.g. the demo, where there's no Plaid
+            // sync to populate the cache) show without a manual pull-to-refresh.
+            do { try await env.accounts(context).refreshTransactions(accountId: account?.id) }
+            catch { errorText = errorMessage(error) }
+        }
         .refreshable {
             do { try await env.accounts(context).refreshTransactions(accountId: account?.id) }
             catch { errorText = errorMessage(error) }
