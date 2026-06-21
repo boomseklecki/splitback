@@ -50,6 +50,10 @@ struct SettingsView: View {
                                 if let email = user.email {
                                     Text(email).font(.caption).foregroundStyle(.secondary)
                                 }
+                                // Your join key: balances/splits only show when this matches the
+                                // user_identifier in the data (e.g. the dev seed's `--as`).
+                                Text("ID: \(user.identifier)")
+                                    .font(.caption2).foregroundStyle(.secondary).textSelection(.enabled)
                             }
                         }
                         Button("Sign Out", role: .destructive) { env.signOut() }
