@@ -35,12 +35,28 @@ def upgrade() -> None:
         "FROM accounts a WHERE t.account_id = a.id AND t.owner_identifier IS NULL"
     )
 
-    # Remaining unowned rows (manual accounts/cash transactions/goals) -> the primary owner, if configured.
+    # Remaining unowned rows (manual accounts/cash transactions/goals) -> the primary owner. Guard: if any
+    # would be left NULL (invisible under per-caller scoping) and SCOPING_PRIMARY_OWNER isn't set, abort so
+    # the operator can't silently hide their data — set it and re-run. The backfill is parameterized.
+    bind = op.get_bind()
     primary = (os.environ.get("SCOPING_PRIMARY_OWNER") or "").strip()
+    remaining = sum(
+        bind.execute(
+            sa.text(f"SELECT count(*) FROM {table} WHERE owner_identifier IS NULL")
+        ).scalar() or 0
+        for table in ("accounts", "transactions", "goals")
+    )
+    if remaining and not primary:
+        raise RuntimeError(
+            f"{remaining} accounts/transactions/goals would be left un-owned and invisible under per-caller "
+            "scoping. Set SCOPING_PRIMARY_OWNER to your /me identifier and re-run `alembic upgrade head`."
+        )
     if primary:
-        owner = primary.replace("'", "''")
         for table in ("accounts", "transactions", "goals"):
-            op.execute(f"UPDATE {table} SET owner_identifier = '{owner}' WHERE owner_identifier IS NULL")
+            op.execute(
+                sa.text(f"UPDATE {table} SET owner_identifier = :owner WHERE owner_identifier IS NULL")
+                .bindparams(owner=primary)
+            )
 
 
 def downgrade() -> None:

@@ -133,11 +133,15 @@ async def delete_item(
     caller: str | None = Depends(require_auth),
     session: AsyncSession = Depends(get_session),
 ) -> None:
-    # Local unlink: cascades the item's accounts; transactions keep with a null
-    # account_id. Plaid-side /item/remove (to invalidate the token) is a TODO.
+    # Unlink: revoke the token at Plaid (best-effort), then delete locally — cascades the item's
+    # accounts; their transactions keep with a null account_id.
     item = await session.get(PlaidItem, item_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Plaid item not found")
     assert_owner(item.user_identifier, caller)
+    try:
+        await asyncio.to_thread(plaid_client.make_client().item_remove, item.access_token)
+    except Exception:
+        pass
     await session.delete(item)
     await session.commit()

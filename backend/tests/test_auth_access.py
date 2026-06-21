@@ -78,6 +78,28 @@ async def test_allowlist_and_closed_registration_in_resolve():
         await _purge()
 
 
+def test_verified_email_drops_only_explicit_false():
+    from app.integrations.auth import verified_email
+    assert verified_email({"email": "a@x.com", "email_verified": True}) == "a@x.com"
+    assert verified_email({"email": "a@x.com", "email_verified": "true"}) == "a@x.com"
+    assert verified_email({"email": "a@x.com"}) == "a@x.com"  # absent -> kept (lenient, non-breaking)
+    assert verified_email({"email": "a@x.com", "email_verified": False}) is None
+    assert verified_email({"email": "a@x.com", "email_verified": "false"}) is None
+    assert verified_email({}) is None
+
+
+def test_jwt_secret_required_when_auth_enforced():
+    from app.config import Settings
+    try:
+        Settings(auth_required=True, auth_jwt_secret="")
+        assert False, "expected a validation error for an empty secret"
+    except ValueError as e:
+        assert "AUTH_JWT_SECRET" in str(e)
+    # A strong secret is accepted; dev (auth not required) tolerates an empty one.
+    assert Settings(auth_required=True, auth_jwt_secret="x" * 32).auth_required
+    assert Settings(auth_required=False, auth_jwt_secret="").auth_required is False
+
+
 if __name__ == "__main__":
     from tests._runner import run
 

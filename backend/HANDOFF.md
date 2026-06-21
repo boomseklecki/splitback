@@ -11,6 +11,31 @@ this file reproduces what matters so the Linux instance needs nothing else.
 
 ---
 
+## NEW WORK — v1.0 pre-TestFlight hardening (2026-06-21)
+
+From the release audit. Backend changes (run/verify on uplink; py_compile clean here):
+- **Account deletion** (`app/routers/users.py`): `DELETE /users/{id}` is now **self-only** (403 otherwise)
+  and purges the user's PERSONAL data — Plaid items (token **revoked at Plaid** via new
+  `PlaidClient.item_remove`, cascading their accounts), Splitwise token, owned accounts/transactions/goals,
+  and group memberships. Shared group expenses/splits are **retained** (co-owned history). Test:
+  `tests/test_account_deletion.py`. iOS adds a Settings "Delete Account" action.
+- **Plaid unlink** (`app/routers/plaid.py::delete_item`) now calls `item_remove` (best-effort) before delete.
+- **JWT secret guard** (`app/config.py`): startup `model_validator` raises if `AUTH_REQUIRED=true` and
+  `AUTH_JWT_SECRET` is <32 chars (prevents forgeable HS256 tokens). Test in `tests/test_auth_access.py`.
+- **email_verified** (`app/integrations/auth/{apple,google}.py` via `verified_email`): drops the email claim
+  when the provider explicitly marks it unverified (it feeds the allowlist + identity linking).
+- **Migration `0020` guard**: now **aborts** if rows would be left un-owned and `SCOPING_PRIMARY_OWNER` is
+  unset, and the backfill is parameterized. So set `SCOPING_PRIMARY_OWNER` before `alembic upgrade head`
+  (the upgrade errors clearly otherwise).
+
+**Still open (deferred / needs decisions):** token encryption at rest (#4 — pick app-layer vs disk
+encryption), `/users` PII trim (#8 — contract change, low for single-household), Postgres/MinIO backups (#9),
+Plaid production go/no-go checklist (#10), TestFlight tester onboarding (#2 — demo backend vs presets),
+CORS/headers + CI (nice-to-have). Prod data still needs `owner_identifier` reconciled to your `/me` id
+(the "accounts disappeared" issue) as a release step.
+
+---
+
 ## NEW WORK — auth allowlist + closed registration + per-caller data scoping (2026-06-21)
 
 **Why:** the backend let any verified identity sign in and returned ALL data to every caller. Now: (1) an

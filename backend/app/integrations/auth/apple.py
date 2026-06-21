@@ -8,7 +8,7 @@ import jwt
 from jwt import PyJWKClient
 
 from app.config import settings
-from app.integrations.auth import ProviderVerificationError
+from app.integrations.auth import ProviderVerificationError, verified_email
 
 _ISSUER = "https://appleid.apple.com"
 _JWKS_URL = "https://appleid.apple.com/auth/keys"
@@ -28,4 +28,4 @@ def verify_identity_token(token: str) -> dict:
         )
     except (jwt.PyJWTError, jwt.PyJWKClientError) as exc:
         raise ProviderVerificationError(str(exc)) from exc
-    return {"sub": claims["sub"], "email": claims.get("email")}
+    return {"sub": claims["sub"], "email": verified_email(claims)}

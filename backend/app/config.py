@@ -1,3 +1,4 @@
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -67,6 +68,17 @@ class Settings(BaseSettings):
     splitwise_redirect_uri: str = "http://localhost:8000/auth/splitwise/callback"
     # Maps Splitwise user id (string) -> local identifier, e.g. {"123": "matt", "456": "nikki"}
     splitwise_user_map: dict[str, str] = {}
+
+    @model_validator(mode="after")
+    def _require_strong_jwt_secret(self) -> "Settings":
+        # When auth is enforced, an empty/short HS256 secret makes session tokens forgeable (PyJWT will
+        # happily sign/verify with ""). Fail fast at startup rather than silently accept it.
+        if self.auth_required and len(self.auth_jwt_secret) < 32:
+            raise ValueError(
+                "AUTH_JWT_SECRET must be set to >=32 chars when AUTH_REQUIRED=true "
+                "(generate one with `openssl rand -hex 32`)."
+            )
+        return self
 
 
 settings = Settings()

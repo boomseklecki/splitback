@@ -1,18 +1,40 @@
+import asyncio
 from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import require_auth
 from app.db import get_session
-from app.models import User
+from app.integrations.plaid import client as plaid_client
+from app.models import Account, Goal, GroupMember, PlaidItem, SplitwiseToken, Transaction, User
 from app.models.enums import UserSource
 from app.schemas.user import MeResponse, UserCreate, UserResponse, UserUpdate
 from app.utils import ensure_utc, slugify
 
 router = APIRouter(tags=["users"])
+
+
+async def _purge_personal_data(session: AsyncSession, identifier: str) -> None:
+    """Remove a user's PERSONAL data on account deletion: Plaid links (token revoked at Plaid +
+    cascading their accounts), Splitwise token, owned accounts/transactions/goals, and group
+    memberships. Shared group expenses/splits are co-owned records (other members' balances depend on
+    them) and are left intact, the way Splitwise retains a departed member's history."""
+    items = (await session.scalars(
+        select(PlaidItem).where(PlaidItem.user_identifier == identifier))).all()
+    for item in items:
+        try:  # best-effort: end Plaid's access so unlinking actually revokes the token
+            await asyncio.to_thread(plaid_client.make_client().item_remove, item.access_token)
+        except Exception:
+            pass
+        await session.delete(item)  # cascades its accounts; their transactions are owner-deleted below
+    await session.execute(delete(Transaction).where(Transaction.owner_identifier == identifier))
+    await session.execute(delete(Goal).where(Goal.owner_identifier == identifier))
+    await session.execute(delete(Account).where(Account.owner_identifier == identifier))
+    await session.execute(delete(SplitwiseToken).where(SplitwiseToken.user_identifier == identifier))
+    await session.execute(delete(GroupMember).where(GroupMember.user_identifier == identifier))
 
 
 @router.get("/me", response_model=MeResponse)
@@ -86,9 +108,17 @@ async def update_user(
 
 
 @router.delete("/users/{user_id}", status_code=204)
-async def delete_user(user_id: UUID, session: AsyncSession = Depends(get_session)) -> None:
+async def delete_user(
+    user_id: UUID,
+    caller: str | None = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    """Delete the caller's own account and personal data (App Store account-deletion requirement)."""
     user = await session.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
+    if caller is not None and user.identifier != caller:
+        raise HTTPException(status_code=403, detail="You can only delete your own account.")
+    await _purge_personal_data(session, user.identifier)
     await session.delete(user)
     await session.commit()

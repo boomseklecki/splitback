@@ -8,7 +8,7 @@ import jwt
 from jwt import PyJWKClient
 
 from app.config import settings
-from app.integrations.auth import ProviderVerificationError
+from app.integrations.auth import ProviderVerificationError, verified_email
 
 _ISSUERS = ["accounts.google.com", "https://accounts.google.com"]
 _JWKS_URL = "https://www.googleapis.com/oauth2/v3/certs"
@@ -30,7 +30,7 @@ def verify_id_token(token: str) -> dict:
         raise ProviderVerificationError(str(exc)) from exc
     return {
         "sub": claims["sub"],
-        "email": claims.get("email"),
+        "email": verified_email(claims),
         "name": claims.get("name"),
         "picture": claims.get("picture"),
     }
