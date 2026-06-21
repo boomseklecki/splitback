@@ -43,7 +43,11 @@ struct GroupDetailView: View {
     }
 
     var body: some View {
-        List {
+        // Hoist per-render values out of the row builders below — reading `users` (a `@Query`) or
+        // `env.currentUser` per row makes tapping a row (which triggers the ForEach update pass) freeze.
+        let users = self.users
+        let me = env.currentUser?.identifier
+        return List {
             if group.avatarURL != nil || group.groupType != nil {
                 Section {
                     HStack(spacing: 12) {
@@ -63,7 +67,7 @@ struct GroupDetailView: View {
                 Section("Balances") {
                     ForEach(balances) { entry in
                         let phrase = BalancePhrase.member(
-                            entry.net, isMe: entry.identifier == env.currentUser?.identifier)
+                            entry.net, isMe: entry.identifier == me)
                         HStack {
                             Text(entry.displayName?.titleCased ?? users.displayName(for: entry.identifier))
                             Spacer()
@@ -85,8 +89,7 @@ struct GroupDetailView: View {
                         NavigationLink {
                             ExpenseDetailView(expense: expense)
                         } label: {
-                            ExpenseRow(expense: expense, users: users,
-                                       meIdentifier: env.currentUser?.identifier)
+                            ExpenseRow(expense: expense, users: users, meIdentifier: me)
                         }
                     }
                 } header: {

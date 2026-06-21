@@ -16,7 +16,13 @@ struct AllExpensesView: View {
     }
 
     var body: some View {
-        List {
+        // Build derived values ONCE per render, not inside the ForEach row. Reading `groupName`
+        // (rebuilds a dict) or a `@Query` (`users`) per row makes tapping a row — which triggers the
+        // ForEach update pass — freeze the list. (Same pitfall fixed earlier in TransactionsView.)
+        let groupName = self.groupName
+        let users = self.users
+        let me = env.currentUser?.identifier
+        return List {
             ForEach(expenseMonthGroups(expenses), id: \.id) { month in
                 Section {
                     ForEach(month.expenses) { expense in
@@ -25,8 +31,7 @@ struct AllExpensesView: View {
                         NavigationLink {
                             ExpenseDetailView(expense: expense)
                         } label: {
-                            ExpenseRow(expense: expense, users: users,
-                                       meIdentifier: env.currentUser?.identifier,
+                            ExpenseRow(expense: expense, users: users, meIdentifier: me,
                                        groupName: groupName[expense.groupId])
                         }
                     }
