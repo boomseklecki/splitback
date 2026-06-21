@@ -1,5 +1,9 @@
+# Two stacks share one MinIO (separate buckets): DEVELOPMENT (db-dev/api-dev, :8001, sandbox Plaid) is the
+# default; PRODUCTION (db-prod/api-prod, :8000, real Plaid) runs under `--profile prod`. Cloudflare routes
+# splitback.app -> api-prod and dev.splitback.app -> api-dev (internal names; the iOS app uses the public
+# https hostnames, never these). The host ports (:8000/:8001) are only for direct LAN access.
 services:
-  db:
+  db-dev:
     image: postgres:16
     pull_policy: never
     environment:
@@ -9,7 +13,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - db_data:/var/lib/postgresql/data
+      - db_data:/var/lib/postgresql/data   # existing dev data (volume name unchanged)
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U splitback"]
       interval: 5s
@@ -34,21 +38,21 @@ services:
       timeout: 5s
       retries: 5
 
-  api:
+  api-dev:
     build: ./backend
     env_file:
-      - .env
+      - .env            # development config (PLAID_ENV=sandbox)
     depends_on:
-      db:
+      db-dev:
         condition: service_healthy
       minio:
         condition: service_started
     ports:
-      - "8000:8000"
+      - "8001:8000"     # LAN: uplink.local:8001 ; public: https://dev.splitback.app
 
   # --- Isolated test stack (profile: test) ---
   # An ephemeral Postgres + a second API pointed at it, so the integration suite always runs
-  # against a clean DB regardless of the real data in `db`. Started only with `--profile test`.
+  # against a clean DB regardless of the real data in `db-dev`. Started only with `--profile test`.
   db-test:
     image: postgres:16
     pull_policy: never
@@ -86,7 +90,7 @@ services:
 
   # --- Production stack (profile: prod) ---
   # A second, isolated stack for REAL Plaid data, run side-by-side with the default (development) stack:
-  #   docker compose --profile prod up -d        # brings up dev (8000) AND prod (8001)
+  #   docker compose --profile prod up -d        # brings up dev (:8001) AND prod (:8000)
   #   docker compose exec api-prod alembic upgrade head
   # It has its own Postgres volume and (via the shared minio) a separate bucket, so prod and dev never
   # share data. Reads .env.prod (gitignored; copy from .env.prod.example).
@@ -123,23 +127,22 @@ services:
       minio:
         condition: service_started
     ports:
-      - "8001:8000"
+      - "8000:8000"     # LAN: uplink.local:8000 ; public: https://splitback.app
 
   # --- Cloudflare tunnel connector (profile: tunnel) ---
-  # Exposes the API publicly over HTTPS via a *remotely-managed* tunnel (create it + the public hostname
-  # in the Cloudflare dashboard; see README "Public access via Cloudflare Tunnel"). Point the public
-  # hostname at http://api-prod:8000 (production) — the connector is environment-agnostic; the dashboard
-  # route decides which stack is public. Reads CLOUDFLARE_TUNNEL_TOKEN from .env. Started with
-  # `--profile tunnel` (combine with prod: `docker compose --profile prod --profile tunnel up -d`).
+  # Exposes the stacks publicly over HTTPS via a *remotely-managed* tunnel. Add TWO public hostnames in the
+  # Cloudflare dashboard (DNS is auto-created), both internal targets on the container's own :8000:
+  #   splitback.app       -> http://api-prod:8000   (production)
+  #   dev.splitback.app   -> http://api-dev:8000    (development)
+  # The connector is environment-agnostic; the dashboard routes decide what's public. Reads
+  # CLOUDFLARE_TUNNEL_TOKEN from .env. Start with `--profile tunnel` (combine with prod:
+  # `docker compose --profile prod --profile tunnel up -d`).
   cloudflared:
     image: cloudflare/cloudflared:latest
     # default pull_policy (missing) — pull the connector image if it isn't present yet
     profiles: ["tunnel"]
     restart: unless-stopped
     command: tunnel run --token ${CLOUDFLARE_TUNNEL_TOKEN}
-    depends_on:
-      api:
-        condition: service_started
 
 volumes:
   db_data:

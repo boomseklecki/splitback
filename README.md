@@ -38,49 +38,53 @@ backend/
 
 ## Run the stack
 
+The default stack is **development** (`api-dev` on :8001, `db-dev`, `PLAID_ENV=sandbox` in `.env`):
+
 ```bash
 cp .env.example .env          # adjust if needed
-docker compose up --build
+docker compose up --build     # db-dev + minio + api-dev
 ```
 
-- API: http://localhost:8000 (docs at `/docs`)
+- Dev API: http://localhost:8001 (docs at `/docs`)
 - MinIO console: http://localhost:9001 (user `splitback`)
 
 ### Development + production side by side
 
-The default stack (above) is **development** — point it at Plaid **sandbox** (`PLAID_ENV=sandbox` in `.env`).
-For a **production** stack with real Plaid data, run the `prod` profile alongside it:
+Run a **production** stack (`api-prod` on :8000, real Plaid, its own DB volume + `receipts-prod` bucket)
+alongside dev with the `prod` profile:
 
 ```bash
 cp .env.prod.example .env.prod     # fill: production Plaid secret + redirect, a FRESH AUTH_JWT_SECRET, prod Splitwise
-docker compose --profile prod up -d            # dev on :8000, prod on :8001 (own DB volume + receipts-prod bucket)
+docker compose --profile prod up -d            # dev (:8001) + prod (:8000)
 docker compose exec api-prod alembic upgrade head
 ```
 
-The two stacks share nothing (separate Postgres volume + MinIO bucket). Expose **prod** publicly by pointing
-the Cloudflare tunnel hostname at `http://api-prod:8000`. To load safe synthetic sample data into **dev**
-(replacing any real Splitwise import; bank data untouched):
+The two stacks share nothing (separate Postgres volume + MinIO bucket). Expose both via one Cloudflare tunnel
+with two public hostnames — `splitback.app → http://api-prod:8000` and `dev.splitback.app → http://api-dev:8000`
+(those `api-*:8000` names are internal compose targets; the iOS app uses the public `https://` hostnames, set
+once as the Settings Dev/Prod presets). To load safe synthetic sample data into **dev** (replacing any real
+Splitwise import; bank data untouched):
 
 ```bash
-docker compose exec api python -m app.cli.seed_dev --as <your-identifier> --wipe
+docker compose exec api-dev python -m app.cli.seed_dev --as <your-identifier> --wipe
 ```
 
 ## Apply migrations
 
-Once the stack is up, run Alembic inside the api container:
+Once a stack is up, run Alembic inside its api container (`api-dev` for dev, `api-prod` for prod):
 
 ```bash
-docker compose exec api alembic upgrade head
+docker compose exec api-dev alembic upgrade head
 ```
 
 Health checks:
 
 ```bash
-curl localhost:8000/health        # app liveness
-curl localhost:8000/health/db     # database reachability
+curl localhost:8001/health        # dev app liveness (prod: :8000)
+curl localhost:8001/health/db     # database reachability
 ```
 
-API docs (all endpoints) at http://localhost:8000/docs.
+API docs (all endpoints) at http://localhost:8001/docs (dev) / http://localhost:8000/docs (prod).
 
 ## Authentication
 
@@ -136,14 +140,17 @@ tunnel. Use a **remotely-managed** tunnel so everything stays manageable from th
 
 1. Cloudflare **Zero Trust → Networks → Tunnels → Create a tunnel** → **Cloudflared** → name it →
    **copy the connector token**.
-2. On the tunnel, add a **public hostname**: your domain (e.g. `splitback.app`) → service
-   `http://api:8000`. Cloudflare auto-creates the DNS record. (`api:8000` is the compose service name —
-   the connector shares the API's network.)
+2. On the tunnel, add a **public hostname** for each stack (Cloudflare auto-creates the DNS records).
+   The service is the compose service name on its own container port `:8000` — the connector shares the
+   stacks' network:
+   - `splitback.app` → `http://api-prod:8000` (production)
+   - `dev.splitback.app` → `http://api-dev:8000` (development)
 3. Put the token in `.env`: `CLOUDFLARE_TUNNEL_TOKEN=<token>`.
 4. Start the connector: `docker compose --profile tunnel up -d cloudflared`.
 
 Manage/disable the tunnel and its routes on the Cloudflare website thereafter. The API never sees the
-token (it's compose-only). That public hostname is what you hand out as the app's server URL (below).
+token (it's compose-only). Those public hostnames are what you set as the app's Dev/Prod server URLs
+(Settings → Backend presets).
 
 ## Sharing the app (join link)
 
@@ -188,15 +195,17 @@ each `tests/test_*.py` is runnable standalone via `python -m tests.<name>`.
 
 ## Background jobs
 
+Use the target stack's api container (`api-prod` for production, `api-dev` for development):
+
 ```bash
 # One-time Splitwise backfill (after authorizing via /auth/splitwise/login)
-docker compose exec api python -m app.cli.import_splitwise --dry-run
+docker compose exec api-prod python -m app.cli.import_splitwise --dry-run
 
 # Incremental Splitwise expense sync for all tokens (delta-only; suitable for a gentle cron)
-docker compose exec api python -m app.cli.splitwise_sync
+docker compose exec api-prod python -m app.cli.splitwise_sync
 
 # Plaid transaction sync for all linked items (suitable for cron)
-docker compose exec api python -m app.cli.plaid_sync
+docker compose exec api-prod python -m app.cli.plaid_sync
 ```
 
 ## Local dev (without Docker)

@@ -17,10 +17,16 @@ this file reproduces what matters so the Linux instance needs nothing else.
 wiped and replaced with synthetic data), and stand up a **new PRODUCTION stack** with real Plaid. Code +
 compose written on the Mac (not runnable there). Run on uplink.
 
+Services are **explicit**: `db-dev`/`api-dev` (default, :8001, sandbox) and `db-prod`/`api-prod`
+(`--profile prod`, :8000, real Plaid). On the existing box, `git pull` + `docker compose up -d` replaces the
+old `api`/`db` containers with `api-dev`/`db-dev` which **reuse the same `db_data`/`minio_data` volumes — no
+data loss**; the dev LAN port just moves :8000 → :8001 (or use `https://dev.splitback.app`).
+
 **Files added/changed (committed from the Mac):**
-- `docker-compose.yml` — new **`prod` profile**: `db-prod` (volume `db_data_prod`) + `api-prod` (port
-  `8001:8000`, `env_file: .env.prod`, `DATABASE_URL`→`db-prod`, `MINIO_BUCKET=receipts-prod`), reusing the
-  shared `minio`. Default services (`db`/`minio`/`api` on 8000) **are the dev stack, unchanged**.
+- `docker-compose.yml` — renamed default services to `db-dev`/`api-dev` (:8001, `env_file: .env`,
+  PLAID_ENV=sandbox, existing `db_data` volume); added a **`prod` profile**: `db-prod` (volume `db_data_prod`)
+  + `api-prod` (:8000, `env_file: .env.prod`, `DATABASE_URL`→`db-prod`, `MINIO_BUCKET=receipts-prod`), shared
+  `minio`. `cloudflared` documents two public hostnames.
 - `.env.prod.example` — production template (PLAID_ENV=production, redirect URI, a **fresh** AUTH_JWT_SECRET,
   prod Splitwise app/redirect). `.env.prod` is gitignored.
 - `app/integrations/dev_seed/generator.py` — pure synthetic generator (deterministic; splits balanced).
@@ -28,9 +34,13 @@ compose written on the Mac (not runnable there). Run on uplink.
   (keeps the self identifier) but NEVER touches accounts/transactions/plaid_items.
 - `tests/test_dev_seed.py` — generator invariants + wipe-preserves-bank-data (run on the test DB).
 
+**Cloudflare:** add a second public hostname so each stack has its own URL (DNS auto-created):
+`splitback.app → http://api-prod:8000` and `dev.splitback.app → http://api-dev:8000` (internal compose
+targets; the iOS app uses the public https hostnames as its Settings Dev/Prod presets).
+
 **Dev steps (existing stack, on uplink):**
-1. In `.env` confirm `PLAID_ENV=sandbox`. `docker compose up -d` (unchanged).
-2. Wipe real Splitwise + load synthetic data: `docker compose exec api python -m app.cli.seed_dev --as matt --wipe`.
+1. In `.env` confirm `PLAID_ENV=sandbox`. `docker compose up -d` (now starts `db-dev`/`minio`/`api-dev`).
+2. Wipe real Splitwise + load synthetic data: `docker compose exec api-dev python -m app.cli.seed_dev --as matt --wipe`.
    (Use the real self identifier for `--as` so you still sign into dev as yourself.) Re-run anytime to reset.
 3. Run the new tests against the test stack: `docker compose --profile test run --rm api-test python -m tests.test_dev_seed` (or however the suite is run on uplink).
 
@@ -39,13 +49,13 @@ compose written on the Mac (not runnable there). Run on uplink.
    registered as a production redirect URI.
 2. `cp .env.prod.example .env.prod`; fill production Plaid secret + redirect, a fresh `AUTH_JWT_SECRET`,
    production Splitwise app creds + `https://splitback.app/auth/splitwise/callback`, `PUBLIC_HOSTNAME`.
-3. `docker compose --profile prod up -d` (starts dev + prod) then `docker compose exec api-prod alembic upgrade head`; `curl localhost:8001/health`.
-4. Point the iOS app at prod (Settings → Backend preset) → re-link real banks via Plaid Link (production
-   access tokens are new — sandbox links don't carry over) → sync. Re-import real Splitwise INTO prod:
-   `docker compose exec api-prod python -m app.cli.import_splitwise --since <date>` (after authorizing
-   Splitwise against the prod stack via `/auth/splitwise/login`).
-5. Expose prod publicly: repoint the Cloudflare tunnel hostname → `http://api-prod:8000` in the dashboard,
-   then `docker compose --profile prod --profile tunnel up -d`.
+3. `docker compose --profile prod up -d` (starts dev + prod) then `docker compose exec api-prod alembic upgrade head`; `curl localhost:8000/health` (prod) / `:8001/health` (dev).
+4. Point the iOS app at prod (Settings → Backend, Prod preset = `https://splitback.app`) → re-link real banks
+   via Plaid Link (production access tokens are new — sandbox links don't carry over) → sync. Re-import real
+   Splitwise INTO prod: `docker compose exec api-prod python -m app.cli.import_splitwise --since <date>`
+   (after authorizing Splitwise against the prod stack via `/auth/splitwise/login`).
+5. Expose prod publicly: add the `splitback.app → http://api-prod:8000` tunnel hostname (above), then
+   `docker compose --profile prod --profile tunnel up -d`.
 
 No DB migration or contract change in this work (the seed uses existing tables; `GET /openapi.json` unchanged).
 
