@@ -59,6 +59,36 @@ def _full_name(member: dict) -> str:
     return " ".join(part for part in (first, last) if part)
 
 
+async def _resolve_identifier(
+    session: AsyncSession,
+    *,
+    splitwise_user_id: str,
+    first_name: str,
+    email: str | None,
+    user_map: dict[str, str],
+) -> str:
+    """The local identifier a Splitwise user maps to, **reusing an existing user** so the import and
+    sign-in (`auth.identity.resolve_user`) converge on one identity instead of minting a duplicate:
+      1. a user already linked to this `splitwise_user_id`,
+      2. else a user with the same `email` (e.g. an Apple/Google sign-in) — keyed by email, the same
+         signal sign-in links on,
+      3. else the deterministic mapper fallback (operator `user_map` → slugified first name).
+    Keeping the readable string identifier; this only changes *which* existing one we resolve to."""
+    linked = await session.scalar(
+        select(User.identifier).where(User.splitwise_user_id == splitwise_user_id)
+    )
+    if linked:
+        return linked
+    if email:
+        by_email = await session.scalar(
+            select(User.identifier).where(User.email == email)
+            .order_by(User.created_at).limit(1)
+        )
+        if by_email:
+            return by_email
+    return mapper.resolve_user_identifier(splitwise_user_id, first_name, user_map)
+
+
 async def _upsert_user(
     session: AsyncSession,
     identifier: str,
@@ -200,8 +230,9 @@ async def sync_groups(
             cover_photo_url=group.get("cover_photo_url"),
         )
         for member in group.get("members", []):
-            identifier = mapper.resolve_user_identifier(
-                member["user_id"], member["first_name"], user_map
+            identifier = await _resolve_identifier(
+                session, splitwise_user_id=member["user_id"], first_name=member["first_name"],
+                email=member.get("email"), user_map=user_map,
             )
             await _upsert_user(
                 session, identifier, _full_name(member), member["user_id"],
@@ -225,8 +256,9 @@ async def sync_users(
     seen_users: set[str] = set()
     for group in groups:
         for member in group.get("members", []):
-            identifier = mapper.resolve_user_identifier(
-                member["user_id"], member["first_name"], user_map
+            identifier = await _resolve_identifier(
+                session, splitwise_user_id=member["user_id"], first_name=member["first_name"],
+                email=member.get("email"), user_map=user_map,
             )
             await _upsert_user(
                 session, identifier, _full_name(member), member["user_id"],
@@ -236,8 +268,9 @@ async def sync_users(
             )
             seen_users.add(identifier)
     current = await asyncio.to_thread(sw_client.get_current_user, client)
-    identifier = mapper.resolve_user_identifier(
-        current["splitwise_id"], current["first_name"], user_map
+    identifier = await _resolve_identifier(
+        session, splitwise_user_id=current["splitwise_id"], first_name=current["first_name"],
+        email=current.get("email"), user_map=user_map,
     )
     await _upsert_user(
         session, identifier, _full_name(current), current["splitwise_id"],
@@ -285,11 +318,18 @@ async def sync_expenses(
 
     seen_users: set[str] = set()
     group_cache: dict[str, UUID] = {}
+    # Splitwise user_id -> resolved local identifier, threaded into map_expense so the splits
+    # (created_by / updated_by / each share) carry the SAME identifier we upsert, including any
+    # existing user matched by splitwise_user_id/email.
+    resolved: dict[str, str] = {}
     for expense in importable:
         for participant in expense.get("users", []):
-            identifier = mapper.resolve_user_identifier(
-                participant["user_id"], participant.get("first_name", ""), user_map
+            identifier = await _resolve_identifier(
+                session, splitwise_user_id=participant["user_id"],
+                first_name=participant.get("first_name", ""),
+                email=participant.get("email"), user_map=user_map,
             )
+            resolved[participant["user_id"]] = identifier
             await _upsert_user(
                 session, identifier, _full_name(participant), participant["user_id"],
                 email=participant.get("email"), avatar_url=participant.get("picture"),
@@ -299,12 +339,14 @@ async def sync_expenses(
         # Ensure the creator/editor are in the directory so "Added by"/"Edited by" resolve to names.
         for ref in (expense.get("created_by"), expense.get("updated_by")):
             if ref:
-                identifier = mapper.resolve_user_identifier(
-                    ref["user_id"], ref.get("first_name", ""), user_map
+                identifier = await _resolve_identifier(
+                    session, splitwise_user_id=ref["user_id"], first_name=ref.get("first_name", ""),
+                    email=ref.get("email"), user_map=user_map,
                 )
+                resolved[ref["user_id"]] = identifier
                 await _upsert_user(session, identifier, _full_name(ref), ref["user_id"])
                 seen_users.add(identifier)
-        mapped = mapper.map_expense(expense, user_map)
+        mapped = mapper.map_expense(expense, {**user_map, **resolved})
         group_id = await _ensure_group(session, mapped["group_key"], group_cache)
         await _upsert_expense(session, mapped, group_id)
 

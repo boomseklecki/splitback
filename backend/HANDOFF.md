@@ -11,6 +11,32 @@ this file reproduces what matters so the Linux instance needs nothing else.
 
 ---
 
+## NEW WORK — Splitwise import unifies users by splitwise_user_id/email (2026-06-20)
+
+**Why:** the import resolved a participant's local identifier independently of sign-in (`mapper.resolve_user_identifier`: `user_map` → slugified first name), so an Apple/Google sign-in (`auth.identity.resolve_user`, which links by email) and a later import could create **two users with the same email** — e.g. `/me` = `mattseklecki` but the splits say `matt` → the iOS Splits screen shows no "you owe" amounts and won't hide settled groups (balances key off `/me`'s identifier).
+
+**Change (committed from the Mac; runs on uplink):**
+- `app/integrations/splitwise/importer.py` — new `_resolve_identifier(session, …)` that reuses an existing
+  user: (1) by `splitwise_user_id`, (2) else by `email`, (3) else the old `mapper.resolve_user_identifier`
+  fallback. Wired into `sync_groups`/`sync_users`/`sync_expenses`; in `sync_expenses` the resolved map is
+  threaded into `mapper.map_expense(expense, {**user_map, **resolved})` so the **splits** carry the same
+  identifier. No schema change; the readable string identifier stays.
+- `tests/test_splitwise_user_unification.py` — reuse-by-email, reuse-by-sub, slug fallback, no-duplicate.
+
+**Linux steps:**
+1. Run the new test (test stack): expect green.
+2. **One-time cleanup of the existing duplicate on prod** (the fix prevents new dups but won't merge old
+   ones). Check: `select identifier, email, splitwise_user_id, source from users where email = '<you>';`
+   If you see both `matt` (splitwise, owns the splits) and `mattseklecki` (app, your sign-in):
+   - delete the app duplicate `delete from users where identifier='mattseklecki';` then **re-import**
+     (`docker compose exec api-prod python -m app.cli.import_splitwise --since <date>`) — the import now
+     resolves by email and rewrites the splits to your sign-in identifier; **or**
+   - simpler, sign in via **Splitwise** on prod (so `/me` = `matt`, matching the existing splits) and delete
+     the stray `mattseklecki`.
+   Confirm with the iOS Settings → Account `ID:` line that `/me` now matches the splits.
+
+---
+
 ## NEW WORK — two stacks: dev (sandbox) + production (real Plaid) + synthetic dev seed (2026-06-20)
 
 **Goal:** keep the **existing stack as DEVELOPMENT** (sandbox Plaid data stays; its real Splitwise import is
