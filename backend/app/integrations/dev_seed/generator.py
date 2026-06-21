@@ -57,9 +57,41 @@ class SeedGroup:
 
 
 @dataclass
+class SeedAccount:
+    key: str  # local handle linking transactions/goals to this account
+    name: str
+    type: str
+    balance: Decimal
+
+
+@dataclass
+class SeedTransaction:
+    account_key: str | None
+    description: str
+    amount: Decimal  # outflow positive; income/inflow negative
+    currency: str
+    date: date
+    category: str | None
+
+
+@dataclass
+class SeedGoal:
+    kind: str  # "spend" | "save"
+    name: str
+    category: str | None = None
+    account_key: str | None = None
+    target_amount: Decimal = Decimal("0")
+    save_target_type: str | None = None
+    starting_balance: Decimal | None = None
+
+
+@dataclass
 class SeedData:
     users: list[SeedUser]
     groups: list[SeedGroup]
+    accounts: list[SeedAccount] = field(default_factory=list)
+    transactions: list[SeedTransaction] = field(default_factory=list)
+    goals: list[SeedGoal] = field(default_factory=list)
 
 
 # Fake people (display name -> identifier is the lowercased name). Picked deterministically.
@@ -79,6 +111,18 @@ _CATALOG: dict[str, tuple[tuple[int, int], list[str]]] = {
 }
 
 _GROCERY_ITEMS = ["Milk", "Eggs", "Bread", "Coffee", "Produce", "Chicken", "Pasta", "Cheese", "Snacks"]
+
+# Personal bank-transaction categories (amount range + merchant pool) for the seeded accounts.
+_BANK_SPEND: dict[str, tuple[tuple[int, int], list[str]]] = {
+    "Groceries": ((20, 120), ["Corner Market", "Greenleaf Grocery", "Daily Foods"]),
+    "Dining": ((12, 70), ["Trattoria Nove", "Noodle House", "Sushi Corner", "Cafe Bloom"]),
+    "Fuel": ((28, 65), ["QuickFill", "Shell Station", "Gas Stop"]),
+    "Transport": ((8, 45), ["Rideshare", "Metro Pass", "City Taxi"]),
+    "Entertainment": ((10, 60), ["Cinema 8", "Concert Hall", "Arcade"]),
+    "Shopping": ((15, 180), ["Department Store", "Online Mart", "Outfitters"]),
+    "Subscriptions": ((6, 30), ["Streamflix", "Music Plus", "Cloud Storage"]),
+    "Utilities": ((45, 160), ["City Power", "Metro Water", "Fiber Internet"]),
+}
 
 
 def _money(rng: random.Random, lo: int, hi: int) -> Decimal:
@@ -181,4 +225,34 @@ def generate(self_identifier: str = "matt", *, seed: int = 1234,
         SeedGroup(name="Apartment", group_type="apartment", members=apt_members, expenses=apt_expenses),
         SeedGroup(name="Weekend Trip", group_type="trip", members=trip_members, expenses=trip_expenses),
     ]
-    return SeedData(users=users, groups=groups)
+
+    # Personal finances for the self user: a few accounts, ~3 months of bank transactions (so the donut/
+    # Trends/cash-flow populate), and two goals. These are owned by `self_identifier` at persist time.
+    accounts = [
+        SeedAccount("checking", "Everyday Checking", "checking", Decimal("3500.00")),
+        SeedAccount("credit", "Rewards Card", "credit card", Decimal("842.50")),
+        SeedAccount("savings", "High-Yield Savings", "savings", Decimal("12000.00")),
+    ]
+    transactions: list[SeedTransaction] = []
+    for month in range(3):
+        base = month * 30
+        # A monthly paycheck (inflow = negative amount) into checking.
+        transactions.append(SeedTransaction(
+            "checking", "Paycheck", -_money(rng, 2600, 3200), currency, days_ago(base + 2), "Income"))
+        for _ in range(8):
+            category = rng.choice(list(_BANK_SPEND))
+            (lo, hi), merchants = _BANK_SPEND[category]
+            transactions.append(SeedTransaction(
+                account_key=rng.choice(["checking", "credit"]),
+                description=rng.choice(merchants), amount=_money(rng, lo, hi),
+                currency=currency, date=days_ago(base + rng.randint(1, 28)), category=category))
+
+    goals = [
+        SeedGoal(kind="spend", name="Groceries budget", category="Groceries",
+                 target_amount=Decimal("600")),
+        SeedGoal(kind="save", name="Savings cushion", account_key="savings",
+                 target_amount=Decimal("15000"), save_target_type="balance",
+                 starting_balance=Decimal("12000")),
+    ]
+    return SeedData(users=users, groups=groups, accounts=accounts,
+                    transactions=transactions, goals=goals)

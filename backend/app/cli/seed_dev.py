@@ -1,10 +1,11 @@
-"""Seed the DEVELOPMENT backend with synthetic Splitwise-style data.
+"""Seed the DEVELOPMENT backend with synthetic data: Splitwise-style groups/expenses PLUS personal
+accounts/transactions/goals owned by the self identifier, so impersonating that user (via an API_TOKENS
+mapping) shows a fully-populated app — Accounts/Splits/Goals/Trends with correct balances.
 
-Generates fake-but-realistic groups/users/expenses/splits/items (see app.integrations.dev_seed.generator)
-and inserts them. With --wipe it first clears the Splitwise side so dev is reset to a clean synthetic state:
-all groups (cascading expenses/splits/items), group members, every user EXCEPT the self identifier, and any
-stored Splitwise tokens (so dev never re-imports real Splitwise over the seed). It never touches
-accounts/transactions/plaid_items (the sandbox Plaid data stays) or receipts.
+With --wipe it resets to a clean synthetic state: all groups (cascading expenses/splits/items), group
+members, every user EXCEPT the self identifier, stored Splitwise tokens, AND the synthetic personal data
+(manual accounts — plaid_item_id NULL — with their transactions, plus goals). It NEVER touches Plaid-linked
+accounts/transactions/plaid_items (sandbox banks a tester linked stay) or receipts.
 
 Usage (inside the DEV api container — never run against production):
     python -m app.cli.seed_dev --as matt --wipe
@@ -12,21 +13,25 @@ Usage (inside the DEV api container — never run against production):
 """
 import argparse
 import asyncio
+from uuid import UUID
 
 from sqlalchemy import delete, select
 
 from app.db import async_session
 from app.integrations.dev_seed import generator
 from app.models import (
+    Account,
     Expense,
     ExpenseItem,
+    Goal,
     Group,
     GroupMember,
     Split,
     SplitwiseToken,
+    Transaction,
     User,
 )
-from app.models.enums import BackendType, UserSource
+from app.models.enums import BackendType, TransactionSource, UserSource
 
 
 async def _wipe(session, self_identifier: str) -> None:
@@ -35,6 +40,12 @@ async def _wipe(session, self_identifier: str) -> None:
     await session.execute(delete(GroupMember))
     await session.execute(delete(SplitwiseToken))
     await session.execute(delete(User).where(User.identifier != self_identifier))
+    # Synthetic personal data: goals + manual (non-Plaid) accounts and their transactions. Plaid-linked
+    # accounts/transactions (a tester's sandbox banks) are left untouched.
+    await session.execute(delete(Goal))
+    manual_accounts = select(Account.id).where(Account.plaid_item_id.is_(None))
+    await session.execute(delete(Transaction).where(Transaction.account_id.in_(manual_accounts)))
+    await session.execute(delete(Account).where(Account.plaid_item_id.is_(None)))
     await session.flush()
 
 
@@ -73,14 +84,39 @@ async def seed(session, *, self_identifier: str, wipe: bool, seed_value: int = 1
             ))
             expense_count += 1
 
+    # Personal finances, all owned by the self identifier (so per-caller scoping shows them to "you").
+    account_ids: dict[str, UUID] = {}
+    for a in data.accounts:
+        account = Account(name=a.name, type=a.type, balance=a.balance, currency="USD",
+                          owner_identifier=self_identifier)
+        session.add(account)
+        await session.flush()
+        account_ids[a.key] = account.id
+    for t in data.transactions:
+        session.add(Transaction(
+            account_id=account_ids.get(t.account_key) if t.account_key else None,
+            source=TransactionSource.manual, description=t.description, amount=t.amount,
+            currency=t.currency, date=t.date, category=t.category,
+            owner_identifier=self_identifier))
+    for go in data.goals:
+        session.add(Goal(
+            kind=go.kind, name=go.name, category=go.category,
+            account_id=account_ids.get(go.account_key) if go.account_key else None,
+            target_amount=go.target_amount, save_target_type=go.save_target_type,
+            starting_balance=go.starting_balance, owner_identifier=self_identifier))
+
     await session.commit()
-    return {"users": len(data.users), "groups": len(data.groups), "expenses": expense_count}
+    return {
+        "users": len(data.users), "groups": len(data.groups), "expenses": expense_count,
+        "accounts": len(data.accounts), "transactions": len(data.transactions), "goals": len(data.goals),
+    }
 
 
 async def _run(args: argparse.Namespace) -> None:
     async with async_session() as session:
         stats = await seed(session, self_identifier=args.as_user, wipe=args.wipe, seed_value=args.seed)
-    print(f"Seeded {stats['users']} users, {stats['groups']} groups, {stats['expenses']} expenses "
+    print(f"Seeded {stats['users']} users, {stats['groups']} groups, {stats['expenses']} expenses, "
+          f"{stats['accounts']} accounts, {stats['transactions']} transactions, {stats['goals']} goals "
           f"(self={args.as_user}, wipe={args.wipe}).")
 
 
@@ -90,7 +126,7 @@ def main() -> None:
                         help="your local identifier, kept verbatim so you sign in as yourself")
     parser.add_argument("--seed", type=int, default=1234, help="RNG seed (deterministic output)")
     parser.add_argument("--wipe", action="store_true",
-                        help="clear the Splitwise side first (keeps accounts/transactions)")
+                        help="reset synthetic data first (keeps Plaid-linked accounts/transactions)")
     asyncio.run(_run(parser.parse_args()))
 
 
