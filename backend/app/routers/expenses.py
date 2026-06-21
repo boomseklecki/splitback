@@ -9,12 +9,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.auth import require_auth
+from app.auth.scope import assert_group_member
 from app.config import settings
 from app.db import get_session
 from app.integrations.splitwise import client as sw_client
 from app.integrations.splitwise import writer as sw_writer
 from app.integrations.storage import minio_client
-from app.models import BackendType, Expense, ExpenseItem, Group, Split
+from app.models import BackendType, Expense, ExpenseItem, Group, GroupMember, Split
 from app.schemas.expense import ExpenseCreate, ExpenseResponse, ExpenseUpdate
 from app.utils import ensure_utc
 
@@ -133,9 +135,12 @@ async def _get_group_or_404(session: AsyncSession, group_id: UUID) -> Group:
 
 @router.post("/expenses", response_model=ExpenseResponse, status_code=201)
 async def create_expense(
-    body: ExpenseCreate, session: AsyncSession = Depends(get_session)
+    body: ExpenseCreate,
+    caller: str | None = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
 ) -> Expense:
     group = await _get_group_or_404(session, body.group_id)
+    await assert_group_member(session, body.group_id, caller)
     if group.backend_type == BackendType.self_hosted:
         _validate_splits(body.amount, body.splits)
 
@@ -169,6 +174,7 @@ async def list_expenses(
     include_archived: bool = False,
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
+    caller: str | None = Depends(require_auth),
     session: AsyncSession = Depends(get_session),
 ) -> list[Expense]:
     stmt = select(Expense).options(
@@ -176,6 +182,12 @@ async def list_expenses(
         selectinload(Expense.items),
         selectinload(Expense.receipts),
     )
+    if caller is not None:  # only expenses in groups the caller belongs to
+        stmt = stmt.where(
+            Expense.group_id.in_(
+                select(GroupMember.group_id).where(GroupMember.user_identifier == caller)
+            )
+        )
     if not include_archived:
         stmt = stmt.join(Group, Expense.group_id == Group.id).where(
             Group.archived_at.is_(None), Expense.archived_at.is_(None)
@@ -195,23 +207,32 @@ async def list_expenses(
 
 @router.get("/expenses/{expense_id}", response_model=ExpenseResponse)
 async def get_expense(
-    expense_id: UUID, session: AsyncSession = Depends(get_session)
+    expense_id: UUID,
+    caller: str | None = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
 ) -> Expense:
     expense = await _load_detail(session, expense_id)
     if expense is None:
         raise HTTPException(status_code=404, detail="Expense not found")
+    await assert_group_member(session, expense.group_id, caller)
     return expense
 
 
 @router.patch("/expenses/{expense_id}", response_model=ExpenseResponse)
 async def update_expense(
-    expense_id: UUID, body: ExpenseUpdate, session: AsyncSession = Depends(get_session)
+    expense_id: UUID,
+    body: ExpenseUpdate,
+    caller: str | None = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
 ) -> Expense:
     expense = await _load_detail(session, expense_id)
     if expense is None:
         raise HTTPException(status_code=404, detail="Expense not found")
+    await assert_group_member(session, expense.group_id, caller)
 
     target_group = await _get_group_or_404(session, body.group_id or expense.group_id)
+    if body.group_id is not None:  # moving the expense — the caller must also be in the destination
+        await assert_group_member(session, body.group_id, caller)
     new_amount = body.amount if body.amount is not None else expense.amount
     if target_group.backend_type == BackendType.self_hosted:
         splits_to_check = body.splits if body.splits is not None else expense.splits
@@ -270,11 +291,13 @@ async def _hard_delete(session: AsyncSession, expense: Expense) -> None:
 async def delete_expense(
     expense_id: UUID,
     propagate: bool | None = None,
+    caller: str | None = Depends(require_auth),
     session: AsyncSession = Depends(get_session),
 ) -> None:
     expense = await _load_detail(session, expense_id)
     if expense is None:
         raise HTTPException(status_code=404, detail="Expense not found")
+    await assert_group_member(session, expense.group_id, caller)
 
     # Local-only expense: SplitBack owns the ledger -> archive (or hard-delete if enabled).
     if expense.splitwise_expense_id is None:

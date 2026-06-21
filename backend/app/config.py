@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     # its own stateless JWT. `auth_required` default false keeps dev/tests/open mode working.
     auth_jwt_secret: str = ""  # HS256 signing secret; generate a long random value (openssl rand -hex 32)
     auth_required: bool = False  # when true, guarded endpoints reject requests without a valid token
+    # Sign-in allowlist (emails, JSON list e.g. ["a@x.com","b@y.com"]). Empty = anyone verified may sign in.
+    # When set, only these emails may authenticate — enforced at sign-in AND on every request.
+    auth_allowed_users: list[str] = []
+    # When true, never create a NEW user at sign-in — only identities that already resolve to an existing
+    # user (by provider sub/email) may sign in. Linking a second provider to an existing user still works.
+    closed_registration: bool = False
     google_client_id: str = ""  # Google iOS OAuth client id — the id-token audience
     apple_audience: str = ""  # the iOS app bundle id (e.g. com.splitback.app) — the identity-token audience
     # Apple Developer Team ID — used to serve the App Site Association (GET /.well-known/apple-app-site-association)

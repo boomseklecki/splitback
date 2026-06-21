@@ -5,6 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import require_auth
+from app.auth.scope import assert_owner
 from app.config import settings
 from app.db import get_session
 from app.models.goal import Goal
@@ -14,7 +16,11 @@ router = APIRouter(tags=["goals"])
 
 
 @router.post("/goals", response_model=GoalResponse, status_code=201)
-async def create_goal(body: GoalCreate, session: AsyncSession = Depends(get_session)) -> Goal:
+async def create_goal(
+    body: GoalCreate,
+    caller: str | None = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
+) -> Goal:
     goal = Goal(
         kind=body.kind,
         name=body.name,
@@ -26,6 +32,7 @@ async def create_goal(body: GoalCreate, session: AsyncSession = Depends(get_sess
         starting_date=body.starting_date,
         period=body.period,
         currency=body.currency or settings.default_currency,
+        owner_identifier=caller,
     )
     session.add(goal)
     await session.commit()
@@ -35,27 +42,35 @@ async def create_goal(body: GoalCreate, session: AsyncSession = Depends(get_sess
 
 @router.get("/goals", response_model=list[GoalResponse])
 async def list_goals(
-    include_archived: bool = False, session: AsyncSession = Depends(get_session)
+    include_archived: bool = False,
+    caller: str | None = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
 ) -> list[Goal]:
     stmt = select(Goal)
+    if caller is not None:
+        stmt = stmt.where(Goal.owner_identifier == caller)
     if not include_archived:
         stmt = stmt.where(Goal.archived_at.is_(None))
     rows = await session.scalars(stmt.order_by(Goal.created_at.desc()))
     return list(rows)
 
 
-async def _get_or_404(session: AsyncSession, goal_id: UUID) -> Goal:
+async def _get_owned_or_404(session: AsyncSession, goal_id: UUID, caller: str | None) -> Goal:
     goal = await session.get(Goal, goal_id)
     if goal is None:
         raise HTTPException(status_code=404, detail="Goal not found")
+    assert_owner(goal.owner_identifier, caller)
     return goal
 
 
 @router.patch("/goals/{goal_id}", response_model=GoalResponse)
 async def update_goal(
-    goal_id: UUID, body: GoalUpdate, session: AsyncSession = Depends(get_session)
+    goal_id: UUID,
+    body: GoalUpdate,
+    caller: str | None = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
 ) -> Goal:
-    goal = await _get_or_404(session, goal_id)
+    goal = await _get_owned_or_404(session, goal_id, caller)
     for field, value in body.model_dump(exclude_unset=True).items():
         setattr(goal, field, value)
     await session.commit()
@@ -64,7 +79,11 @@ async def update_goal(
 
 
 @router.delete("/goals/{goal_id}", status_code=204)
-async def delete_goal(goal_id: UUID, session: AsyncSession = Depends(get_session)) -> None:
-    goal = await _get_or_404(session, goal_id)
+async def delete_goal(
+    goal_id: UUID,
+    caller: str | None = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    goal = await _get_owned_or_404(session, goal_id, caller)
     goal.archived_at = datetime.now(timezone.utc)
     await session.commit()

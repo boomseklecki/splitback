@@ -11,6 +11,43 @@ this file reproduces what matters so the Linux instance needs nothing else.
 
 ---
 
+## NEW WORK — auth allowlist + closed registration + per-caller data scoping (2026-06-21)
+
+**Why:** the backend let any verified identity sign in and returned ALL data to every caller. Now: (1) an
+email allowlist + closed registration gate who can authenticate, and (2) per-caller scoping so each user
+sees only their own (accounts/transactions/goals, by `owner_identifier`) or shared-group (groups/expenses/
+receipts/balances, by `GroupMember`) data. `/users`, `/categories`, `/category-map` stay shared. Scoping only
+filters when a caller is authenticated (`require_auth` returns None in open mode → unscoped, so dev is
+unaffected).
+
+**Files (committed from the Mac; py_compile clean, can't run there):**
+- `app/config.py` — `auth_allowed_users: list[str]`, `closed_registration: bool`.
+- `app/auth/access.py` (new) — `is_allowed` (email-only); `identity.resolve_user` 403s off-list / closed-reg;
+  `require_auth` re-checks every request (401).
+- `app/auth/scope.py` (new) — `assert_owner` / `assert_group_member` / membership helpers (no-op when caller
+  is None).
+- `owner_identifier` on `models/account.py`, `transaction.py`, `goal.py`; migration **`0020_owner_scoping`**
+  (adds columns + backfills: accounts←plaid_items.user_identifier, transactions←account, then NULL→
+  `SCOPING_PRIMARY_OWNER`).
+- Stamping: `integrations/plaid/sync.py` (account/transaction owner = the linker), `routers/plaid.py`
+  (link-token/exchange use the **caller**, not the body's `user_identifier` — security fix), manual creates
+  in `routers/accounts.py` + `goals.py`.
+- Scoping + 403 guards across `routers/accounts.py`, `groups.py` (creator auto-joins), `expenses.py`,
+  `goals.py`, `plaid.py`, `receipts.py`, `balances.py`.
+- Tests: `tests/test_auth_access.py`, `tests/test_scoping.py`. iOS: `AccountRepository.refreshAccounts` now
+  prunes cached accounts/transactions the scoped backend no longer returns (Mac-built, green).
+
+**Linux steps (ORDER MATTERS):**
+1. In `.env.prod` set `SCOPING_PRIMARY_OWNER=<your /me identifier>` and `AUTH_ALLOWED_USERS=["you@…"]`
+   **before** migrating (the backfill uses it; otherwise your manual data is left NULL-owned → invisible).
+2. `docker compose exec api-prod alembic upgrade head` (applies `0020`, backfills).
+3. Run `tests/test_auth_access.py` + `tests/test_scoping.py` (test stack) — expect green.
+4. Verify: a second allowed user sees only their own accounts/transactions/goals + shared groups; a stranger
+   is refused at sign-in (403); cross-user id access → 403. No contract/openapi change.
+   Set `CLOSED_REGISTRATION=true` once everyone's imported.
+
+---
+
 ## NEW WORK — Splitwise import unifies users by splitwise_user_id/email (2026-06-20)
 
 **Why:** the import resolved a participant's local identifier independently of sign-in (`mapper.resolve_user_identifier`: `user_map` → slugified first name), so an Apple/Google sign-in (`auth.identity.resolve_user`, which links by email) and a later import could create **two users with the same email** — e.g. `/me` = `mattseklecki` but the splits say `matt` → the iOS Splits screen shows no "you owe" amounts and won't hide settled groups (balances key off `/me`'s identifier).

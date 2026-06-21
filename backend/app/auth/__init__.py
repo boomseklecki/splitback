@@ -11,6 +11,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import tokens
+from app.auth.access import is_allowed
 from app.config import settings
 from app.db import get_session
 from app.models import User
@@ -29,8 +30,15 @@ async def require_auth(
         if user_id is not None:
             user = await session.get(User, user_id)
             if user is not None:
+                # Re-check the allowlist every request so removing someone takes effect immediately
+                # (their existing JWT stops working), not only at sign-in.
+                if not is_allowed(email=None, user=user):
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="This account isn't permitted on this server.",
+                    )
                 return user.identifier
-        identifier = settings.api_tokens.get(token)
+        identifier = settings.api_tokens.get(token)  # operator-configured static tokens bypass the allowlist
         if identifier is not None:
             return identifier
 

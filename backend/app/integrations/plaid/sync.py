@@ -30,9 +30,14 @@ def accumulate_sync(fetch_page, access_token: str, cursor: str | None) -> dict:
     return {"added": added, "modified": modified, "removed": removed, "cursor": cursor}
 
 
-async def _upsert_account(session: AsyncSession, item_id: UUID, fields: dict) -> UUID:
-    values = {**fields, "plaid_item_id": item_id}
-    update_cols = {k: values[k] for k in ("name", "type", "balance", "currency", "plaid_item_id")}
+async def _upsert_account(
+    session: AsyncSession, item_id: UUID, fields: dict, owner_identifier: str | None = None
+) -> UUID:
+    values = {**fields, "plaid_item_id": item_id, "owner_identifier": owner_identifier}
+    update_cols = {
+        k: values[k]
+        for k in ("name", "type", "balance", "currency", "plaid_item_id", "owner_identifier")
+    }
     stmt = (
         pg_insert(Account)
         .values(**values)
@@ -42,7 +47,9 @@ async def _upsert_account(session: AsyncSession, item_id: UUID, fields: dict) ->
     return (await session.execute(stmt)).scalar_one()
 
 
-async def _upsert_transaction(session: AsyncSession, account_map: dict, fields: dict) -> None:
+async def _upsert_transaction(
+    session: AsyncSession, account_map: dict, fields: dict, owner_identifier: str | None = None
+) -> None:
     values = {
         "account_id": account_map.get(fields["plaid_account_id"]),
         "plaid_transaction_id": fields["plaid_transaction_id"],
@@ -53,10 +60,12 @@ async def _upsert_transaction(session: AsyncSession, account_map: dict, fields: 
         "date": fields["date"],
         "category": fields["category"],
         "pending": fields["pending"],
+        "owner_identifier": owner_identifier,
     }
     update_cols = {
         k: values[k]
-        for k in ("account_id", "description", "amount", "currency", "date", "category", "pending")
+        for k in ("account_id", "description", "amount", "currency", "date", "category",
+                  "pending", "owner_identifier")
     }
     stmt = (
         pg_insert(Transaction)
@@ -75,11 +84,14 @@ async def apply_sync(
     for account in accounts:
         fields = mapper.map_account(account)
         account_map[fields["plaid_account_id"]] = await _upsert_account(
-            session, item.id, fields
+            session, item.id, fields, owner_identifier=item.user_identifier
         )
 
     for transaction in sync_result["added"] + sync_result["modified"]:
-        await _upsert_transaction(session, account_map, mapper.map_transaction(transaction))
+        await _upsert_transaction(
+            session, account_map, mapper.map_transaction(transaction),
+            owner_identifier=item.user_identifier,
+        )
 
     if sync_result["removed"]:
         await session.execute(

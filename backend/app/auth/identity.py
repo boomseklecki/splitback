@@ -4,12 +4,23 @@ Called after a provider (apple/google/splitwise) token is verified. Idempotent: 
 provider sub always resolves to the same User; a matching email links a second provider onto
 an existing User rather than creating a duplicate.
 """
+from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.access import is_allowed
+from app.config import settings
 from app.models import User
 from app.models.enums import UserSource
 from app.utils import slugify
+
+
+def _enforce_allowed(email: str | None, user: User | None) -> None:
+    if not is_allowed(email=email, user=user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This account isn't permitted on this server.",
+        )
 
 # Provider -> the User column holding that provider's subject id.
 _PROVIDER_COLUMN = {
@@ -49,6 +60,7 @@ async def resolve_user(
     # 1. Known provider sub -> that user.
     user = await session.scalar(select(User).where(getattr(User, column) == sub))
     if user is not None:
+        _enforce_allowed(email, user)
         _backfill(user, email=email, avatar=avatar)
         await session.commit()
         await session.refresh(user)
@@ -58,13 +70,20 @@ async def resolve_user(
     if email:
         user = await session.scalar(select(User).where(User.email == email))
         if user is not None:
+            _enforce_allowed(email, user)
             setattr(user, column, sub)
             _backfill(user, email=email, avatar=avatar)
             await session.commit()
             await session.refresh(user)
             return user
 
-    # 3. New user.
+    # 3. New user — gated by the allowlist and closed registration.
+    _enforce_allowed(email, None)
+    if settings.closed_registration:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Registration is closed on this server.",
+        )
     identifier = await _unique_identifier(session, name or email or "user")
     user = User(
         identifier=identifier,

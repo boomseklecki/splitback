@@ -6,6 +6,8 @@ from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import require_auth
+from app.auth.scope import assert_group_member
 from app.config import settings
 from app.db import get_session
 from app.integrations.storage import minio_client
@@ -34,6 +36,13 @@ async def _get_expense_or_404(session: AsyncSession, expense_id: UUID) -> Expens
     return expense
 
 
+async def _assert_receipt_access(session: AsyncSession, receipt: Receipt, caller: str | None) -> None:
+    """A receipt is visible to members of its expense's group."""
+    expense = await session.get(Expense, receipt.expense_id)
+    if expense is not None:
+        await assert_group_member(session, expense.group_id, caller)
+
+
 @router.post(
     "/expenses/{expense_id}/receipts",
     response_model=ReceiptResponse,
@@ -41,9 +50,13 @@ async def _get_expense_or_404(session: AsyncSession, expense_id: UUID) -> Expens
     openapi_extra={"requestBody": _BINARY_BODY},
 )
 async def upload_receipt(
-    expense_id: UUID, request: Request, session: AsyncSession = Depends(get_session)
+    expense_id: UUID,
+    request: Request,
+    caller: str | None = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
 ) -> Receipt:
-    await _get_expense_or_404(session, expense_id)
+    expense = await _get_expense_or_404(session, expense_id)
+    await assert_group_member(session, expense.group_id, caller)
     content_type = request.headers.get("content-type") or "application/octet-stream"
     data = await request.body()
     if not data:
@@ -66,8 +79,12 @@ async def upload_receipt(
 
 @router.get("/expenses/{expense_id}/receipts", response_model=list[ReceiptResponse])
 async def list_receipts(
-    expense_id: UUID, session: AsyncSession = Depends(get_session)
+    expense_id: UUID,
+    caller: str | None = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
 ) -> list[Receipt]:
+    expense = await _get_expense_or_404(session, expense_id)
+    await assert_group_member(session, expense.group_id, caller)
     rows = await session.scalars(
         select(Receipt).where(Receipt.expense_id == expense_id).order_by(Receipt.created_at)
     )
@@ -80,22 +97,28 @@ async def list_receipts(
     responses=_BINARY_RESPONSE,
 )
 async def download_receipt(
-    receipt_id: UUID, session: AsyncSession = Depends(get_session)
+    receipt_id: UUID,
+    caller: str | None = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
 ) -> Response:
     receipt = await session.get(Receipt, receipt_id)
     if receipt is None:
         raise HTTPException(status_code=404, detail="Receipt not found")
+    await _assert_receipt_access(session, receipt, caller)
     data = await asyncio.to_thread(minio_client.get_bytes, receipt.object_key)
     return Response(content=data, media_type=receipt.content_type or "application/octet-stream")
 
 
 @router.delete("/receipts/{receipt_id}", status_code=204)
 async def delete_receipt(
-    receipt_id: UUID, session: AsyncSession = Depends(get_session)
+    receipt_id: UUID,
+    caller: str | None = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
 ) -> None:
     receipt = await session.get(Receipt, receipt_id)
     if receipt is None:
         raise HTTPException(status_code=404, detail="Receipt not found")
+    await _assert_receipt_access(session, receipt, caller)
     await asyncio.to_thread(minio_client.remove, receipt.object_key)
     await session.delete(receipt)
     await session.commit()

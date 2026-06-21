@@ -6,6 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import require_auth
+from app.auth.scope import assert_group_member
 from app.config import settings
 from app.db import get_session
 from app.integrations.storage import minio_client
@@ -19,10 +21,15 @@ router = APIRouter(prefix="/groups", tags=["groups"])
 
 @router.post("", response_model=GroupResponse, status_code=201)
 async def create_group(
-    body: GroupCreate, session: AsyncSession = Depends(get_session)
+    body: GroupCreate,
+    caller: str | None = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
 ) -> Group:
     group = Group(name=body.name, backend_type=BackendType.self_hosted)
     session.add(group)
+    await session.flush()
+    if caller is not None:  # the creator joins, so per-caller scoping shows them their own group
+        session.add(GroupMember(group_id=group.id, user_identifier=caller))
     await session.commit()
     await session.refresh(group)
     return group
@@ -34,9 +41,14 @@ async def list_groups(
     include_archived: bool = False,
     include_hidden: bool = False,
     updated_since: datetime | None = None,
+    caller: str | None = Depends(require_auth),
     session: AsyncSession = Depends(get_session),
 ) -> list[Group]:
     stmt = select(Group)
+    if caller is not None:  # only groups the caller is a member of
+        stmt = stmt.where(
+            Group.id.in_(select(GroupMember.group_id).where(GroupMember.user_identifier == caller))
+        )
     if backend_type is not None:
         stmt = stmt.where(Group.backend_type == backend_type)
     if not include_archived:
@@ -50,20 +62,29 @@ async def list_groups(
 
 
 @router.get("/{group_id}", response_model=GroupResponse)
-async def get_group(group_id: UUID, session: AsyncSession = Depends(get_session)) -> Group:
+async def get_group(
+    group_id: UUID,
+    caller: str | None = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
+) -> Group:
     group = await session.get(Group, group_id)
     if group is None:
         raise HTTPException(status_code=404, detail="Group not found")
+    await assert_group_member(session, group_id, caller)
     return group
 
 
 @router.patch("/{group_id}", response_model=GroupResponse)
 async def update_group(
-    group_id: UUID, body: GroupUpdate, session: AsyncSession = Depends(get_session)
+    group_id: UUID,
+    body: GroupUpdate,
+    caller: str | None = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
 ) -> Group:
     group = await session.get(Group, group_id)
     if group is None:
         raise HTTPException(status_code=404, detail="Group not found")
+    await assert_group_member(session, group_id, caller)
     if body.name is not None:
         group.name = body.name
     if body.hidden is not None:
@@ -90,11 +111,14 @@ async def _hard_delete_group(session: AsyncSession, group: Group) -> None:
 
 @router.delete("/{group_id}", status_code=204)
 async def delete_group(
-    group_id: UUID, session: AsyncSession = Depends(get_session)
+    group_id: UUID,
+    caller: str | None = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
 ) -> None:
     group = await session.get(Group, group_id)
     if group is None:
         raise HTTPException(status_code=404, detail="Group not found")
+    await assert_group_member(session, group_id, caller)
     if group.backend_type != BackendType.self_hosted:
         raise HTTPException(
             status_code=409, detail="Only self-hosted groups can be archived or deleted"
@@ -108,8 +132,11 @@ async def delete_group(
 
 @router.get("/{group_id}/members", response_model=list[GroupMemberResponse])
 async def list_members(
-    group_id: UUID, session: AsyncSession = Depends(get_session)
+    group_id: UUID,
+    caller: str | None = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
 ) -> list[GroupMember]:
+    await assert_group_member(session, group_id, caller)
     rows = await session.scalars(
         select(GroupMember)
         .where(GroupMember.group_id == group_id)
@@ -120,10 +147,14 @@ async def list_members(
 
 @router.post("/{group_id}/members", response_model=GroupMemberResponse, status_code=201)
 async def add_member(
-    group_id: UUID, body: GroupMemberCreate, session: AsyncSession = Depends(get_session)
+    group_id: UUID,
+    body: GroupMemberCreate,
+    caller: str | None = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
 ) -> GroupMember:
     if await session.get(Group, group_id) is None:
         raise HTTPException(status_code=404, detail="Group not found")
+    await assert_group_member(session, group_id, caller)
     existing = await session.scalar(
         select(GroupMember).where(
             GroupMember.group_id == group_id,
@@ -141,8 +172,12 @@ async def add_member(
 
 @router.delete("/{group_id}/members/{user_identifier}", status_code=204)
 async def remove_member(
-    group_id: UUID, user_identifier: str, session: AsyncSession = Depends(get_session)
+    group_id: UUID,
+    user_identifier: str,
+    caller: str | None = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
 ) -> None:
+    await assert_group_member(session, group_id, caller)
     member = await session.scalar(
         select(GroupMember).where(
             GroupMember.group_id == group_id,

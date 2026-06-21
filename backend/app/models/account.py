@@ -22,6 +22,9 @@ class Account(UUIDMixin, TimestampMixin, Base):
     )
     balance: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD")
+    # The local identifier this account belongs to (per-caller scoping). For Plaid accounts this is the
+    # linker (plaid_items.user_identifier); for manual accounts, the creator. Null = legacy/unowned.
+    owner_identifier: Mapped[str | None] = mapped_column(String(128), nullable=True)
     # User overrides for Goals analytics; null = derive from the account's classification (subtype).
     include_in_spending: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     include_in_cash_flow: Mapped[bool | None] = mapped_column(Boolean, nullable=True)

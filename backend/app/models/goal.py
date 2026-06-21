@@ -23,6 +23,8 @@ class Goal(UUIDMixin, TimestampMixin, Base):
 
     kind: Mapped[str] = mapped_column(String(16), nullable=False)  # "spend" | "save"
     name: Mapped[str] = mapped_column(String(128), nullable=False)
+    # The local identifier this goal belongs to (per-caller scoping); the creator. Null = legacy/unowned.
+    owner_identifier: Mapped[str | None] = mapped_column(String(128), nullable=True)
     category: Mapped[str | None] = mapped_column(String(64), nullable=True)  # spend goals
     account_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("accounts.id", ondelete="CASCADE"), nullable=True

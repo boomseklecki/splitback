@@ -7,6 +7,8 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.auth import require_auth
+from app.auth.scope import assert_owner
 from app.db import get_session
 from app.integrations.plaid import client as plaid_client
 from app.integrations.plaid import mapper
@@ -26,16 +28,24 @@ router = APIRouter(prefix="/plaid", tags=["plaid"])
 
 
 @router.post("/link-token", response_model=LinkTokenResponse)
-async def create_link_token(body: LinkTokenRequest) -> LinkTokenResponse:
+async def create_link_token(
+    body: LinkTokenRequest, caller: str | None = Depends(require_auth)
+) -> LinkTokenResponse:
+    # Link the bank under the authenticated caller; the body value is a back-compat hint used only in
+    # open mode (no auth), never trusted when a session is present.
+    owner = caller or body.user_identifier
     client = plaid_client.make_client()
-    token = await asyncio.to_thread(client.create_link_token, body.user_identifier)
+    token = await asyncio.to_thread(client.create_link_token, owner)
     return LinkTokenResponse(link_token=token)
 
 
 @router.post("/exchange", response_model=ExchangeResponse)
 async def exchange(
-    body: ExchangeRequest, session: AsyncSession = Depends(get_session)
+    body: ExchangeRequest,
+    caller: str | None = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
 ) -> ExchangeResponse:
+    owner = caller or body.user_identifier  # never trust the body's user_identifier when authenticated
     client = plaid_client.make_client()
     access_token, plaid_item_id = await asyncio.to_thread(
         client.exchange_public_token, body.public_token
@@ -48,14 +58,14 @@ async def exchange(
                 plaid_item_id=plaid_item_id,
                 access_token=access_token,
                 institution_name=body.institution_name,
-                user_identifier=body.user_identifier,
+                user_identifier=owner,
             )
             .on_conflict_do_update(
                 index_elements=[PlaidItem.plaid_item_id],
                 set_={
                     "access_token": access_token,
                     "institution_name": body.institution_name,
-                    "user_identifier": body.user_identifier,
+                    "user_identifier": owner,
                 },
             )
             .returning(PlaidItem.id)
@@ -64,7 +74,9 @@ async def exchange(
 
     accounts_raw = await asyncio.to_thread(client.get_accounts, access_token)
     for account in accounts_raw:
-        await plaid_sync._upsert_account(session, item_id, mapper.map_account(account))
+        await plaid_sync._upsert_account(
+            session, item_id, mapper.map_account(account), owner_identifier=owner
+        )
     await session.commit()
 
     rows = await session.scalars(
@@ -77,9 +89,13 @@ async def exchange(
 
 @router.post("/sync", response_model=SyncResponse)
 async def run_sync(
-    body: SyncRequest | None = None, session: AsyncSession = Depends(get_session)
+    body: SyncRequest | None = None,
+    caller: str | None = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
 ) -> SyncResponse:
     stmt = select(PlaidItem)
+    if caller is not None:
+        stmt = stmt.where(PlaidItem.user_identifier == caller)
     if body and body.item_id:
         stmt = stmt.where(PlaidItem.id == body.item_id)
     items = (await session.scalars(stmt)).all()
@@ -101,19 +117,27 @@ async def run_sync(
 
 
 @router.get("/items", response_model=list[PlaidItemResponse])
-async def list_items(session: AsyncSession = Depends(get_session)) -> list[PlaidItem]:
-    rows = await session.scalars(
-        select(PlaidItem).options(selectinload(PlaidItem.accounts)).order_by(PlaidItem.created_at)
-    )
+async def list_items(
+    caller: str | None = Depends(require_auth), session: AsyncSession = Depends(get_session)
+) -> list[PlaidItem]:
+    stmt = select(PlaidItem).options(selectinload(PlaidItem.accounts))
+    if caller is not None:
+        stmt = stmt.where(PlaidItem.user_identifier == caller)
+    rows = await session.scalars(stmt.order_by(PlaidItem.created_at))
     return list(rows)
 
 
 @router.delete("/items/{item_id}", status_code=204)
-async def delete_item(item_id: UUID, session: AsyncSession = Depends(get_session)) -> None:
+async def delete_item(
+    item_id: UUID,
+    caller: str | None = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
+) -> None:
     # Local unlink: cascades the item's accounts; transactions keep with a null
     # account_id. Plaid-side /item/remove (to invalidate the token) is a TODO.
     item = await session.get(PlaidItem, item_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Plaid item not found")
+    assert_owner(item.user_identifier, caller)
     await session.delete(item)
     await session.commit()
