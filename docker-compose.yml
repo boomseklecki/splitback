@@ -42,6 +42,10 @@ services:
     build: ./backend
     env_file:
       - .env            # development config (PLAID_ENV=sandbox)
+    environment:
+      # Pin the dev DB to the renamed service (matches api-test/api-prod); the .env DATABASE_URL
+      # placeholder still says @db.
+      DATABASE_URL: postgresql+asyncpg://splitback:splitback@db-dev:5432/splitback
     depends_on:
       db-dev:
         condition: service_healthy
