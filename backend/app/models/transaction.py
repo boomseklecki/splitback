@@ -37,3 +37,6 @@ class Transaction(UUIDMixin, TimestampMixin, Base):
     account: Mapped["Account | None"] = relationship(  # noqa: F821
         back_populates="transactions"
     )
+    items: Mapped[list["TransactionItem"]] = relationship(  # noqa: F821
+        back_populates="transaction", cascade="all, delete-orphan", passive_deletes=True
+    )

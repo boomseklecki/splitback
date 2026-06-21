@@ -5,13 +5,19 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.db import get_session
-from app.models import Account, Transaction
+from app.models import Account, Transaction, TransactionItem
 from app.models.enums import TransactionSource
 from app.schemas.account import AccountCreate, AccountResponse, AccountUpdate
-from app.schemas.transaction import TransactionCreate, TransactionResponse, TransactionUpdate
+from app.schemas.transaction import (
+    TransactionCreate,
+    TransactionItemInput,
+    TransactionResponse,
+    TransactionUpdate,
+)
 from app.utils import ensure_utc
 
 router = APIRouter(tags=["accounts"])
@@ -81,7 +87,7 @@ async def list_transactions(
     offset: int = Query(0, ge=0),
     session: AsyncSession = Depends(get_session),
 ) -> list[Transaction]:
-    stmt = select(Transaction)
+    stmt = select(Transaction).options(selectinload(Transaction.items))
     if account_id is not None:
         stmt = stmt.where(Transaction.account_id == account_id)
     if since is not None:
@@ -95,11 +101,22 @@ async def list_transactions(
     return list(rows)
 
 
+async def _load_transaction(session: AsyncSession, transaction_id: UUID) -> Transaction | None:
+    """Load a transaction with its items eagerly, so the response can serialize them (async sessions
+    can't lazy-load a relationship after the awaited query)."""
+    stmt = (
+        select(Transaction)
+        .options(selectinload(Transaction.items))
+        .where(Transaction.id == transaction_id)
+    )
+    return await session.scalar(stmt)
+
+
 @router.get("/transactions/{transaction_id}", response_model=TransactionResponse)
 async def get_transaction(
     transaction_id: UUID, session: AsyncSession = Depends(get_session)
 ) -> Transaction:
-    transaction = await session.get(Transaction, transaction_id)
+    transaction = await _load_transaction(session, transaction_id)
     if transaction is None:
         raise HTTPException(status_code=404, detail="Transaction not found")
     return transaction
@@ -117,8 +134,51 @@ async def update_transaction(
     # Single-field body: assign directly so an omitted field (the generated client drops nil) clears it.
     transaction.category_override = body.category_override
     await session.commit()
-    await session.refresh(transaction)
-    return transaction
+    return await _load_transaction(session, transaction_id)
+
+
+def _apply_transaction_items(
+    transaction: Transaction, items: list[TransactionItemInput], editor: str | None
+) -> None:
+    """Upsert items by id so added-by/added-on survive edits: existing items keep their identity
+    (stamping updated_by only when a field changed), new items (id nil) are stamped with created_by,
+    and items absent from the payload are dropped (delete-orphan). Mirrors the expense version."""
+    existing = {it.id: it for it in transaction.items}
+    result: list[TransactionItem] = []
+    for i in items:
+        current = existing.get(i.id) if i.id is not None else None
+        if current is not None:
+            changed = (
+                current.name != i.name or current.quantity != i.quantity
+                or current.price != i.price or current.category != i.category
+            )
+            current.name = i.name
+            current.quantity = i.quantity
+            current.price = i.price
+            current.category = i.category
+            if changed:
+                current.updated_by = editor
+            result.append(current)
+        else:
+            result.append(TransactionItem(
+                name=i.name, quantity=i.quantity, price=i.price, category=i.category, created_by=editor))
+    transaction.items = result
+
+
+@router.put("/transactions/{transaction_id}/items", response_model=TransactionResponse)
+async def set_transaction_items(
+    transaction_id: UUID,
+    body: list[TransactionItemInput],
+    session: AsyncSession = Depends(get_session),
+) -> Transaction:
+    """Replace a transaction's line items (upsert by id, drop-orphan). A separate endpoint from PATCH so
+    it never touches the category-override (whose omitted-clears semantics we must not trip)."""
+    transaction = await _load_transaction(session, transaction_id)
+    if transaction is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    _apply_transaction_items(transaction, body, editor=None)
+    await session.commit()
+    return await _load_transaction(session, transaction_id)
 
 
 @router.post("/transactions", response_model=TransactionResponse, status_code=201)
@@ -137,8 +197,7 @@ async def create_transaction(
     )
     session.add(transaction)
     await session.commit()
-    await session.refresh(transaction)
-    return transaction
+    return await _load_transaction(session, transaction.id)
 
 
 @router.delete("/transactions/{transaction_id}", status_code=204)

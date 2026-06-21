@@ -8,6 +8,28 @@ from pydantic import BaseModel, ConfigDict
 from app.models.enums import TransactionSource
 
 
+class TransactionItemInput(BaseModel):
+    id: UUID | None = None  # existing item to update in place (preserves added-by/on); null = new
+    name: str
+    quantity: Decimal = Decimal(1)
+    price: Decimal
+    category: str | None = None
+
+
+class TransactionItemResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    name: str
+    quantity: Decimal
+    price: Decimal
+    category: str | None
+    created_by: str | None
+    updated_by: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
 class TransactionCreate(BaseModel):
     account_id: UUID | None = None
     description: str
@@ -37,5 +59,6 @@ class TransactionResponse(BaseModel):
     category: str | None
     category_override: str | None
     pending: bool
+    items: list[TransactionItemResponse] = []
     created_at: datetime
     updated_at: datetime

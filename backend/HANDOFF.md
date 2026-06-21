@@ -11,6 +11,46 @@ this file reproduces what matters so the Linux instance needs nothing else.
 
 ---
 
+## NEW WORK — transaction line items (code written on Mac 2026-06-20; VERIFY + MIGRATE on Linux)
+
+**What:** itemize a single bank/manual transaction across categories (mirror of `expense_items`, but
+**no owner** — a transaction is wholly the viewer's). The iOS side is done, built, and green on the Mac
+against a hand-edited contract. The backend code below was written on the Mac but **could not be run
+there** (no Python/SQLAlchemy/Docker). It mirrors the `expense_items` patterns exactly. The Linux box
+must run the migration and the test suite, then confirm the deployed `/openapi.json` matches the
+hand-applied contract delta.
+
+**Files already added/edited (committed from the Mac):**
+- `app/models/transaction_item.py` — `TransactionItem` (`transaction_id` FK→`transactions` CASCADE,
+  `name`, `quantity` Numeric(10,3) default 1, `price` Numeric(12,2), `category`, `created_by`,
+  `updated_by`). No `owner_identifier`.
+- `app/models/transaction.py` — added `items` relationship (`cascade="all, delete-orphan",
+  passive_deletes=True`). Registered in `app/models/__init__.py`.
+- `migrations/versions/0019_transaction_items.py` — `create_table("transaction_items", …)`,
+  down_revision `0018_expense_item_meta`.
+- `app/schemas/transaction.py` — `TransactionItemInput` / `TransactionItemResponse`; `items:
+  list[TransactionItemResponse] = []` on `TransactionResponse`.
+- `app/routers/accounts.py` — `selectinload(Transaction.items)` on the list + a `_load_transaction`
+  helper used by GET-detail / POST / PATCH / the new PUT (async sessions can't lazy-load after the
+  query); **`PUT /transactions/{id}/items`** (`_apply_transaction_items` upsert-by-id, drop-orphan).
+  Kept off PATCH so it never trips the category-override "omitted = clear" behavior.
+- `tests/test_transaction_items.py` — PUT roundtrip, upsert-by-id keeps identity + recategorizes,
+  drop-orphan, GET returns items, transaction delete cascades items.
+
+**Linux steps:**
+1. `alembic upgrade head` (applies `0019_transaction_items`).
+2. Run the suite (incl. `tests/test_transaction_items.py`) against a running API — expect green.
+3. `configure_mappers()` / app import sanity (catches any relationship typo the Mac couldn't).
+4. `GET /openapi.json` → run `ios/scripts/prepare_openapi.py` and diff against the committed
+   `ios/SplitBackAPI/Sources/SplitBackAPI/openapi.json` — expect **zero diff** (the Mac added
+   `TransactionItemInput`/`TransactionItemResponse`, `TransactionResponse.items` (optional, NOT in
+   `required` so older responses still decode), and the `PUT /transactions/{transaction_id}/items`
+   path with operationId `set_transaction_items_transactions__transaction_id__items_put`).
+
+Plaid never provides line items — these are purely user-authored (receipt itemization in the iOS app).
+
+---
+
 ## STATUS — implemented (as built, 2026-06-19)
 
 All four gaps are closed and the suite is green (55 tests). The build deviated from the original
