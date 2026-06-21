@@ -15,6 +15,7 @@ public struct AuthGateView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var baseURL = ""
+    @State private var accessToken = ""
     @State private var busy = false
     @State private var errorText: String?
 
@@ -69,6 +70,19 @@ public struct AuthGateView: View {
                     }
                 }
                 .disabled(busy)
+
+                Section {
+                    DisclosureGroup("Have an access token?") {
+                        SecureField("Access token", text: $accessToken)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                        Button("Use Token", action: useToken)
+                            .disabled(busy || accessToken.isEmpty)
+                    }
+                } footer: {
+                    Text("For testing/demo: paste a bearer token to sign in directly (e.g. a backend "
+                         + "API token that maps to a specific user).")
+                }
             }
             .navigationTitle("Sign In")
             .navigationBarTitleDisplayMode(.inline)
@@ -79,6 +93,25 @@ public struct AuthGateView: View {
             }
             .task { baseURL = env.baseURLString }
             .errorAlert($errorText)
+        }
+    }
+
+    /// Applies a pasted bearer token directly (e.g. a backend API token mapping to a user), then loads
+    /// `/me`. A bad token 401s and is cleared by `refreshCurrentUser`, so we surface an error if no user
+    /// resolved rather than flipping the gate into a 401 loop.
+    private func useToken() {
+        busy = true
+        Task {
+            defer { busy = false }
+            await env.applySession(
+                token: accessToken.trimmingCharacters(in: .whitespacesAndNewlines), context: context)
+            if env.currentUser == nil {
+                env.signOut()
+                errorText = "That token didn't sign you in. Check the token and the server URL."
+                return
+            }
+            accessToken = ""
+            if !isLaunchGate { dismiss() }
         }
     }
 
