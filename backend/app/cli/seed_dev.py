@@ -84,11 +84,12 @@ async def seed(session, *, self_identifier: str, wipe: bool, seed_value: int = 1
             ))
             expense_count += 1
 
-    # Personal finances, all owned by the self identifier (so per-caller scoping shows them to "you").
+    # Personal finances, each owned by its persona (so per-caller scoping shows them to that user — every
+    # impersonation token lands in a populated app).
     account_ids: dict[str, UUID] = {}
     for a in data.accounts:
         account = Account(name=a.name, type=a.type, balance=a.balance, currency="USD",
-                          owner_identifier=self_identifier)
+                          owner_identifier=a.owner)
         session.add(account)
         await session.flush()
         account_ids[a.key] = account.id
@@ -97,13 +98,13 @@ async def seed(session, *, self_identifier: str, wipe: bool, seed_value: int = 1
             account_id=account_ids.get(t.account_key) if t.account_key else None,
             source=TransactionSource.manual, description=t.description, amount=t.amount,
             currency=t.currency, date=t.date, category=t.category,
-            owner_identifier=self_identifier))
+            owner_identifier=t.owner))
     for go in data.goals:
         session.add(Goal(
             kind=go.kind, name=go.name, category=go.category,
             account_id=account_ids.get(go.account_key) if go.account_key else None,
             target_amount=go.target_amount, save_target_type=go.save_target_type,
-            starting_balance=go.starting_balance, owner_identifier=self_identifier))
+            starting_balance=go.starting_balance, owner_identifier=go.owner))
 
     await session.commit()
     return {

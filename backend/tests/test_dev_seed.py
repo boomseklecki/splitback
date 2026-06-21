@@ -51,15 +51,19 @@ def test_generator_deterministic_and_balanced():
             if e.items:
                 assert sum((i.price for i in e.items), Decimal(0)) == e.amount
 
-    # Personal finances: accounts, transactions (valid categories, ≥1 income inflow, valid account refs),
-    # and goals (the save goal references a generated account).
-    keys = {acc.key for acc in a.accounts}
-    assert len(a.accounts) >= 3 and {"checking", "savings"} <= keys
+    # Personal finances for EVERY persona: 3 accounts + 2 goals each, owner-consistent, valid categories,
+    # ≥1 income inflow. Account keys are owner-prefixed; transactions/goals stay within their owner.
+    owners = {u.identifier for u in a.users}
+    by_key = {acc.key: acc.owner for acc in a.accounts}
+    assert {acc.owner for acc in a.accounts} == owners            # everyone has accounts
+    assert len(a.accounts) == 3 * len(a.users)
+    assert all(acc.key.startswith(f"{acc.owner}:") for acc in a.accounts)
     assert a.transactions and any(t.amount < 0 for t in a.transactions)
     assert {t.category for t in a.transactions} <= set(CATEGORIES)
-    assert all(t.account_key in keys for t in a.transactions)
+    assert all(by_key[t.account_key] == t.owner for t in a.transactions if t.account_key)
     save = [g for g in a.goals if g.kind == "save"]
-    assert len(a.goals) == 2 and save and save[0].account_key in keys
+    assert len(a.goals) == 2 * len(a.users)
+    assert all(by_key[s.account_key] == s.owner for s in save)   # save goal -> own account
 
 
 async def test_seed_wipe_resets_synthetic_keeps_plaid():
@@ -85,7 +89,9 @@ async def test_seed_wipe_resets_synthetic_keeps_plaid():
         async with async_session() as session:
             stats = await seed(session, self_identifier="matt", wipe=True)
         assert stats["groups"] == 2 and stats["expenses"] > 0
-        assert stats["accounts"] >= 3 and stats["transactions"] > 0 and stats["goals"] == 2
+        # Every persona gets 3 accounts + 2 goals.
+        assert stats["accounts"] == 3 * stats["users"] and stats["transactions"] > 0
+        assert stats["goals"] == 2 * stats["users"]
 
         async with async_session() as session:
             # Plaid-linked survives; manual gone; Splitwise reset; self kept.
@@ -99,12 +105,13 @@ async def test_seed_wipe_resets_synthetic_keeps_plaid():
             assert await session.scalar(select(func.count()).select_from(SplitwiseToken)) == 0
             assert await session.scalar(select(User).where(User.identifier == "stranger")) is None
             assert await session.scalar(select(User).where(User.identifier == "matt")) is not None
-            # Synthetic personal data present, owned by matt.
-            assert await session.scalar(
-                select(func.count()).select_from(Account)
-                .where(Account.owner_identifier == "matt", Account.plaid_item_id.is_(None))) >= 3
-            assert await session.scalar(
-                select(func.count()).select_from(Goal).where(Goal.owner_identifier == "matt")) == 2
+            # Synthetic personal data present per persona (matt AND a fake member each own accounts/goals).
+            for ident in ("matt", "robin"):
+                assert await session.scalar(
+                    select(func.count()).select_from(Account)
+                    .where(Account.owner_identifier == ident, Account.plaid_item_id.is_(None))) == 3
+                assert await session.scalar(
+                    select(func.count()).select_from(Goal).where(Goal.owner_identifier == ident)) == 2
     finally:
         async with async_session() as session:
             for model in (Goal, Transaction, GroupMember, Group, Account, PlaidItem, SplitwiseToken):

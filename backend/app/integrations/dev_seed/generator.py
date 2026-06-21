@@ -58,7 +58,8 @@ class SeedGroup:
 
 @dataclass
 class SeedAccount:
-    key: str  # local handle linking transactions/goals to this account
+    key: str  # local handle linking transactions/goals to this account (owner-prefixed, globally unique)
+    owner: str
     name: str
     type: str
     balance: Decimal
@@ -66,6 +67,7 @@ class SeedAccount:
 
 @dataclass
 class SeedTransaction:
+    owner: str
     account_key: str | None
     description: str
     amount: Decimal  # outflow positive; income/inflow negative
@@ -77,6 +79,7 @@ class SeedTransaction:
 @dataclass
 class SeedGoal:
     kind: str  # "spend" | "save"
+    owner: str
     name: str
     category: str | None = None
     account_key: str | None = None
@@ -180,6 +183,41 @@ def _expense(rng: random.Random, category: str, members: list[str], day: date,
     )
 
 
+def _finances(owner: str, rng: random.Random, today: date, currency: str):
+    """One persona's personal finances (accounts/transactions/goals), all owned by `owner`. Account keys
+    are owner-prefixed so they're unique across personas. Balances/merchants vary per `rng`."""
+    def days_ago(n: int) -> date:
+        return today - timedelta(days=n)
+
+    savings_balance = _money(rng, 4000, 20000)
+    accounts = [
+        SeedAccount(f"{owner}:checking", owner, "Everyday Checking", "checking", _money(rng, 1500, 6000)),
+        SeedAccount(f"{owner}:credit", owner, "Rewards Card", "credit card", _money(rng, 200, 1500)),
+        SeedAccount(f"{owner}:savings", owner, "High-Yield Savings", "savings", savings_balance),
+    ]
+    transactions: list[SeedTransaction] = []
+    for month in range(3):
+        base = month * 30
+        transactions.append(SeedTransaction(
+            owner, f"{owner}:checking", "Paycheck", -_money(rng, 2600, 3200),
+            currency, days_ago(base + 2), "Income"))
+        for _ in range(8):
+            category = rng.choice(list(_BANK_SPEND))
+            (lo, hi), merchants = _BANK_SPEND[category]
+            transactions.append(SeedTransaction(
+                owner, rng.choice([f"{owner}:checking", f"{owner}:credit"]),
+                rng.choice(merchants), _money(rng, lo, hi), currency,
+                days_ago(base + rng.randint(1, 28)), category))
+    goals = [
+        SeedGoal(kind="spend", owner=owner, name="Groceries budget", category="Groceries",
+                 target_amount=Decimal("600")),
+        SeedGoal(kind="save", owner=owner, name="Savings cushion", account_key=f"{owner}:savings",
+                 target_amount=(savings_balance + Decimal("3000")).quantize(Decimal("1")),
+                 save_target_type="balance", starting_balance=savings_balance),
+    ]
+    return accounts, transactions, goals
+
+
 def generate(self_identifier: str = "matt", *, seed: int = 1234,
              today: date | None = None, currency: str = "USD") -> SeedData:
     """Deterministic for a given (self_identifier, seed, today)."""
@@ -226,33 +264,17 @@ def generate(self_identifier: str = "matt", *, seed: int = 1234,
         SeedGroup(name="Weekend Trip", group_type="trip", members=trip_members, expenses=trip_expenses),
     ]
 
-    # Personal finances for the self user: a few accounts, ~3 months of bank transactions (so the donut/
-    # Trends/cash-flow populate), and two goals. These are owned by `self_identifier` at persist time.
-    accounts = [
-        SeedAccount("checking", "Everyday Checking", "checking", Decimal("3500.00")),
-        SeedAccount("credit", "Rewards Card", "credit card", Decimal("842.50")),
-        SeedAccount("savings", "High-Yield Savings", "savings", Decimal("12000.00")),
-    ]
+    # Personal finances for EVERY persona (so each impersonation token lands in a populated app): a few
+    # accounts, ~3 months of bank transactions, and two goals — each owned by that user. A per-user RNG
+    # keeps it deterministic but varied.
+    accounts: list[SeedAccount] = []
     transactions: list[SeedTransaction] = []
-    for month in range(3):
-        base = month * 30
-        # A monthly paycheck (inflow = negative amount) into checking.
-        transactions.append(SeedTransaction(
-            "checking", "Paycheck", -_money(rng, 2600, 3200), currency, days_ago(base + 2), "Income"))
-        for _ in range(8):
-            category = rng.choice(list(_BANK_SPEND))
-            (lo, hi), merchants = _BANK_SPEND[category]
-            transactions.append(SeedTransaction(
-                account_key=rng.choice(["checking", "credit"]),
-                description=rng.choice(merchants), amount=_money(rng, lo, hi),
-                currency=currency, date=days_ago(base + rng.randint(1, 28)), category=category))
+    goals: list[SeedGoal] = []
+    for u in users:
+        a, t, g = _finances(u.identifier, random.Random(f"{seed}-{u.identifier}"), today, currency)
+        accounts += a
+        transactions += t
+        goals += g
 
-    goals = [
-        SeedGoal(kind="spend", name="Groceries budget", category="Groceries",
-                 target_amount=Decimal("600")),
-        SeedGoal(kind="save", name="Savings cushion", account_key="savings",
-                 target_amount=Decimal("15000"), save_target_type="balance",
-                 starting_balance=Decimal("12000")),
-    ]
     return SeedData(users=users, groups=groups, accounts=accounts,
                     transactions=transactions, goals=goals)
