@@ -11,6 +11,30 @@ this file reproduces what matters so the Linux instance needs nothing else.
 
 ---
 
+## NEW WORK — token encryption at rest + /users co-member scoping + admin flag (2026-06-21)
+
+- **Encrypt access tokens (Fernet)**: `app/security/crypto.py::EncryptedString` applied to
+  `plaid_items.access_token` + `splitwise_tokens.access_token`; `ENCRYPTION_KEYS` config (JSON list,
+  rotatable via MultiFernet; empty = plaintext for dev). Migration **`0021_encrypt_tokens`** widens both
+  columns to Text and encrypts existing rows when a key is set (idempotent). Test
+  `tests/test_token_encryption.py`.
+- **/users scoping + admin**: `GET /users` / `/users/{id}` now null `email`/`splitwise_user_id` for anyone
+  who isn't you, a group co-member, or (new) an **admin**. `ADMIN_USERS` config (local identifiers) +
+  `auth.access.is_admin`; surfaced on `MeResponse.is_admin` and the iOS `CurrentUser.isAdmin`. Contract
+  change (additive `is_admin`, not required) — hand-edited into the committed `openapi.json`. Tests in
+  `tests/test_scoping.py`.
+
+**Linux steps:**
+1. Set `ENCRYPTION_KEYS` (and `ADMIN_USERS`) in `.env`/`.env.prod` **before** `alembic upgrade head` — 0021
+   encrypts existing tokens with the key.
+2. Run `test_token_encryption.py` + `test_scoping.py`, and the **Plaid/Splitwise suites** — confirm sync/
+   import still work (tokens decrypt for the SDKs; the `pg_insert ... on_conflict set_` token write must
+   round-trip through `EncryptedString`). Spot-check `select access_token from plaid_items` = ciphertext.
+3. Reconcile the real `GET /openapi.json` (now includes `MeResponse.is_admin`) → `prepare_openapi.py`,
+   expect the hand-applied delta.
+
+---
+
 ## NEW WORK — v1.0 pre-TestFlight hardening (2026-06-21)
 
 From the release audit. Backend changes (run/verify on uplink; py_compile clean here):

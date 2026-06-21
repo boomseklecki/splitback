@@ -28,6 +28,19 @@ async def caller_group_ids(session: AsyncSession, caller: str) -> list[UUID]:
     return list(rows)
 
 
+async def caller_co_members(session: AsyncSession, caller: str) -> set[str]:
+    """Identifiers that share at least one group with the caller (includes the caller). Used to scope the
+    people directory's contact details to people you actually share expenses with."""
+    rows = await session.scalars(
+        select(GroupMember.user_identifier).where(
+            GroupMember.group_id.in_(
+                select(GroupMember.group_id).where(GroupMember.user_identifier == caller)
+            )
+        )
+    )
+    return set(rows)
+
+
 async def is_group_member(session: AsyncSession, group_id: UUID, caller: str) -> bool:
     found = await session.scalar(
         select(GroupMember.id).where(

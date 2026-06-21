@@ -3,6 +3,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
 from app.models.base import TimestampMixin, UUIDMixin
+from app.security.crypto import EncryptedString
 
 
 class PlaidItem(UUIDMixin, TimestampMixin, Base):
@@ -10,7 +11,7 @@ class PlaidItem(UUIDMixin, TimestampMixin, Base):
 
     # Plaid Item = one linked bank login; owns one or more accounts.
     plaid_item_id: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
-    access_token: Mapped[str] = mapped_column(String(256), nullable=False)
+    access_token: Mapped[str] = mapped_column(EncryptedString, nullable=False)  # encrypted at rest
     institution_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # Cursor for incremental /transactions/sync; null until the first sync.
     transactions_cursor: Mapped[str | None] = mapped_column(Text, nullable=True)

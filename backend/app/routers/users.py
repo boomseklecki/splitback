@@ -7,6 +7,8 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import require_auth
+from app.auth.access import is_admin
+from app.auth.scope import caller_co_members
 from app.db import get_session
 from app.integrations.plaid import client as plaid_client
 from app.models import Account, Goal, GroupMember, PlaidItem, SplitwiseToken, Transaction, User
@@ -45,22 +47,38 @@ async def me(
     user = None
     if identifier is not None:
         user = await session.scalar(select(User).where(User.identifier == identifier))
-    return MeResponse(identifier=identifier, authenticated=identifier is not None, user=user)
+    return MeResponse(identifier=identifier, authenticated=identifier is not None,
+                      is_admin=is_admin(identifier), user=user)
+
+
+def _public(user: User, caller: str | None, admin: bool, co_members: set[str]) -> UserResponse:
+    """Directory entry with contact details (email/Splitwise id) only for people the caller may see: in
+    open mode or as an admin, all; otherwise the caller's own row + people they share a group with."""
+    full = admin or caller is None or user.identifier == caller or user.identifier in co_members
+    response = UserResponse.model_validate(user)
+    if full:
+        return response
+    return response.model_copy(update={"email": None, "splitwise_user_id": None})
 
 
 @router.get("/users", response_model=list[UserResponse])
 async def list_users(
     source: UserSource | None = None,
     updated_since: datetime | None = None,
+    caller: str | None = Depends(require_auth),
     session: AsyncSession = Depends(get_session),
-) -> list[User]:
+) -> list[UserResponse]:
     stmt = select(User)
     if source is not None:
         stmt = stmt.where(User.source == source)
     if updated_since is not None:
         stmt = stmt.where(User.updated_at >= ensure_utc(updated_since))
-    rows = await session.scalars(stmt.order_by(User.display_name))
-    return list(rows)
+    rows = list(await session.scalars(stmt.order_by(User.display_name)))
+    admin = is_admin(caller)
+    co_members: set[str] = set()
+    if caller is not None and not admin:
+        co_members = await caller_co_members(session, caller)
+    return [_public(u, caller, admin, co_members) for u in rows]
 
 
 @router.post("/users", response_model=UserResponse, status_code=201)
@@ -84,11 +102,19 @@ async def create_user(
 
 
 @router.get("/users/{user_id}", response_model=UserResponse)
-async def get_user(user_id: UUID, session: AsyncSession = Depends(get_session)) -> User:
+async def get_user(
+    user_id: UUID,
+    caller: str | None = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
+) -> UserResponse:
     user = await session.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
-    return user
+    admin = is_admin(caller)
+    co_members: set[str] = set()
+    if caller is not None and not admin:
+        co_members = await caller_co_members(session, caller)
+    return _public(user, caller, admin, co_members)
 
 
 @router.patch("/users/{user_id}", response_model=UserResponse)

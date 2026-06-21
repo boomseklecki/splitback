@@ -69,6 +69,14 @@ class Settings(BaseSettings):
     # Maps Splitwise user id (string) -> local identifier, e.g. {"123": "matt", "456": "nikki"}
     splitwise_user_map: dict[str, str] = {}
 
+    # Field-encryption keys for access tokens at rest (Fernet). JSON list; the FIRST encrypts, ANY can
+    # decrypt (rotation). Empty = stored plaintext (dev). Generate one with:
+    #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    encryption_keys: list[str] = []
+    # Local identifiers granted admin (see all people; reserved for gating settings/features). Set to your
+    # /me identifier (Settings -> Account shows it). Empty = no admins.
+    admin_users: list[str] = []
+
     @model_validator(mode="after")
     def _require_strong_jwt_secret(self) -> "Settings":
         # When auth is enforced, an empty/short HS256 secret makes session tokens forgeable (PyJWT will

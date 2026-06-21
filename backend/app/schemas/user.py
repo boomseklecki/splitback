@@ -37,4 +37,5 @@ class UserResponse(BaseModel):
 class MeResponse(BaseModel):
     identifier: str | None
     authenticated: bool
+    is_admin: bool = False
     user: UserResponse | None

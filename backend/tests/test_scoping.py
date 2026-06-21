@@ -7,11 +7,15 @@ from decimal import Decimal
 from fastapi import HTTPException
 from sqlalchemy import delete, select
 
+from app.auth.access import is_admin
+from app.config import settings
 from app.db import async_session
-from app.models import Account, Goal, Group, GroupMember
+from app.models import Account, Goal, Group, GroupMember, User
+from app.models.enums import BackendType, UserSource
 from app.routers import accounts as acct
 from app.routers import goals as goals_router
 from app.routers import groups as groups_router
+from app.routers import users as users_router
 from app.schemas.account import AccountCreate
 from app.schemas.goal import GoalCreate, GoalUpdate
 from app.schemas.group import GroupCreate
@@ -91,6 +95,53 @@ async def test_group_membership_scoping():
             assert group.id in [g.id for g in await groups_router.list_groups(caller=None, session=session)]
         finally:
             await _cleanup(session)
+
+
+DIR = ["dir-a-zzz", "dir-b-zzz", "dir-c-zzz"]
+
+
+async def _cleanup_dir(session) -> None:
+    gids = list(await session.scalars(select(Group.id).where(Group.name == "Dir Grp ZZZ")))
+    if gids:
+        await session.execute(delete(GroupMember).where(GroupMember.group_id.in_(gids)))
+        await session.execute(delete(Group).where(Group.id.in_(gids)))
+    await session.execute(delete(User).where(User.identifier.in_(DIR)))
+    await session.commit()
+
+
+async def test_users_directory_scopes_contact_to_co_members_and_admin():
+    saved_admin = settings.admin_users
+    async with async_session() as session:
+        await _cleanup_dir(session)
+        try:
+            for ident in DIR:
+                session.add(User(identifier=ident, display_name=ident.upper(),
+                                 source=UserSource.app, email=f"{ident}@x.com"))
+            group = Group(name="Dir Grp ZZZ", backend_type=BackendType.self_hosted)
+            session.add(group)
+            await session.flush()
+            session.add(GroupMember(group_id=group.id, user_identifier="dir-a-zzz"))
+            session.add(GroupMember(group_id=group.id, user_identifier="dir-b-zzz"))
+            await session.commit()
+
+            # As A: own + co-member (B) keep email; the unrelated C is nulled.
+            settings.admin_users = []
+            rows = await users_router.list_users(caller="dir-a-zzz", session=session)
+            byid = {u.identifier: u for u in rows if u.identifier in DIR}
+            assert byid["dir-a-zzz"].email == "dir-a-zzz@x.com"
+            assert byid["dir-b-zzz"].email == "dir-b-zzz@x.com"
+            assert byid["dir-c-zzz"].email is None
+            assert byid["dir-c-zzz"].splitwise_user_id is None
+
+            # As an admin: everyone's contact details are visible.
+            settings.admin_users = ["dir-a-zzz"]
+            assert is_admin("dir-a-zzz") and not is_admin("dir-b-zzz")
+            rows = await users_router.list_users(caller="dir-a-zzz", session=session)
+            byid = {u.identifier: u for u in rows if u.identifier in DIR}
+            assert byid["dir-c-zzz"].email == "dir-c-zzz@x.com"
+        finally:
+            settings.admin_users = saved_admin
+            await _cleanup_dir(session)
 
 
 if __name__ == "__main__":

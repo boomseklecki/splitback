@@ -5,6 +5,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
 from app.models.base import TimestampMixin, UUIDMixin
+from app.security.crypto import EncryptedString
 
 
 class SplitwiseToken(UUIDMixin, TimestampMixin, Base):
@@ -12,7 +13,7 @@ class SplitwiseToken(UUIDMixin, TimestampMixin, Base):
 
     # Local identifier the token belongs to (e.g. "matt")
     user_identifier: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
-    access_token: Mapped[str] = mapped_column(String(512), nullable=False)
+    access_token: Mapped[str] = mapped_column(EncryptedString, nullable=False)  # encrypted at rest
     token_type: Mapped[str] = mapped_column(String(32), nullable=False, default="bearer")
     scope: Mapped[str | None] = mapped_column(String(256), nullable=True)
     # Incremental-sync cursor: start time of the last successful expense sync; the next sync

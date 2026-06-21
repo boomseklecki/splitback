@@ -9,6 +9,14 @@ def allowed_set() -> set[str]:
     return {e.strip().lower() for e in settings.auth_allowed_users if e and e.strip()}
 
 
+def is_admin(caller: str | None) -> bool:
+    """Whether the caller's identifier is configured as an admin (sees all people; reserved for gating
+    settings/features). Empty ADMIN_USERS = nobody is admin."""
+    if caller is None:
+        return False
+    return caller.strip().lower() in {a.strip().lower() for a in settings.admin_users if a and a.strip()}
+
+
 def is_allowed(*, email: str | None, user: User | None) -> bool:
     """Whether this identity may authenticate. True when the allowlist is empty; otherwise the verified
     token `email` OR the existing user's stored email must be on the list (case-insensitive). Checking the
