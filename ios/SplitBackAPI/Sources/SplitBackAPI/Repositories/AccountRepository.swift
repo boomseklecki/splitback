@@ -10,7 +10,20 @@ struct AccountRepository {
 
     func refreshAccounts() async throws {
         let output = try await client.list_accounts_accounts_get()
-        try upsertAccounts(try output.ok.body.json)
+        let responses = try output.ok.body.json
+        try upsertAccounts(responses)
+        // The accounts list is the full (per-caller-scoped) set, so prune any cached account the backend
+        // no longer returns — plus the transactions belonging to those removed accounts — so another
+        // user's data (or a now-hidden account) can't linger after sign-in/scoping. refreshTransactions is
+        // paged and must NOT prune, so the transaction cleanup is anchored to account ownership here.
+        let keep = Set(try responses.map { try Mapping.uuid($0.id, field: "Account.id") })
+        for account in try context.fetch(FetchDescriptor<Account>()) where !keep.contains(account.id) {
+            context.delete(account)
+        }
+        for txn in try context.fetch(FetchDescriptor<Transaction>()) {
+            if let aid = txn.accountId, !keep.contains(aid) { context.delete(txn) }
+        }
+        try context.save()
     }
 
     func refreshTransactions(
