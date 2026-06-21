@@ -41,6 +41,27 @@ public enum SplitBackStore {
         }
     }
 
+    /// Deletes every cached row (all entities) from the live store, e.g. before switching backends so a
+    /// production cache can't bleed into a development one. The store is only a cache, so it re-syncs on the
+    /// next refresh. Mirrors `schema` — keep in sync when adding a model.
+    public static func eraseAll(_ context: ModelContext) throws {
+        try context.delete(model: Group.self)
+        try context.delete(model: Account.self)
+        try context.delete(model: Transaction.self)
+        try context.delete(model: TransactionItem.self)
+        try context.delete(model: Expense.self)
+        try context.delete(model: ExpenseItem.self)
+        try context.delete(model: Split.self)
+        try context.delete(model: Receipt.self)
+        try context.delete(model: User.self)
+        try context.delete(model: GroupMember.self)
+        try context.delete(model: SyncCursor.self)
+        try context.delete(model: Goal.self)
+        try context.delete(model: CategoryMap.self)
+        try context.delete(model: SpendCategory.self)
+        try context.save()
+    }
+
     /// Removes the SQLite store and its `-wal`/`-shm` sidecars so the next container build starts clean.
     private static func destroyStore(_ configuration: ModelConfiguration) {
         let store = configuration.url

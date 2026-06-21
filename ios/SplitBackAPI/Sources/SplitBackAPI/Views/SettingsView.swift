@@ -10,8 +10,12 @@ struct SettingsView: View {
     @Query(sort: \User.displayName) private var users: [User]
 
     @AppStorage(AppLock.enabledKey) private var lockEnabled = false
+    /// Remembered backend presets so switching dev↔prod is one tap (set once, then quick-fill the field).
+    @AppStorage("backend.devURL") private var devURL = ""
+    @AppStorage("backend.prodURL") private var prodURL = ""
     @State private var token = ""
     @State private var baseURL = ""
+    @State private var confirmingWipe = false
     @State private var importing = false
     @State private var importSummary: String?
     @State private var showingSplitwiseLogin = false
@@ -80,15 +84,33 @@ struct SettingsView: View {
                     }
                 }
 
-                Section("Backend") {
+                Section {
                     TextField("Base URL", text: $baseURL)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .keyboardType(.URL)
+                    if !devURL.isEmpty || !prodURL.isEmpty {
+                        HStack {
+                            Button("Use Dev") { baseURL = devURL }.disabled(devURL.isEmpty)
+                            Spacer()
+                            Button("Use Prod") { baseURL = prodURL }.disabled(prodURL.isEmpty)
+                        }
+                        .buttonStyle(.bordered).font(.callout)
+                    }
                     Button("Save Base URL") {
                         env.setBaseURL(baseURL)
                         Task { await reloadAfterConfigChange() }
                     }
+                    DisclosureGroup("Presets") {
+                        urlField("Dev URL", text: $devURL)
+                        urlField("Prod URL", text: $prodURL)
+                    }
+                    Button("Clear Local Data…", role: .destructive) { confirmingWipe = true }
+                } header: {
+                    Text("Backend")
+                } footer: {
+                    Text("Set Dev/Prod presets once, then switch with a tap. After switching backends, "
+                         + "Clear Local Data so cached prod and dev records don't mix.")
                 }
 
                 if let joinURL = JoinLink.url(apiBaseURL: env.baseURLString, name: env.serverName) {
@@ -200,7 +222,25 @@ struct SettingsView: View {
                 .ignoresSafeArea()
             }
             .errorAlert($errorText)
+            .confirmationDialog("Clear all locally cached data?", isPresented: $confirmingWipe,
+                                titleVisibility: .visible) {
+                Button("Clear Local Data", role: .destructive) {
+                    env.wipeLocalData(context)
+                    Task { await reloadAfterConfigChange() }
+                }
+            } message: {
+                Text("Removes cached accounts, transactions, groups, and expenses on this device and signs "
+                     + "you out. Your data stays on the backend and re-syncs after you sign in.")
+            }
         }
+    }
+
+    @ViewBuilder
+    private func urlField(_ title: String, text: Binding<String>) -> some View {
+        TextField(title, text: text)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .keyboardType(.URL)
     }
 
     private func loadItems() async {

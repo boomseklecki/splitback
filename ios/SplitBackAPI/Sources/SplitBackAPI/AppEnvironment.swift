@@ -98,6 +98,13 @@ public final class AppEnvironment {
         client = APIClientFactory.makeClient(baseURL: APIConfig.baseURL, tokenStore: tokenStore)
     }
 
+    /// Wipes the local SwiftData cache and signs out — used when switching backends so prod/dev data don't
+    /// intermingle. The cache re-syncs from the (now-current) backend on the next refresh.
+    func wipeLocalData(_ context: ModelContext) {
+        try? SplitBackStore.eraseAll(context)
+        signOut()
+    }
+
     // Repository/service factories (constructed per-use with the view's ModelContext).
     func groups(_ context: ModelContext) -> GroupRepository { .init(client: client, context: context) }
     func expenses(_ context: ModelContext) -> ExpenseRepository { .init(client: client, context: context) }
