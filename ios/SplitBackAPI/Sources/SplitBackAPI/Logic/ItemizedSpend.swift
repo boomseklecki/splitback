@@ -64,6 +64,29 @@ enum ItemizedSpend {
         return entries
     }
 
+    /// A transaction's per-item breakdown, keeping each item's identity. Unlike the expense version there
+    /// are no owners/splits — the transaction is wholly the viewer's, so each item counts at full price
+    /// under its own category, and the leftover (`amount − Σ item prices`) falls under the transaction's
+    /// effective category. The amounts sum to `transaction.amount`. Category may be `nil` (uncategorized),
+    /// mirroring a flat transaction; the caller (`resolvedEvents`) only itemizes outflows (`amount > 0`).
+    static func transactionDetailed(for transaction: Transaction, lookup: [String: String])
+        -> [(category: String?, amount: Decimal, itemId: UUID?)] {
+        let items = transaction.items
+        guard !items.isEmpty else { return [] }
+        let effective = CategoryMapping.effectiveCategory(for: transaction, lookup: lookup)
+        var entries: [(category: String?, amount: Decimal, itemId: UUID?)] = []
+        var itemsTotal: Decimal = 0
+        for item in items {
+            itemsTotal += item.price
+            guard item.price != 0 else { continue }
+            let category = item.category.flatMap { CategoryMapping.canonical($0, lookup: lookup) } ?? effective
+            entries.append((category, item.price, item.id))
+        }
+        let remainder = transaction.amount - itemsTotal
+        if remainder != 0 { entries.append((effective, remainder, nil)) }
+        return entries
+    }
+
     private static func canonical(_ raw: String?, _ lookup: [String: String]) -> String? {
         guard let raw, !raw.isEmpty else { return nil }
         return CategoryMapping.canonical(raw, lookup: lookup)

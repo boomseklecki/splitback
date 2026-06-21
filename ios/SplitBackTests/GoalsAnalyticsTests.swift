@@ -458,6 +458,79 @@ final class GoalsAnalyticsTests: XCTestCase {
         XCTAssertEqual(net, 1680)  // 2000 in − 300 − 20
     }
 
+    // MARK: Transaction items
+
+    /// A $100 manual "Shopping" transaction itemized into Groceries $40 + Household $30 (remainder $30).
+    private func itemizedTransaction(account: Account) -> Transaction {
+        Transaction(
+            id: UUID(), accountId: account.id, source: .manual, details: "Target",
+            amount: 100, currency: "USD", date: Date(), category: "Shopping",
+            items: [
+                TransactionItem(id: UUID(), name: "Milk", quantity: 1, price: 40, category: "Groceries"),
+                TransactionItem(id: UUID(), name: "Soap", quantity: 1, price: 30, category: "Household"),
+            ],
+            createdAt: Date(), updatedAt: Date())
+    }
+
+    func testTransactionItemsDecomposeAcrossCategories() {
+        let checking = account(type: "checking")
+        let t = itemizedTransaction(account: checking)
+        let result = SpendingAnalytics.byCategory(in: Date(), transactions: [t],
+                                                  accounts: [checking], lookup: [:])
+        let byCat = Dictionary(result.map { ($0.category, $0.total) }, uniquingKeysWith: { a, _ in a })
+        XCTAssertEqual(byCat["Groceries"], 40)
+        XCTAssertEqual(byCat["Household"], 30)
+        XCTAssertEqual(byCat["Shopping"], 30)  // remainder under the transaction's own category
+        XCTAssertEqual(result.reduce(Decimal(0)) { $0 + $1.total }, 100)  // sums to the transaction amount
+        // Monthly spending sees the same total.
+        XCTAssertEqual(SpendingAnalytics.monthlySpending(transactions: [t], accounts: [checking],
+                                                         lookup: [:], months: 1).first?.value, 100)
+    }
+
+    func testTransactionDetailedSumsToAmount() {
+        let checking = account(type: "checking")
+        let detailed = ItemizedSpend.transactionDetailed(for: itemizedTransaction(account: checking), lookup: [:])
+        XCTAssertEqual(detailed.reduce(Decimal(0)) { $0 + $1.amount }, 100)
+        XCTAssertTrue(detailed.contains { $0.itemId == nil && $0.amount == 30 })  // the remainder row
+        XCTAssertEqual(detailed.filter { $0.itemId != nil }.count, 2)            // one per priced item
+    }
+
+    func testTransactionItemContributorsDrillThrough() {
+        let checking = account(type: "checking")
+        let t = itemizedTransaction(account: checking)
+        let rows = SpendContributors.of(scope: .category("Groceries"), month: Date(), transactions: [t],
+                                        accounts: [checking], expenses: [], lookup: [:], me: nil)
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows.first?.label, "Target · Milk")  // "<details> · <item>"
+        XCTAssertEqual(rows.first?.amount, 40)
+        if case .transaction = rows.first?.source {} else { XCTFail("expected a .transaction source") }
+        // The remainder shows under the transaction's category as a non-item row.
+        let shopping = SpendContributors.of(scope: .category("Shopping"), month: Date(), transactions: [t],
+                                            accounts: [checking], expenses: [], lookup: [:], me: nil)
+        XCTAssertEqual(shopping.count, 1)
+        XCTAssertEqual(shopping.first?.label, "Target")
+        XCTAssertEqual(shopping.first?.amount, 30)
+    }
+
+    func testTransactionItemMappingRoundTrip() throws {
+        // Draft → input (owner ignored; money as strings).
+        let input = Mapping.transactionItemInput(
+            ItemDraft(id: UUID(), name: "Milk", quantity: 2, price: 40, category: "Groceries", owner: "ignored"))
+        XCTAssertEqual(input.name, "Milk")
+        XCTAssertEqual(input.price, "40")
+        XCTAssertEqual(input.quantity, "2")
+        XCTAssertEqual(input.category, "Groceries")
+        // Response → model (provenance carried).
+        let now = Date()
+        let item = try Mapping.transactionItem(Components.Schemas.TransactionItemResponse(
+            id: UUID().uuidString, name: "Milk", quantity: "2", price: "40", category: "Groceries",
+            created_by: "me", updated_by: nil, created_at: now, updated_at: now))
+        XCTAssertEqual(item.name, "Milk")
+        XCTAssertEqual(item.price, 40)
+        XCTAssertEqual(item.category, "Groceries")
+        XCTAssertEqual(item.addedBy, "me")
+    }
+
     // MARK: GoalProgress
 
     func testBudgetStatusAndFraction() {

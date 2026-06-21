@@ -25,6 +25,10 @@ final class Transaction {
     /// Plaid category is vague ("Other"/uncategorized). Client-only and derived — not synced, and the
     /// transaction upsert never clears it.
     var refinedCategory: String?
+    /// Line items breaking this transaction's spend across categories (receipt itemization). Empty for a
+    /// flat transaction; when present, analytics attribute each item to its own category.
+    @Relationship(deleteRule: .cascade, inverse: \TransactionItem.transaction)
+    var items: [TransactionItem]
     var createdAt: Date
     var updatedAt: Date
 
@@ -41,6 +45,7 @@ final class Transaction {
         categoryOverride: String? = nil,
         pending: Bool = false,
         refinedCategory: String? = nil,
+        items: [TransactionItem] = [],
         createdAt: Date,
         updatedAt: Date
     ) {
@@ -56,6 +61,7 @@ final class Transaction {
         self.categoryOverride = categoryOverride
         self.pending = pending
         self.refinedCategory = refinedCategory
+        self.items = items
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }

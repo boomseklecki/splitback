@@ -11,6 +11,7 @@ public enum SplitBackStore {
             Group.self,
             Account.self,
             Transaction.self,
+            TransactionItem.self,
             Expense.self,
             ExpenseItem.self,
             Split.self,

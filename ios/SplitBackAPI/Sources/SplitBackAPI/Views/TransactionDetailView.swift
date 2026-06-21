@@ -19,6 +19,7 @@ struct TransactionDetailView: View {
 
     @State private var showingCategoryPicker = false
     @State private var showingCreate = false
+    @State private var showingItems = false
     @State private var categorizing = false
     @State private var aiAvailable = false
     @State private var errorText: String?
@@ -43,6 +44,11 @@ struct TransactionDetailView: View {
 
     /// An expense already created from this transaction, if any (links via `transactionId`).
     private var linkedExpense: Expense? { linkedExpenses.first }
+
+    /// This transaction's line items in entry order.
+    private var itemsByAdded: [TransactionItem] {
+        transaction.items.sorted { ($0.addedOn ?? .distantPast) < ($1.addedOn ?? .distantPast) }
+    }
 
     /// The raw Plaid label, humanized, shown only when it differs from the effective category.
     private var rawLabel: String? {
@@ -84,6 +90,35 @@ struct TransactionDetailView: View {
                 }
             }
 
+            if transaction.amount > 0 {
+                Section {
+                    ForEach(itemsByAdded, id: \.id) { item in
+                        HStack(spacing: 12) {
+                            Image(systemName: categorySymbol(item.category))
+                                .foregroundStyle(categoryColor(item.category)).frame(width: 24)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(item.name)
+                                Text(item.category ?? "Uncategorized")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text(item.price.formatted(.currency(code: transaction.currency)))
+                                .foregroundStyle(.secondary).monospacedDigit()
+                        }
+                    }
+                    Button {
+                        showingItems = true
+                    } label: {
+                        Label(transaction.items.isEmpty ? "Itemize…" : "Edit Items",
+                              systemImage: "list.bullet.rectangle")
+                    }
+                } header: {
+                    Text("Items")
+                } footer: {
+                    Text("Split this transaction across categories by line item — counts toward your budgets and Trends per item.")
+                }
+            }
+
             Section {
                 if let expense = linkedExpense {
                     NavigationLink {
@@ -112,6 +147,9 @@ struct TransactionDetailView: View {
         }
         .sheet(isPresented: $showingCreate) {
             NewExpenseFromTransactionView(transaction: transaction)
+        }
+        .sheet(isPresented: $showingItems) {
+            TransactionItemsView(transaction: transaction)
         }
         .errorAlert($errorText)
     }

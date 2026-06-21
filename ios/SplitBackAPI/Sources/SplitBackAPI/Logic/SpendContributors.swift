@@ -52,9 +52,17 @@ enum SpendContributors {
     private static func contributor(from r: ResolvedSpendEvent) -> SpendContributor {
         let e = r.event
         var label = e.label
-        if let itemId = r.itemId, case .expense(let expense) = r.source,
-           let item = expense.items.first(where: { $0.id == itemId }) {
-            label = "\(expense.details) · \(item.name)"
+        if let itemId = r.itemId {
+            switch r.source {
+            case .expense(let expense):
+                if let item = expense.items.first(where: { $0.id == itemId }) {
+                    label = "\(expense.details) · \(item.name)"
+                }
+            case .transaction(let transaction):
+                if let item = transaction.items.first(where: { $0.id == itemId }) {
+                    label = "\(transaction.details) · \(item.name)"
+                }
+            }
         }
         return SpendContributor(
             id: "\(e.id.uuidString)-\(r.itemId?.uuidString ?? "base")",

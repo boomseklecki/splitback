@@ -221,6 +221,20 @@ enum Mapping {
         )
     }
 
+    static func transactionItem(_ r: Components.Schemas.TransactionItemResponse) throws -> TransactionItem {
+        TransactionItem(
+            id: try uuid(r.id, field: "TransactionItemResponse.id"),
+            name: r.name,
+            quantity: try decimal(r.quantity, field: "TransactionItemResponse.quantity"),
+            price: try decimal(r.price, field: "TransactionItemResponse.price"),
+            category: r.category,
+            addedBy: r.created_by,
+            editedBy: r.updated_by,
+            addedOn: r.created_at,
+            editedOn: r.updated_at
+        )
+    }
+
     static func receipt(_ r: Components.Schemas.ReceiptResponse) throws -> Receipt {
         Receipt(
             id: try uuid(r.id, field: "Receipt.id"),
@@ -331,6 +345,17 @@ enum Mapping {
             price: decimalString(d.price),
             category: d.category,
             owner_identifier: d.owner
+        )
+    }
+
+    /// A transaction line item input (reuses `ItemDraft`; `owner` is ignored — transactions have no owner).
+    static func transactionItemInput(_ d: ItemDraft) -> Components.Schemas.TransactionItemInput {
+        .init(
+            id: d.id?.uuidString,
+            name: d.name,
+            quantity: decimalString(d.quantity),
+            price: decimalString(d.price),
+            category: d.category
         )
     }
 

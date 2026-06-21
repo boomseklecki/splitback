@@ -80,13 +80,27 @@ enum SpendingAnalytics {
             // Plaid transactions always belong to an account; skip if it's missing. Manual transactions
             // may be cash with no account — those always count; on an account, honor its flags.
             if t.source == .plaid && account == nil { continue }
+            let inSpending = account?.countsInSpending ?? true
+            let inCashFlow = account?.countsInCashFlow ?? true
+            // Itemized outflow: attribute each line item to its own category (keeping its id for the
+            // drill-through), with the remainder under the transaction's category. Income/refund rows
+            // (amount <= 0) and flat transactions emit a single event.
+            if t.amount > 0 && !t.items.isEmpty {
+                for d in ItemizedSpend.transactionDetailed(for: t, lookup: lookup) {
+                    events.append(ResolvedSpendEvent(
+                        event: SpendEvent(
+                            id: t.id, date: t.date, label: t.details, category: d.category,
+                            amount: d.amount, countsInSpending: inSpending, countsInCashFlow: inCashFlow),
+                        source: .transaction(t), itemId: d.itemId))
+                }
+                continue
+            }
             events.append(ResolvedSpendEvent(
                 event: SpendEvent(
                     id: t.id, date: t.date, label: t.details,
                     category: CategoryMapping.effectiveCategory(for: t, lookup: lookup),
                     amount: t.amount,
-                    countsInSpending: account?.countsInSpending ?? true,
-                    countsInCashFlow: account?.countsInCashFlow ?? true),
+                    countsInSpending: inSpending, countsInCashFlow: inCashFlow),
                 source: .transaction(t), itemId: nil))
         }
 

@@ -59,6 +59,19 @@ struct AccountRepository {
         }
     }
 
+    /// Replaces a transaction's line items (receipt itemization) and caches the response.
+    func setItems(id: UUID, items: [ItemDraft]) async throws {
+        let output = try await client.set_transaction_items_transactions__transaction_id__items_put(
+            path: .init(transaction_id: id.uuidString),
+            body: .json(items.map(Mapping.transactionItemInput))
+        )
+        switch output {
+        case let .ok(ok): try upsertTransactions([try ok.body.json])
+        case let .unprocessableContent(error): throw BackendError.validation(BackendError.validationMessage(try? error.body.json))
+        case let .undocumented(statusCode, _): throw BackendError.fromUndocumented(statusCode)
+        }
+    }
+
     /// Sets the Goals-analytics inclusion overrides on an account and caches the response.
     func updateFlags(id: UUID, includeInSpending: Bool?, includeInCashFlow: Bool?) async throws {
         let output = try await client.update_account_accounts__account_id__patch(
@@ -98,6 +111,7 @@ struct AccountRepository {
     func upsertTransactions(_ responses: [Components.Schemas.TransactionResponse]) throws {
         for r in responses {
             let id = try Mapping.uuid(r.id, field: "Transaction.id")
+            let transaction: Transaction
             if let existing = try context.fetch(
                 FetchDescriptor<Transaction>(predicate: #Predicate { $0.id == id })
             ).first {
@@ -113,10 +127,39 @@ struct AccountRepository {
                 existing.pending = r.pending
                 existing.createdAt = r.created_at
                 existing.updatedAt = r.updated_at
+                transaction = existing
             } else {
-                context.insert(try Mapping.transaction(r))
+                let new = try Mapping.transaction(r)
+                context.insert(new)
+                transaction = new
             }
+            try reconcileItems(transaction, r.items ?? [])
         }
         try context.save()
+    }
+
+    /// Upserts a transaction's line items by id (preserving object identity for unchanged rows), inserting
+    /// new ones and deleting any the server dropped. Mirrors `ExpenseRepository.reconcileItems`.
+    private func reconcileItems(_ transaction: Transaction,
+                                _ incoming: [Components.Schemas.TransactionItemResponse]) throws {
+        var byId = Dictionary(transaction.items.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var result: [TransactionItem] = []
+        for r in incoming {
+            let mapped = try Mapping.transactionItem(r)
+            if let current = byId.removeValue(forKey: mapped.id) {
+                current.name = mapped.name
+                current.quantity = mapped.quantity
+                current.price = mapped.price
+                current.category = mapped.category
+                current.editedBy = mapped.editedBy
+                current.editedOn = mapped.editedOn
+                result.append(current)
+            } else {
+                context.insert(mapped)
+                result.append(mapped)
+            }
+        }
+        for removed in byId.values { context.delete(removed) }
+        transaction.items = result
     }
 }
