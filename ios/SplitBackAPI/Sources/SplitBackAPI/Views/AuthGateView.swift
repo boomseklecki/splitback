@@ -92,7 +92,9 @@ public struct AuthGateView: View {
                   .disabled(busy)
                 }
 
-                Section {
+                // Operator/testing affordance — not for demo guests (they use Start Demo).
+                if !env.serverIsDemo {
+                  Section {
                     DisclosureGroup("Have an access token?") {
                         SecureField("Access token", text: $accessToken)
                             .textInputAutocapitalization(.never)
@@ -100,9 +102,10 @@ public struct AuthGateView: View {
                         Button("Use Token", action: useToken)
                             .disabled(busy || accessToken.isEmpty)
                     }
-                } footer: {
+                  } footer: {
                     Text("For testing/demo: paste a bearer token to sign in directly (e.g. a backend "
                          + "API token that maps to a specific user).")
+                  }
                 }
             }
             .navigationTitle("Sign In")

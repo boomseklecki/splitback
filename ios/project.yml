@@ -20,9 +20,10 @@ targets:
     info:
       path: SplitBack/Info.plist
       properties:
-        # Base URL for the backend. Simulator reaches a host-local backend at localhost;
-        # a physical device needs the LAN IP or the Cloudflare tunnel hostname.
-        API_BASE_URL: http://localhost:8000
+        # Default backend for a fresh install: the public DEMO (guest login + sample data) so new
+        # testers land in a populated app before linking real accounts. Switch to your own backend via
+        # the gate's "Use your own server" / Settings Dev-Prod presets.
+        API_BASE_URL: https://demo.splitback.app
         # Allow cleartext HTTP to local-network hosts (self-hosted backend on the LAN / *.local).
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true

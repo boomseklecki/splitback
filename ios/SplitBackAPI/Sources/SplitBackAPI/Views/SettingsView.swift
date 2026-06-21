@@ -144,14 +144,17 @@ struct SettingsView: View {
                     }
                 }
 
-                Section("API Token") {
-                    SecureField("Bearer token (optional)", text: $token)
-                    Button("Save Token") {
-                        env.setToken(token.isEmpty ? nil : token)
-                        token = ""
-                    }
-                    if env.hasToken {
-                        Text("A token is stored.").font(.caption).foregroundStyle(.secondary)
+                // Operator-only: static bearer-token entry (impersonation/testing). Admins only.
+                if env.currentUser?.isAdmin == true {
+                    Section("API Token") {
+                        SecureField("Bearer token (optional)", text: $token)
+                        Button("Save Token") {
+                            env.setToken(token.isEmpty ? nil : token)
+                            token = ""
+                        }
+                        if env.hasToken {
+                            Text("A token is stored.").font(.caption).foregroundStyle(.secondary)
+                        }
                     }
                 }
 
