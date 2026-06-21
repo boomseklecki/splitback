@@ -16,6 +16,7 @@ struct SettingsView: View {
     @State private var token = ""
     @State private var baseURL = ""
     @State private var confirmingWipe = false
+    @State private var confirmingDelete = false
     @State private var importing = false
     @State private var importSummary: String?
     @State private var showingSplitwiseLogin = false
@@ -57,6 +58,7 @@ struct SettingsView: View {
                             }
                         }
                         Button("Sign Out", role: .destructive) { env.signOut() }
+                        Button("Delete Account", role: .destructive) { confirmingDelete = true }
                     } else {
                         Text("Not signed in").foregroundStyle(.secondary)
                         Button("Sign In…") { showingSignIn = true }
@@ -236,6 +238,24 @@ struct SettingsView: View {
                 Text("Removes cached accounts, transactions, groups, and expenses on this device and signs "
                      + "you out. Your data stays on the backend and re-syncs after you sign in.")
             }
+            .confirmationDialog("Delete your account?", isPresented: $confirmingDelete,
+                                titleVisibility: .visible) {
+                Button("Delete Account", role: .destructive, action: deleteAccount)
+            } message: {
+                Text("Permanently deletes your account and personal data — linked banks (revoked), "
+                     + "transactions, budgets, and goals. Shared group expenses remain for the others. "
+                     + "This can't be undone.")
+            }
+        }
+    }
+
+    private func deleteAccount() {
+        guard let id = env.currentUser?.id else { return }
+        Task {
+            do {
+                try await env.users(context).delete(id: id)
+                env.wipeLocalData(context)   // clears the local cache + signs out
+            } catch { errorText = errorMessage(error) }
         }
     }
 

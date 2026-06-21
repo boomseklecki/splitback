@@ -9,6 +9,7 @@ struct MeInfo: Equatable {
 
 /// The signed-in user's profile (from `GET /me`). Nil means open mode / not signed in.
 public struct CurrentUser: Equatable, Sendable {
+    public var id: UUID
     public var identifier: String
     public var displayName: String
     public var email: String?
@@ -41,6 +42,7 @@ struct UserRepository {
         case let .ok(ok):
             guard let user = try ok.body.json.user else { return nil }
             return CurrentUser(
+                id: try Mapping.uuid(user.id, field: "User.id"),
                 identifier: user.identifier, displayName: user.display_name,
                 email: user.email, avatarURL: user.avatar_url
             )
