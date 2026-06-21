@@ -2183,6 +2183,7 @@
           "users"
         ],
         "summary": "Delete User",
+        "description": "Delete the caller's own account and personal data (App Store account-deletion requirement).",
         "operationId": "delete_user_users__user_id__delete",
         "security": [
           {
