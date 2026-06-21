@@ -20,7 +20,11 @@ struct AllExpensesView: View {
             ForEach(expenseMonthGroups(expenses), id: \.id) { month in
                 Section {
                     ForEach(month.expenses) { expense in
-                        NavigationLink(value: expense) {
+                        // Closure-based (not value-based): value-based links nested in the Splits
+                        // NavigationStack drop the first tap (off-by-one push).
+                        NavigationLink {
+                            ExpenseDetailView(expense: expense)
+                        } label: {
                             ExpenseRow(expense: expense, users: users,
                                        meIdentifier: env.currentUser?.identifier,
                                        groupName: groupName[expense.groupId])
@@ -32,7 +36,6 @@ struct AllExpensesView: View {
             }
         }
         .navigationTitle("All Expenses")
-        .navigationDestination(for: Expense.self) { ExpenseDetailView(expense: $0) }
         .overlay {
             if expenses.isEmpty {
                 ContentUnavailableView("No Expenses", systemImage: "list.bullet.rectangle",

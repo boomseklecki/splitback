@@ -80,7 +80,11 @@ struct GroupDetailView: View {
             ForEach(expenseMonthGroups(data), id: \.id) { month in
                 Section {
                     ForEach(month.expenses) { expense in
-                        NavigationLink(value: expense) {
+                        // Closure-based (not value-based) NavigationLink: value-based links nested in
+                        // the Splits NavigationStack drop the first tap (off-by-one push).
+                        NavigationLink {
+                            ExpenseDetailView(expense: expense)
+                        } label: {
                             ExpenseRow(expense: expense, users: users,
                                        meIdentifier: env.currentUser?.identifier)
                         }
@@ -94,7 +98,6 @@ struct GroupDetailView: View {
             }
         }
         .navigationTitle(group.name)
-        .navigationDestination(for: Expense.self) { ExpenseDetailView(expense: $0) }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
