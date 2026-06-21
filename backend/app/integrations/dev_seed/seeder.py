@@ -32,9 +32,12 @@ async def _ensure_user(session: AsyncSession, u: generator.SeedUser) -> None:
 
 async def seed_identity(session: AsyncSession, identifier: str, *, seed_value: int = 1234) -> bool:
     """Seed a populated isolated sample app for `identifier`. Idempotent: returns False (no-op) if the
-    identity already has accounts. Flushes but does NOT commit — the caller commits."""
+    identity already has synthetic accounts. Flushes but does NOT commit — the caller commits.
+    Only synthetic (non-Plaid) accounts gate the seed, mirroring `seed_dev._wipe` which leaves
+    Plaid-linked accounts in place — so a re-seed after `--wipe` still populates."""
     if await session.scalar(
-        select(func.count()).select_from(Account).where(Account.owner_identifier == identifier)
+        select(func.count()).select_from(Account)
+        .where(Account.owner_identifier == identifier, Account.plaid_item_id.is_(None))
     ):
         return False
 
