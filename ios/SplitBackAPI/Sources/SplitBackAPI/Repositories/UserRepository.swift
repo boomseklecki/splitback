@@ -14,6 +14,8 @@ public struct CurrentUser: Equatable, Sendable {
     public var displayName: String
     public var email: String?
     public var avatarURL: String?
+    /// Whether this user is configured as a backend admin (gates admin-only settings/features).
+    public var isAdmin: Bool = false
 }
 
 /// Reads/writes the people directory (`/users`, `/me`) and reconciles into SwiftData.
@@ -40,11 +42,13 @@ struct UserRepository {
     func currentUser() async throws -> CurrentUser? {
         switch try await client.me_me_get() {
         case let .ok(ok):
-            guard let user = try ok.body.json.user else { return nil }
+            let me = try ok.body.json
+            guard let user = me.user else { return nil }
             return CurrentUser(
                 id: try Mapping.uuid(user.id, field: "User.id"),
                 identifier: user.identifier, displayName: user.display_name,
-                email: user.email, avatarURL: user.avatar_url
+                email: user.email, avatarURL: user.avatar_url,
+                isAdmin: me.is_admin ?? false
             )
         case let .undocumented(statusCode, _):
             throw BackendError.fromUndocumented(statusCode)

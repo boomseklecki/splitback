@@ -4270,6 +4270,11 @@
             "type": "boolean",
             "title": "Authenticated"
           },
+          "is_admin": {
+            "type": "boolean",
+            "title": "Is Admin",
+            "default": false
+          },
           "user": {
             "$ref": "#/components/schemas/UserResponse"
           }
