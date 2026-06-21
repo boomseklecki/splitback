@@ -46,6 +46,25 @@ docker compose up --build
 - API: http://localhost:8000 (docs at `/docs`)
 - MinIO console: http://localhost:9001 (user `splitback`)
 
+### Development + production side by side
+
+The default stack (above) is **development** — point it at Plaid **sandbox** (`PLAID_ENV=sandbox` in `.env`).
+For a **production** stack with real Plaid data, run the `prod` profile alongside it:
+
+```bash
+cp .env.prod.example .env.prod     # fill: production Plaid secret + redirect, a FRESH AUTH_JWT_SECRET, prod Splitwise
+docker compose --profile prod up -d            # dev on :8000, prod on :8001 (own DB volume + receipts-prod bucket)
+docker compose exec api-prod alembic upgrade head
+```
+
+The two stacks share nothing (separate Postgres volume + MinIO bucket). Expose **prod** publicly by pointing
+the Cloudflare tunnel hostname at `http://api-prod:8000`. To load safe synthetic sample data into **dev**
+(replacing any real Splitwise import; bank data untouched):
+
+```bash
+docker compose exec api python -m app.cli.seed_dev --as <your-identifier> --wipe
+```
+
 ## Apply migrations
 
 Once the stack is up, run Alembic inside the api container:

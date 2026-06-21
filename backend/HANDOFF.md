@@ -11,6 +11,46 @@ this file reproduces what matters so the Linux instance needs nothing else.
 
 ---
 
+## NEW WORK — two stacks: dev (sandbox) + production (real Plaid) + synthetic dev seed (2026-06-20)
+
+**Goal:** keep the **existing stack as DEVELOPMENT** (sandbox Plaid data stays; its real Splitwise import is
+wiped and replaced with synthetic data), and stand up a **new PRODUCTION stack** with real Plaid. Code +
+compose written on the Mac (not runnable there). Run on uplink.
+
+**Files added/changed (committed from the Mac):**
+- `docker-compose.yml` — new **`prod` profile**: `db-prod` (volume `db_data_prod`) + `api-prod` (port
+  `8001:8000`, `env_file: .env.prod`, `DATABASE_URL`→`db-prod`, `MINIO_BUCKET=receipts-prod`), reusing the
+  shared `minio`. Default services (`db`/`minio`/`api` on 8000) **are the dev stack, unchanged**.
+- `.env.prod.example` — production template (PLAID_ENV=production, redirect URI, a **fresh** AUTH_JWT_SECRET,
+  prod Splitwise app/redirect). `.env.prod` is gitignored.
+- `app/integrations/dev_seed/generator.py` — pure synthetic generator (deterministic; splits balanced).
+- `app/cli/seed_dev.py` — seeds the dev DB; `--wipe` clears groups/members/foreign-users/Splitwise-tokens
+  (keeps the self identifier) but NEVER touches accounts/transactions/plaid_items.
+- `tests/test_dev_seed.py` — generator invariants + wipe-preserves-bank-data (run on the test DB).
+
+**Dev steps (existing stack, on uplink):**
+1. In `.env` confirm `PLAID_ENV=sandbox`. `docker compose up -d` (unchanged).
+2. Wipe real Splitwise + load synthetic data: `docker compose exec api python -m app.cli.seed_dev --as matt --wipe`.
+   (Use the real self identifier for `--as` so you still sign into dev as yourself.) Re-run anytime to reset.
+3. Run the new tests against the test stack: `docker compose --profile test run --rm api-test python -m tests.test_dev_seed` (or however the suite is run on uplink).
+
+**Production bring-up (new stack, on uplink):**
+1. Prereqs (Plaid dashboard, user-side): production access approved; `https://splitback.app/plaid/oauth`
+   registered as a production redirect URI.
+2. `cp .env.prod.example .env.prod`; fill production Plaid secret + redirect, a fresh `AUTH_JWT_SECRET`,
+   production Splitwise app creds + `https://splitback.app/auth/splitwise/callback`, `PUBLIC_HOSTNAME`.
+3. `docker compose --profile prod up -d` (starts dev + prod) then `docker compose exec api-prod alembic upgrade head`; `curl localhost:8001/health`.
+4. Point the iOS app at prod (Settings → Backend preset) → re-link real banks via Plaid Link (production
+   access tokens are new — sandbox links don't carry over) → sync. Re-import real Splitwise INTO prod:
+   `docker compose exec api-prod python -m app.cli.import_splitwise --since <date>` (after authorizing
+   Splitwise against the prod stack via `/auth/splitwise/login`).
+5. Expose prod publicly: repoint the Cloudflare tunnel hostname → `http://api-prod:8000` in the dashboard,
+   then `docker compose --profile prod --profile tunnel up -d`.
+
+No DB migration or contract change in this work (the seed uses existing tables; `GET /openapi.json` unchanged).
+
+---
+
 ## NEW WORK — transaction line items (code written on Mac 2026-06-20; VERIFY + MIGRATE on Linux)
 
 **What:** itemize a single bank/manual transaction across categories (mirror of `expense_items`, but

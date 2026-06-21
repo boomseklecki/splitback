@@ -1,5 +1,7 @@
 # Secrets
 .env
+.env.prod
+.env.*.local
 
 # Local Claude Code settings (machine-local permissions)
 .claude/settings.local.json

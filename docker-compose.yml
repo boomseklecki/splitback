@@ -84,10 +84,53 @@ services:
       minio:
         condition: service_started
 
+  # --- Production stack (profile: prod) ---
+  # A second, isolated stack for REAL Plaid data, run side-by-side with the default (development) stack:
+  #   docker compose --profile prod up -d        # brings up dev (8000) AND prod (8001)
+  #   docker compose exec api-prod alembic upgrade head
+  # It has its own Postgres volume and (via the shared minio) a separate bucket, so prod and dev never
+  # share data. Reads .env.prod (gitignored; copy from .env.prod.example).
+  db-prod:
+    image: postgres:16
+    pull_policy: never
+    profiles: ["prod"]
+    environment:
+      POSTGRES_USER: splitback
+      POSTGRES_PASSWORD: splitback
+      POSTGRES_DB: splitback
+    volumes:
+      - db_data_prod:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U splitback"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api-prod:
+    build: ./backend
+    pull_policy: never
+    profiles: ["prod"]
+    env_file:
+      - .env.prod
+    environment:
+      # Pin the prod DB + a distinct bucket regardless of what .env.prod sets, so a copy-pasted dev
+      # value can't cross the streams.
+      DATABASE_URL: postgresql+asyncpg://splitback:splitback@db-prod:5432/splitback
+      MINIO_BUCKET: receipts-prod
+    depends_on:
+      db-prod:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    ports:
+      - "8001:8000"
+
   # --- Cloudflare tunnel connector (profile: tunnel) ---
-  # Exposes the API publicly over HTTPS via a *remotely-managed* tunnel (create it + the public
-  # hostname -> http://api:8000 in the Cloudflare dashboard; see README "Public access via Cloudflare
-  # Tunnel"). Reads CLOUDFLARE_TUNNEL_TOKEN from .env. Started only with `--profile tunnel`.
+  # Exposes the API publicly over HTTPS via a *remotely-managed* tunnel (create it + the public hostname
+  # in the Cloudflare dashboard; see README "Public access via Cloudflare Tunnel"). Point the public
+  # hostname at http://api-prod:8000 (production) — the connector is environment-agnostic; the dashboard
+  # route decides which stack is public. Reads CLOUDFLARE_TUNNEL_TOKEN from .env. Started with
+  # `--profile tunnel` (combine with prod: `docker compose --profile prod --profile tunnel up -d`).
   cloudflared:
     image: cloudflare/cloudflared:latest
     # default pull_policy (missing) — pull the connector image if it isn't present yet
@@ -101,3 +144,4 @@ services:
 volumes:
   db_data:
   minio_data:
+  db_data_prod:
