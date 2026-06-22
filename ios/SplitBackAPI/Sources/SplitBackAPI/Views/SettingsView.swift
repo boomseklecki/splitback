@@ -25,6 +25,7 @@ struct SettingsView: View {
     @State private var linkSession: LinkSession?
     @State private var linking = false
     @State private var syncing = false
+    @State private var showingInviteQR = false
     @State private var errorText: String?
 
     struct LinkSession: Identifiable { let id = UUID(); let token: String }
@@ -121,10 +122,17 @@ struct SettingsView: View {
 
                 if let joinURL = JoinLink.url(apiBaseURL: env.baseURLString, name: env.serverName) {
                     Section {
-                        QRCodeView(string: joinURL.absoluteString)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 200)
-                            .padding(.vertical, 8)
+                        // Collapsed by default: the QR is only needed when inviting someone, and
+                        // generating it eagerly hitches the Settings page on appear.
+                        Button(showingInviteQR ? "Hide QR Code" : "Show QR Code", systemImage: "qrcode") {
+                            showingInviteQR.toggle()
+                        }
+                        if showingInviteQR {
+                            QRCodeView(string: joinURL.absoluteString)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 200)
+                                .padding(.vertical, 8)
+                        }
                         ShareLink(item: joinURL) {
                             Label("Share Join Link", systemImage: "square.and.arrow.up")
                         }

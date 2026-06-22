@@ -21,7 +21,12 @@ struct QRCodeView: View {
                 ProgressView()
             }
         }
-        .task(id: string) { image = QRCode.make(string) }
+        // Generate off the main thread — CIContext.createCGImage on the 10×-scaled output is enough to
+        // hitch the UI if run on the main actor.
+        .task(id: string) {
+            let value = string
+            image = await Task.detached(priority: .userInitiated) { QRCode.make(value) }.value
+        }
     }
 }
 
