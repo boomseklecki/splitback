@@ -43,16 +43,20 @@ struct TransactionsView: View {
         let separate = groupPending && !pending.isEmpty
         let posted = separate ? transactions.filter { !$0.pending } : []
         return List {
+            // Keep the List uniformly sectioned: a loose element before the row Sections makes SwiftUI
+            // swallow the rows' tap/navigation (broke the account → transaction drill-through).
             if let account {
-                AccountSummaryHeader(account: account, transactions: transactions)
+                Section { AccountSummaryHeader(account: account, transactions: transactions) }
             }
             if transactions.isEmpty {
-                ContentUnavailableView(
-                    "No Transactions", systemImage: "list.bullet.rectangle",
-                    description: Text(account == nil
-                        ? "Sync a linked bank or add one manually."
-                        : "No transactions for this account yet.")
-                )
+                Section {
+                    ContentUnavailableView(
+                        "No Transactions", systemImage: "list.bullet.rectangle",
+                        description: Text(account == nil
+                            ? "Sync a linked bank or add one manually."
+                            : "No transactions for this account yet.")
+                    )
+                }
             }
             if separate {
                 Section("Pending") {
