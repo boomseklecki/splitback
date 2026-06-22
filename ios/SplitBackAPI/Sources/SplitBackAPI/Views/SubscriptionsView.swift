@@ -22,8 +22,13 @@ struct SubscriptionsView: View {
         // Detect once per render (not inside the row builders).
         let subs = subscriptions
         let annual = subs.reduce(Decimal(0)) { $0 + $1.annualCost }
+        // Upcoming = predicted charges from today through the next 30 days. A nextDate in the past means
+        // the charge already lapsed (stale data) — don't show it as "upcoming".
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: .now)
+        let windowEnd = cal.date(byAdding: .day, value: 30, to: today)!
         let upcoming = subs
-            .filter { $0.nextDate <= Calendar.current.date(byAdding: .day, value: 30, to: .now)! }
+            .filter { $0.nextDate >= today && $0.nextDate <= windowEnd }
             .sorted { $0.nextDate < $1.nextDate }
 
         return List {
