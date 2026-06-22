@@ -50,6 +50,11 @@ class Settings(BaseSettings):
     # auto-downloads them, and the /download-receipts flow works). Off by default (bandwidth/storage).
     splitwise_receipt_download_enabled: bool = False
 
+    # Subscription brand logos: the upstream a logo is fetched from (cached in MinIO, served by /logos).
+    # `{domain}` is substituted. Default is a free, token-less favicon service; logo.dev gives nicer logos
+    # with an API token, e.g. "https://img.logo.dev/{domain}?token=YOUR_TOKEN".
+    logo_upstream_template: str = "https://www.google.com/s2/favicons?domain={domain}&sz=128"
+
     # Plaid (server-side only)
     plaid_client_id: str = ""
     plaid_secret: str = ""

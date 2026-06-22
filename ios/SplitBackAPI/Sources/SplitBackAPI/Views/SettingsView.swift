@@ -176,6 +176,11 @@ struct SettingsView: View {
                     } label: {
                         Label("Spending Categories", systemImage: "tag")
                     }
+                    NavigationLink {
+                        SubscriptionsView()
+                    } label: {
+                        Label("Subscriptions", systemImage: "repeat")
+                    }
                 }
 
                 Section("Plaid") {

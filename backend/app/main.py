@@ -16,6 +16,7 @@ from app.routers import (
     goals,
     groups,
     health,
+    logos,
     plaid,
     public,
     receipts,
@@ -44,6 +45,7 @@ app.include_router(health.router)
 app.include_router(public.router)
 app.include_router(auth.router)
 app.include_router(splitwise_auth.router)
+app.include_router(logos.router)  # public: token-less AsyncImage loads brand logos; not user data
 
 # Guarded by bearer auth when API_TOKENS is configured (pass-through otherwise).
 _protected = [Depends(require_auth)]

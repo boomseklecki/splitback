@@ -11,6 +11,24 @@ this file reproduces what matters so the Linux instance needs nothing else.
 
 ---
 
+## NEW WORK — brand logo proxy for Subscriptions (2026-06-22)
+
+The iOS Subscriptions feature shows brand avatars (Netflix, Spotify…). To keep merchant domains off
+third parties from the app, logos are resolved + cached **server-side**.
+
+- **`app/routers/logos.py`** (new): public `GET /logos/{domain}` — validates the domain, serves the
+  cached image from MinIO (`logos/{domain}.img`), else fetches `settings.logo_upstream_template` (default
+  Google s2 favicons, free/no-token) via `requests`, caches, and serves it; 404 on miss (app falls back to
+  initials). Registered **without** `_protected` (the token-less iOS AsyncImage loads it).
+- **`app/config.py`**: `logo_upstream_template`. For nicer logos set it to a logo.dev URL with a token,
+  e.g. `https://img.logo.dev/{domain}?token=...`.
+- **No migration / no contract change** (binary endpoint hit by direct URL). Reuses `minio_client` in the
+  existing bucket under a `logos/` prefix.
+- **Operator:** redeploy api container(s); `pytest tests/test_logos.py` (needs outbound network +
+  MinIO); the container must be able to reach the upstream logo host.
+
+---
+
 ## NEW WORK — expense↔transaction link endpoint (2026-06-22)
 
 Lets the app link a Splitwise/expense to a bank transaction so a shared bill isn't double-counted in
