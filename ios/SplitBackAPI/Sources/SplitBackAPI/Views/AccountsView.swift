@@ -8,6 +8,7 @@ struct AccountsView: View {
         case balance = "Balance"
         case lastTransaction = "Last transaction"
         case type = "Type"
+        case bank = "Bank"
         var id: String { rawValue }
     }
 
@@ -24,6 +25,8 @@ struct AccountsView: View {
     /// Latest transaction date per account (account id → date), for the last-transaction sort. Loaded
     /// on demand with a `fetchLimit: 1` query per account.
     @State private var lastTransaction: [UUID: Date] = [:]
+    /// Plaid items (bank → its accounts), loaded lazily for the Bank sort only.
+    @State private var items: [Components.Schemas.PlaidItemResponse] = []
 
     struct LinkSession: Identifiable { let id = UUID(); let token: String }
 
@@ -36,6 +39,29 @@ struct AccountsView: View {
 
     private func byBalance(_ list: [Account]) -> [Account] {
         list.sorted { $0.balance > $1.balance }
+    }
+
+    /// Accounts grouped by their Plaid institution for the Bank sort: one `(bank, accounts)` group per
+    /// item (alphabetical, balance-desc within), plus a trailing "Other" group for accounts not covered
+    /// by any item (manual, or before `items` has loaded). Empty groups are dropped.
+    private var bankGroups: [(title: String, accounts: [Account])] {
+        let byId = Dictionary(accounts.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        var covered = Set<UUID>()
+        var groups: [(title: String, accounts: [Account])] = []
+        let sortedItems = items.sorted {
+            ($0.institution_name ?? "Bank").localizedCaseInsensitiveCompare($1.institution_name ?? "Bank")
+                == .orderedAscending
+        }
+        for item in sortedItems {
+            let linked = (item.accounts ?? []).compactMap { UUID(uuidString: $0.id).flatMap { byId[$0] } }
+            linked.forEach { covered.insert($0.id) }
+            if !linked.isEmpty {
+                groups.append((item.institution_name ?? "Bank", byBalance(linked)))
+            }
+        }
+        let other = accounts.filter { !covered.contains($0.id) }
+        if !other.isEmpty { groups.append(("Other", byBalance(other))) }
+        return groups
     }
     private func byLastTransaction(_ list: [Account]) -> [Account] {
         list.sorted { (lastTransaction[$0.id] ?? .distantPast) > (lastTransaction[$1.id] ?? .distantPast) }
@@ -55,6 +81,12 @@ struct AccountsView: View {
                             Section(section.title) {
                                 ForEach(items) { accountRow($0) }
                             }
+                        }
+                    }
+                } else if sortMode == .bank {
+                    ForEach(bankGroups, id: \.title) { group in
+                        Section(group.title) {
+                            ForEach(group.accounts) { accountRow($0) }
                         }
                     }
                 } else {
@@ -105,6 +137,9 @@ struct AccountsView: View {
             }
             .refreshable { await reload() }
             .task { await reload() }
+            .onChange(of: sortModeRaw) { _, new in
+                if new == SortMode.bank.rawValue && items.isEmpty { Task { await loadItems() } }
+            }
             .errorAlert($errorText)
         }
     }
@@ -132,6 +167,13 @@ struct AccountsView: View {
         do { try await env.accounts(context).refreshAccounts() }
         catch { errorText = errorMessage(error) }
         loadLastTransactions()
+        if sortMode == .bank { await loadItems() }
+    }
+
+    /// Fetches the Plaid items (bank → accounts) used by the Bank sort. Best-effort; keeps the prior list
+    /// on failure so the grouping doesn't collapse offline.
+    private func loadItems() async {
+        items = (try? await env.plaid(context).items()) ?? items
     }
 
     /// Loads each account's most-recent transaction date with a single-row fetch per account, for the
