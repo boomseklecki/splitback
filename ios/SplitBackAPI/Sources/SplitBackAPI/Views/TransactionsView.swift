@@ -12,6 +12,9 @@ struct TransactionsView: View {
 
     @State private var showingManual = false
     @State private var errorText: String?
+    /// When true, pending transactions get their own section at the top; when false they're interleaved
+    /// with posted ones in date order (still styled as pending).
+    @AppStorage("transactions.groupPending") private var groupPending = true
 
     private var lookup: [String: String] { CategoryMapping.lookup(categoryMaps) }
 
@@ -35,7 +38,10 @@ struct TransactionsView: View {
         // Split once per render (not inside the ForEach — building these per row is the derived-values
         // pitfall that froze long lists). The @Query is date-desc, so each group stays newest-first.
         let pending = transactions.filter(\.pending)
-        let posted = transactions.filter { !$0.pending }
+        // Separate into Pending/Posted sections only when the user wants grouping and there's something
+        // pending; otherwise show one date-ordered list (pending rows still styled with the pill).
+        let separate = groupPending && !pending.isEmpty
+        let posted = separate ? transactions.filter { !$0.pending } : []
         return List {
             if let account {
                 AccountSummaryHeader(account: account, transactions: transactions)
@@ -48,28 +54,36 @@ struct TransactionsView: View {
                         : "No transactions for this account yet.")
                 )
             }
-            if !pending.isEmpty {
+            if separate {
                 Section("Pending") {
                     ForEach(pending) { transactionLink($0, lookup: lookup, isPending: true) }
                 }
-            }
-            // Header the posted group only when there's a pending group above it, so an all-posted list
-            // looks exactly as before (no stray "Posted" header).
-            Section {
-                ForEach(posted) { transactionLink($0, lookup: lookup, isPending: false) }
-            } header: {
-                if !pending.isEmpty { Text("Posted") }
+                Section("Posted") {
+                    ForEach(posted) { transactionLink($0, lookup: lookup, isPending: false) }
+                }
+            } else {
+                Section {
+                    ForEach(transactions) { transactionLink($0, lookup: lookup, isPending: $0.pending) }
+                }
             }
         }
         .navigationTitle(account?.displayLabel ?? "Transactions")
         .toolbar {
             if account == nil {
+                if !pending.isEmpty {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Menu { pendingToggle } label: {
+                            Image(systemName: "line.3.horizontal.decrease.circle")
+                        }
+                    }
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Button { showingManual = true } label: { Image(systemName: "plus") }
                 }
             } else if let account {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
+                        if !pending.isEmpty { Section("View") { pendingToggle } }
                         Section("Goals") {
                             Toggle("Include in spending", isOn: Binding(
                                 get: { account.countsInSpending },
@@ -96,6 +110,11 @@ struct TransactionsView: View {
             catch { errorText = errorMessage(error) }
         }
         .errorAlert($errorText)
+    }
+
+    /// Toggle to group pending transactions into their own section vs interleave them by date.
+    private var pendingToggle: some View {
+        Toggle("Separate pending", systemImage: "clock.badge", isOn: $groupPending)
     }
 
     /// A row that drills into the transaction's detail. Closure-based (not value-based) nav: this list is
