@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.auth import require_auth
 from app.config import settings
 from app.db import get_session
 from app.integrations.splitwise import client as sw_client
@@ -36,17 +37,22 @@ async def status(session: AsyncSession = Depends(get_session)) -> SplitwiseStatu
 
 
 async def _select_token(session: AsyncSession, as_user: str | None) -> SplitwiseToken:
-    query = select(SplitwiseToken)
+    """Resolve the Splitwise token for `as_user` (the authenticated caller). Falls back to the single
+    stored token when the caller has none, so a lone token still works regardless of its identifier."""
     if as_user:
-        query = query.where(SplitwiseToken.user_identifier == as_user)
-    tokens = (await session.scalars(query)).all()
+        token = await session.scalar(
+            select(SplitwiseToken).where(SplitwiseToken.user_identifier == as_user)
+        )
+        if token is not None:
+            return token
+    tokens = (await session.scalars(select(SplitwiseToken))).all()
+    if len(tokens) == 1:
+        return tokens[0]
     if not tokens:
         raise HTTPException(
             status_code=400, detail="No Splitwise token; authorize via /auth/splitwise/login first"
         )
-    if len(tokens) > 1 and not as_user:
-        raise HTTPException(status_code=400, detail="Multiple tokens stored; specify as_user")
-    return tokens[0]
+    raise HTTPException(status_code=400, detail="Multiple Splitwise tokens; reconnect Splitwise to refresh")
 
 
 @router.get("/expenses/{expense_id}/receipt")
@@ -78,10 +84,12 @@ async def splitwise_receipt(
 
 @router.post("/import", response_model=SplitwiseImportResult)
 async def run_import(
-    body: SplitwiseImportRequest, session: AsyncSession = Depends(get_session)
+    body: SplitwiseImportRequest,
+    caller: str | None = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
 ) -> dict:
     """Cold backfill (full window). Stamps the incremental cursor so /sync/expenses takes over."""
-    token = await _select_token(session, body.as_user)
+    token = await _select_token(session, caller or body.as_user)
     started = datetime.now(timezone.utc)
     result = await importer.run_import(
         session,
@@ -99,10 +107,12 @@ async def run_import(
 
 @router.post("/sync/groups", response_model=SyncResult)
 async def sync_groups(
-    body: SyncRequest, session: AsyncSession = Depends(get_session)
+    body: SyncRequest,
+    caller: str | None = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
 ) -> SyncResult:
     """Pull-to-refresh the Groups list: refresh group metadata + members."""
-    token = await _select_token(session, body.as_user)
+    token = await _select_token(session, caller or body.as_user)
     client = sw_client.make_client(token.access_token)
     stats = await importer.sync_groups(session, client, settings.splitwise_user_map)
     return SyncResult(**stats)
@@ -110,10 +120,12 @@ async def sync_groups(
 
 @router.post("/sync/users", response_model=SyncResult)
 async def sync_users(
-    body: SyncRequest, session: AsyncSession = Depends(get_session)
+    body: SyncRequest,
+    caller: str | None = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
 ) -> SyncResult:
     """Pull-to-refresh the People list: refresh the users directory (members + current user)."""
-    token = await _select_token(session, body.as_user)
+    token = await _select_token(session, caller or body.as_user)
     client = sw_client.make_client(token.access_token)
     stats = await importer.sync_users(session, client, settings.splitwise_user_map)
     return SyncResult(**stats)
@@ -121,11 +133,13 @@ async def sync_users(
 
 @router.post("/sync/expenses", response_model=SyncResult)
 async def sync_expenses(
-    body: SyncRequest, session: AsyncSession = Depends(get_session)
+    body: SyncRequest,
+    caller: str | None = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
 ) -> SyncResult:
     """Pull-to-refresh expenses: incremental pull since the stored cursor (or `since` override).
     Catches edits/settle-ups and archives expenses Splitwise has deleted."""
-    token = await _select_token(session, body.as_user)
+    token = await _select_token(session, caller or body.as_user)
     client = sw_client.make_client(token.access_token)
     updated_after = body.since or (
         token.expenses_synced_at.isoformat() if token.expenses_synced_at else None

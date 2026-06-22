@@ -11,6 +11,25 @@ this file reproduces what matters so the Linux instance needs nothing else.
 
 ---
 
+## NEW WORK — Splitwise token resolved by the authenticated caller (2026-06-22)
+
+Fixes "Splitwise shows Connected but pushing an expense 409s and Run Import 400s" — caused by **duplicate
+`splitwise_tokens` rows under different `user_identifier`s** (identity dup). The token lookups ignored who
+was authenticated.
+
+- **`app/routers/splitwise.py`**: `run_import` / `sync_groups` / `sync_users` / `sync_expenses` now take
+  `caller = Depends(require_auth)` and pass `caller or body.as_user` to `_select_token` (authenticated
+  caller wins; `as_user` is an open-mode/CLI fallback). `_select_token` prefers the requested user, then
+  falls back to a single stored token. `/status` unchanged.
+- **`app/integrations/splitwise/writer.py`** `select_token(session, expense, caller=None)`: prefer the
+  caller's token, then payer, then single. **`app/routers/expenses.py`** threads `caller` into
+  `_sync_to_splitwise` (create/update/delete).
+- **Operator:** redeploy; `pytest tests/test_splitwise_extra.py`. Then in the app **reconnect Splitwise
+  once** (Settings) to ensure a token under the current `/me`. Optional tidy:
+  `SELECT user_identifier FROM splitwise_tokens;` vs your `/me` id; delete stale rows. No migration.
+
+---
+
 ## NEW WORK — brand logo proxy for Subscriptions (2026-06-22)
 
 The iOS Subscriptions feature shows brand avatars (Netflix, Spotify…). To keep merchant domains off

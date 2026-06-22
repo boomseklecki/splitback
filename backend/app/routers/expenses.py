@@ -30,13 +30,14 @@ router = APIRouter(tags=["expenses"])
 _TOLERANCE = Decimal("0.01")
 
 
-async def _sync_to_splitwise(session, expense, group, op: str, sw_id: str | None = None) -> str | None:
+async def _sync_to_splitwise(session, expense, group, op: str, sw_id: str | None = None,
+                             caller: str | None = None) -> str | None:
     """Push a create/update/delete to the expense's Splitwise group (push-first).
     Maps failures: no token -> 409, missing Splitwise user id -> 422, upstream -> 502."""
     if not group.splitwise_group_id:
         raise HTTPException(status_code=400, detail="Splitwise group is missing splitwise_group_id")
     try:
-        token = await sw_writer.select_token(session, expense)
+        token = await sw_writer.select_token(session, expense, caller)
     except sw_writer.NoSplitwiseToken:
         raise HTTPException(
             status_code=409,
@@ -164,7 +165,7 @@ async def create_expense(
     expense.items = _item_rows(body.items, created_by=body.created_by)
     if group.backend_type == BackendType.splitwise:
         # Push-first: create on Splitwise and stamp the returned id before committing.
-        await _sync_to_splitwise(session, expense, group, "create")
+        await _sync_to_splitwise(session, expense, group, "create", caller=caller)
     session.add(expense)
     await session.commit()
     return await _load_detail(session, expense.id)
@@ -269,9 +270,9 @@ async def update_expense(
     if target_group.backend_type == BackendType.splitwise:
         # Push the edit; heal a pre-existing phantom (no id yet) by creating instead.
         if expense.splitwise_expense_id:
-            await _sync_to_splitwise(session, expense, target_group, "update")
+            await _sync_to_splitwise(session, expense, target_group, "update", caller=caller)
         else:
-            await _sync_to_splitwise(session, expense, target_group, "create")
+            await _sync_to_splitwise(session, expense, target_group, "create", caller=caller)
 
     await session.commit()
     return await _load_detail(session, expense_id)
@@ -342,6 +343,6 @@ async def delete_expense(
 
     if group.backend_type == BackendType.splitwise:
         await _sync_to_splitwise(
-            session, expense, group, "delete", sw_id=expense.splitwise_expense_id
+            session, expense, group, "delete", sw_id=expense.splitwise_expense_id, caller=caller
         )
     await _hard_delete(session, expense)

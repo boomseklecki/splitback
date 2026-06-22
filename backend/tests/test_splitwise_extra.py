@@ -97,7 +97,8 @@ async def _purge():
     async with async_session() as session:
         await session.execute(delete(Group).where(Group.splitwise_group_id == "500"))
         await session.execute(delete(User).where(User.identifier.in_(["pw-matt", "pw-nikki"])))
-        await session.execute(delete(SplitwiseToken).where(SplitwiseToken.user_identifier.in_(["pw-matt", "anyone"])))
+        await session.execute(delete(SplitwiseToken).where(
+            SplitwiseToken.user_identifier.in_(["pw-matt", "pw-caller", "anyone"])))
         await session.commit()
 
 
@@ -172,6 +173,36 @@ async def test_select_token_prefers_payer():
             await session.commit()
             token = await writer.select_token(session, expense)
             assert token.user_identifier == "pw-matt"  # payer (paid_share > 0)
+    finally:
+        await _purge()
+
+
+async def test_select_token_prefers_caller_over_payer():
+    # With duplicate tokens, the authenticated caller's token wins even though the payer differs — this is
+    # the "connected but no token" case where the expense payer id isn't the id the token is stored under.
+    await _purge()
+    try:
+        async with async_session() as session:
+            group, expense = await _seed_expense(session)
+            session.add(SplitwiseToken(user_identifier="pw-matt", access_token="tok-matt"))   # payer
+            session.add(SplitwiseToken(user_identifier="pw-caller", access_token="tok-caller"))  # the caller
+            await session.commit()
+            token = await writer.select_token(session, expense, caller="pw-caller")
+            assert token.user_identifier == "pw-caller"
+    finally:
+        await _purge()
+
+
+async def test_select_token_falls_back_to_single():
+    # Caller has no token, but exactly one is stored → use it (a lone token works regardless of its id).
+    await _purge()
+    try:
+        async with async_session() as session:
+            group, expense = await _seed_expense(session, swid_users=False)
+            session.add(SplitwiseToken(user_identifier="anyone", access_token="tok-only"))
+            await session.commit()
+            token = await writer.select_token(session, expense, caller="pw-caller")
+            assert token.user_identifier == "anyone"
     finally:
         await _purge()
 

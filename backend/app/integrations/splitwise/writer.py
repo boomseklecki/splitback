@@ -70,9 +70,17 @@ async def _resolve_swids(session: AsyncSession, identifiers: list[str]) -> dict[
     return {u.identifier: u.splitwise_user_id for u in rows if u.splitwise_user_id}
 
 
-async def select_token(session: AsyncSession, expense) -> SplitwiseToken:
-    """Prefer the payer's token (split with paid_share > 0); else the single stored
-    token. Raises NoSplitwiseToken if none usable."""
+async def select_token(session: AsyncSession, expense, caller: str | None = None) -> SplitwiseToken:
+    """Prefer the authenticated caller's token (the user pushing), then the payer's token (split with
+    paid_share > 0), then the single stored token. Raises NoSplitwiseToken if none usable. The caller
+    fallback matters when the expense's payer identifier differs from the caller's `/me` (the identifier
+    the token is stored under) and duplicate tokens make the single-token fallback ambiguous."""
+    if caller:
+        token = await session.scalar(
+            select(SplitwiseToken).where(SplitwiseToken.user_identifier == caller)
+        )
+        if token is not None:
+            return token
     payer_ids = [s.user_identifier for s in expense.splits if s.paid_share and s.paid_share > 0]
     if payer_ids:
         token = await session.scalar(
