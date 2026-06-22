@@ -3181,6 +3181,65 @@
           }
         }
       }
+    },
+    "/expenses/{expense_id}/transaction-link": {
+      "put": {
+        "tags": [
+          "expenses"
+        ],
+        "summary": "Link Expense Transaction",
+        "description": "Link (or unlink, with null) this expense to a bank/manual transaction. A local-only field assigned directly \u2014 a separate endpoint from PATCH so it never triggers a Splitwise push or touches splits.",
+        "operationId": "link_expense_transaction_expenses__expense_id__transaction_link_put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "expense_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Expense Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExpenseTransactionLink"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExpenseResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -5137,6 +5196,17 @@
         },
         "type": "object",
         "title": "DemoAuthRequest"
+      },
+      "ExpenseTransactionLink": {
+        "properties": {
+          "transaction_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Transaction Id"
+          }
+        },
+        "type": "object",
+        "title": "ExpenseTransactionLink"
       }
     },
     "securitySchemes": {

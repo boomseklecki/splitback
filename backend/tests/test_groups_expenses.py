@@ -198,6 +198,41 @@ async def test_expense_detail_patch_and_archived_hidden():
         await _purge(gid)
 
 
+async def test_expense_transaction_link_set_and_clear():
+    gid = _create_group("txn-link")
+    tid = None
+    try:
+        eid = json.loads(_req("POST", "/expenses", {
+            "group_id": gid, "description": "Mortgage", "amount": "2000.00",
+            "date": "2023-05-02", "splits": _balanced_splits(),
+        })[1])["id"]
+        tid = json.loads(_req("POST", "/transactions", {
+            "description": "MORTGAGE PMT", "amount": "2000.00", "date": "2023-05-02",
+        })[1])["id"]
+
+        # Link → response carries the transaction_id, splits untouched.
+        status, body = _req("PUT", f"/expenses/{eid}/transaction-link", {"transaction_id": tid})
+        assert status == 200, (status, body)
+        linked = json.loads(body)
+        assert linked["transaction_id"] == tid
+        assert len(linked["splits"]) == 2
+
+        # Unlink with null → cleared.
+        status, body = _req("PUT", f"/expenses/{eid}/transaction-link", {"transaction_id": None})
+        assert status == 200, (status, body)
+        assert json.loads(body)["transaction_id"] is None
+
+        # Missing expense → 404.
+        assert _req("PUT", f"/expenses/{gid}/transaction-link", {"transaction_id": tid})[0] == 404
+    finally:
+        if tid:
+            async with async_session() as session:
+                from app.models import Transaction
+                await session.execute(delete(Transaction).where(Transaction.id == tid))
+                await session.commit()
+        await _purge(gid)
+
+
 async def test_hard_delete_group_removes_objects_and_rows():
     from app.integrations.storage import minio_client
     from app.routers import groups as groups_router

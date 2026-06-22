@@ -174,14 +174,33 @@ final class GoalsAnalyticsTests: XCTestCase {
         XCTAssertEqual(series.first?.value, 50)
     }
 
-    func testLinkedExpenseNotDoubleCounted() {
+    func testLinkedPairCountsYourShareNotGross() {
         let checking = account(type: "checking")
+        // A $60 dinner paid in full from the bank, linked to the expense where my share is $20. The pair
+        // de-dupes to my share (20), dropping the gross transaction — not 60, and not 80.
         let t = txn(60, category: "Dining", account: checking)
-        // Expense linked to the transaction — already represented by it, so it must not add again.
         let exps = [expense(60, category: "Dining", owed: 20, transactionId: t.id)]
         let result = SpendingAnalytics.byCategory(in: Date(), transactions: [t],
                                                   accounts: [checking], lookup: [:], expenses: exps, me: "me")
-        XCTAssertEqual(result.first?.total, 60)  // transaction only
+        XCTAssertEqual(result.first?.category, "Dining")
+        XCTAssertEqual(result.first?.total, 20)  // your share only; the $60 transaction is suppressed
+
+        // The mortgage case: $2000 bank payment linked to a $1000 Splitwise half → category shows $1000.
+        let pay = txn(2000, category: "Mortgage", account: checking)
+        let mortgage = [expense(2000, category: "Mortgage", owed: 1000, transactionId: pay.id)]
+        let m = SpendingAnalytics.byCategory(in: Date(), transactions: [pay], accounts: [checking],
+                                             lookup: [:], expenses: mortgage, me: "me")
+        XCTAssertEqual(m.first?.total, 1000)
+    }
+
+    func testUnsharedLinkedExpenseNetsToGross() {
+        let checking = account(type: "checking")
+        // A solo $60 expense (you owe the whole thing) linked to its $60 transaction → still $60, once.
+        let t = txn(60, category: "Dining", account: checking)
+        let exps = [expense(60, category: "Dining", owed: 60, transactionId: t.id)]
+        let result = SpendingAnalytics.byCategory(in: Date(), transactions: [t],
+                                                  accounts: [checking], lookup: [:], expenses: exps, me: "me")
+        XCTAssertEqual(result.first?.total, 60)
     }
 
     func testExcludedAndZeroShareExpensesIgnored() {

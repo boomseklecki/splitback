@@ -58,10 +58,14 @@ enum SpendingAnalytics {
     }
 
     /// Builds the unified event stream: every Plaid transaction (gross, scoped by its account's flags)
-    /// **plus** each non-archived expense that isn't already linked to a transaction (`transactionId ==
-    /// nil`), counted at the current user's owed share. Expenses have no account, so they always count;
-    /// internal/transfer/income categories are dropped so settle-ups and reimbursements don't distort
-    /// spend or cash flow. `me` nil ⇒ no expenses (we can't know your share).
+    /// **plus** each non-archived expense, counted at the current user's owed share. Expenses have no
+    /// account, so they always count; internal/transfer/income categories are dropped so settle-ups and
+    /// reimbursements don't distort spend or cash flow. `me` nil ⇒ no expenses (we can't know your share).
+    ///
+    /// De-dupe of shared bills: when an expense is **linked** to a transaction (`transactionId`), that
+    /// transaction is the same real-world payment, so we drop the gross transaction and keep the expense's
+    /// owed share — your true cost on a split bill (e.g. a $2000 mortgage paid from your bank, linked to a
+    /// $1000 Splitwise half, counts as $1000, not $2000 + $1000). Unshared expenses net to the same amount.
     static func spendEvents(transactions: [Transaction], accounts: [Account], lookup: [String: String],
                             expenses: [Expense] = [], me: String? = nil) -> [SpendEvent] {
         resolvedEvents(transactions: transactions, accounts: accounts, lookup: lookup,
@@ -73,9 +77,13 @@ enum SpendingAnalytics {
     static func resolvedEvents(transactions: [Transaction], accounts: [Account], lookup: [String: String],
                                expenses: [Expense] = [], me: String? = nil) -> [ResolvedSpendEvent] {
         let byId = Dictionary(accounts.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        // Transactions that a (non-archived) expense links to: their gross side is dropped in favor of the
+        // expense's owed share, so a shared bill paid from your bank isn't double-counted.
+        let linkedTxnIds = Set(expenses.lazy.filter { $0.archivedAt == nil }.compactMap(\.transactionId))
         var events: [ResolvedSpendEvent] = []
 
         for t in transactions where t.source == .plaid || t.source == .manual {
+            if linkedTxnIds.contains(t.id) { continue }  // represented by its linked expense's share
             let account = t.accountId.flatMap { byId[$0] }
             // Plaid transactions always belong to an account; skip if it's missing. Manual transactions
             // may be cash with no account — those always count; on an account, honor its flags.
@@ -105,7 +113,9 @@ enum SpendingAnalytics {
         }
 
         if let me {
-            for e in expenses where e.transactionId == nil && e.archivedAt == nil {
+            // All non-archived expenses count at your owed share, including ones linked to a transaction
+            // (whose gross side was dropped above).
+            for e in expenses where e.archivedAt == nil {
                 guard let category = e.category.flatMap({ CategoryMapping.canonical($0, lookup: lookup) }),
                       !CanonicalCategory.neutral.contains(category) else { continue }  // settle-up/transfer
                 let mySplit = e.splits.first { $0.userIdentifier == me }

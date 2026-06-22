@@ -11,6 +11,21 @@ this file reproduces what matters so the Linux instance needs nothing else.
 
 ---
 
+## NEW WORK — expense↔transaction link endpoint (2026-06-22)
+
+Lets the app link a Splitwise/expense to a bank transaction so a shared bill isn't double-counted in
+spending (the gross transaction is dropped in favor of your owed share — analytics change is iOS-only).
+
+- **`app/schemas/expense.py`**: `ExpenseTransactionLink { transaction_id: UUID | None }`.
+- **`app/routers/expenses.py`**: `PUT /expenses/{id}/transaction-link` — assigns `transaction_id`
+  **directly** (UUID links, null unlinks). Separate from PATCH so it never pushes to Splitwise or touches
+  splits, and so null can *clear* the link (PATCH can only set).
+- **No migration** — the `expenses.transaction_id` column/FK already exists.
+- **Operator:** redeploy the api container(s); `pytest tests/test_groups_expenses.py -k transaction_link`.
+- **Contract:** `ios/openapi.json` + processed copy already regenerated on the Mac.
+
+---
+
 ## NEW WORK — account display_name + kind overrides (2026-06-22)
 
 Per-account management in the app (Settings → Plaid → Linked Banks → account): rename, set type

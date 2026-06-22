@@ -87,6 +87,24 @@ struct ExpenseRepository {
         }
     }
 
+    /// Links this expense to a bank/manual transaction (or unlinks, with nil) so spending counts your
+    /// owed share once instead of both the gross transaction and your share. Local-only — never pushed to
+    /// Splitwise; splits/amount untouched.
+    func linkTransaction(expenseId: UUID, transactionId: UUID?) async throws {
+        let output = try await client.link_expense_transaction_expenses__expense_id__transaction_link_put(
+            path: .init(expense_id: expenseId.uuidString),
+            body: .json(.init(transaction_id: transactionId?.uuidString))
+        )
+        switch output {
+        case let .ok(ok):
+            try upsert([try ok.body.json])
+        case let .unprocessableContent(error):
+            throw BackendError.validation(BackendError.validationMessage(try? error.body.json))
+        case let .undocumented(statusCode, _):
+            throw BackendError.fromUndocumented(statusCode)
+        }
+    }
+
     /// Deletes an expense. `propagate` overrides the backend's default for Splitwise-linked rows
     /// (nil = let the backend decide by expense kind). The local row is removed on success.
     func delete(id: UUID, propagate: Bool? = nil) async throws {

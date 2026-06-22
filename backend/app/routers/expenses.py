@@ -17,7 +17,12 @@ from app.integrations.splitwise import client as sw_client
 from app.integrations.splitwise import writer as sw_writer
 from app.integrations.storage import minio_client
 from app.models import BackendType, Expense, ExpenseItem, Group, GroupMember, Split
-from app.schemas.expense import ExpenseCreate, ExpenseResponse, ExpenseUpdate
+from app.schemas.expense import (
+    ExpenseCreate,
+    ExpenseResponse,
+    ExpenseTransactionLink,
+    ExpenseUpdate,
+)
 from app.utils import ensure_utc
 
 router = APIRouter(tags=["expenses"])
@@ -268,6 +273,25 @@ async def update_expense(
         else:
             await _sync_to_splitwise(session, expense, target_group, "create")
 
+    await session.commit()
+    return await _load_detail(session, expense_id)
+
+
+@router.put("/expenses/{expense_id}/transaction-link", response_model=ExpenseResponse)
+async def link_expense_transaction(
+    expense_id: UUID,
+    body: ExpenseTransactionLink,
+    caller: str | None = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
+) -> Expense:
+    """Link (or unlink, with null) this expense to a bank/manual transaction. A local-only field assigned
+    directly — a separate endpoint from PATCH so it never triggers a Splitwise push or touches splits, and
+    so null can clear the link (PATCH's transaction_id can only set)."""
+    expense = await session.get(Expense, expense_id)
+    if expense is None:
+        raise HTTPException(status_code=404, detail="Expense not found")
+    await assert_group_member(session, expense.group_id, caller)
+    expense.transaction_id = body.transaction_id
     await session.commit()
     return await _load_detail(session, expense_id)
 

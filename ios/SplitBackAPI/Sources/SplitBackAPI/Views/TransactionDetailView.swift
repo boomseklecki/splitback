@@ -19,6 +19,7 @@ struct TransactionDetailView: View {
 
     @State private var showingCategoryPicker = false
     @State private var showingCreate = false
+    @State private var showingLinkExpense = false
     @State private var showingItems = false
     @State private var categorizing = false
     @State private var aiAvailable = false
@@ -132,10 +133,16 @@ struct TransactionDetailView: View {
                     } label: {
                         Label("Add to a Group", systemImage: "plus.circle")
                     }
+                    Button {
+                        showingLinkExpense = true
+                    } label: {
+                        Label("Link Existing Expense", systemImage: "link")
+                    }
                 }
             } footer: {
                 if linkedExpense == nil {
-                    Text("Turn this transaction into a shared expense, prefilled and linked back here.")
+                    Text("Turn this transaction into a shared expense, or link one you already have so it "
+                         + "isn't double-counted in spending.")
                 }
             }
         }
@@ -147,6 +154,9 @@ struct TransactionDetailView: View {
         }
         .sheet(isPresented: $showingCreate) {
             NewExpenseFromTransactionView(transaction: transaction)
+        }
+        .sheet(isPresented: $showingLinkExpense) {
+            ExpenseLinkPickerView(transaction: transaction)
         }
         .sheet(isPresented: $showingItems) {
             TransactionItemsView(transaction: transaction)

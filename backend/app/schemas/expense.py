@@ -51,6 +51,12 @@ class ExpenseUpdate(BaseModel):
     items: list[ItemInput] | None = None
 
 
+class ExpenseTransactionLink(BaseModel):
+    # Set to link this expense to a bank/manual transaction (dedupes the gross transaction in spending in
+    # favor of your owed share), or null to unlink. A local-only field — never pushed to Splitwise.
+    transaction_id: UUID | None = None
+
+
 class SplitResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

@@ -26,11 +26,21 @@ struct ExpenseDetailView: View {
     @State private var viewingReceipt: Receipt?
     @State private var extractAvailable = false
     @State private var extracting = false
+    @State private var showingMatcher = false
 
     private var hasReceipt: Bool { expense.receipts.first != nil || expense.splitwiseReceiptURL != nil }
 
     private var meIdentifier: String? { env.currentUser?.identifier }
     private var isSettleUp: Bool { expense.category == SettleUp.category }
+
+    /// The bank/manual transaction this expense is linked to, if any (mirrors the `group` lookup).
+    private var linkedTransaction: Transaction? {
+        guard let tid = expense.transactionId else { return nil }
+        return try? context.fetch(FetchDescriptor<Transaction>(predicate: #Predicate { $0.id == tid })).first
+    }
+
+    /// Whether linking applies — settle-ups/reimbursements are neutral and never count as spend.
+    private var linkable: Bool { !isSettleUp && !isReimbursement }
 
     private var group: ExpenseGroup? {
         let gid = expense.groupId
@@ -118,6 +128,42 @@ struct ExpenseDetailView: View {
                             .font(.callout).foregroundStyle(.secondary)
                             .padding(.leading, 28)
                     }
+                }
+            }
+
+            if linkable {
+                Section {
+                    if let t = linkedTransaction {
+                        NavigationLink {
+                            TransactionDetailView(transaction: t)
+                        } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(t.details)
+                                    Text(t.date.formatted(date: .abbreviated, time: .omitted))
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Text(currency(t.amount)).foregroundStyle(.secondary).monospacedDigit()
+                            }
+                        }
+                        Button("Unlink Transaction", systemImage: "link.badge.plus", role: .destructive) {
+                            link(nil)
+                        }
+                    } else {
+                        Button {
+                            showingMatcher = true
+                        } label: {
+                            Label("Link a Transaction", systemImage: "link")
+                        }
+                    }
+                } header: {
+                    Text("Linked Transaction")
+                } footer: {
+                    Text(linkedTransaction == nil
+                         ? "Link the bank payment for this expense so spending counts your share once, not "
+                            + "both the expense and the full transaction."
+                         : "Spending counts your share of this expense instead of the full bank transaction.")
                 }
             }
 
@@ -225,6 +271,9 @@ struct ExpenseDetailView: View {
         .sheet(isPresented: $showingSplitwiseReceipt) {
             SplitwiseReceiptViewerView(expenseId: expense.id)
         }
+        .sheet(isPresented: $showingMatcher) {
+            TransactionMatchView(expense: expense)
+        }
         .confirmationDialog("Delete this expense?", isPresented: $confirmingDelete, titleVisibility: .visible) {
             Button("Delete", role: .destructive, action: delete)
         }
@@ -292,6 +341,15 @@ struct ExpenseDetailView: View {
                 .frame(width: 48, height: 48)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .onTapGesture { showingSplitwiseReceipt = true }
+        }
+    }
+
+    /// Link this expense to a transaction (nil unlinks). De-dupes the pair in spending.
+    private func link(_ transactionId: UUID?) {
+        let id = expense.id
+        Task {
+            do { try await env.expenses(context).linkTransaction(expenseId: id, transactionId: transactionId) }
+            catch { errorText = errorMessage(error) }
         }
     }
 
