@@ -6,21 +6,22 @@ import SwiftData
 /// period amount, annual cost, and a price-increase flag. Reached from Settings → Subscriptions.
 struct SubscriptionsView: View {
     @Environment(AppEnvironment.self) private var env
+    @Environment(\.modelContext) private var context
     @Query(sort: \Transaction.date, order: .reverse) private var transactions: [Transaction]
     @Query private var expenses: [Expense]
     @Query private var categoryMaps: [CategoryMap]
+    @Query private var rules: [SubscriptionRule]
 
     @State private var brandModel = SubscriptionBrandModel()
 
     private var lookup: [String: String] { CategoryMapping.lookup(categoryMaps) }
-    private var subscriptions: [Subscription] {
-        SubscriptionDetector.detect(transactions: transactions, expenses: expenses,
-                                    lookup: lookup, me: env.currentUser?.identifier)
-    }
 
     var body: some View {
-        // Detect once per render (not inside the row builders).
-        let subs = subscriptions
+        // Detect once per render (not inside the row builders), honoring the user's manual rules.
+        let result = SubscriptionDetector.analyze(transactions: transactions, expenses: expenses,
+                                                  lookup: lookup, me: env.currentUser?.identifier, rules: rules)
+        let subs = result.subscriptions
+        let candidates = result.candidates
         let annual = subs.reduce(Decimal(0)) { $0 + $1.annualCost }
         // Upcoming = predicted charges from today through the next 30 days. A nextDate in the past means
         // the charge already lapsed (stale data) — don't show it as "upcoming".
@@ -32,11 +33,12 @@ struct SubscriptionsView: View {
             .sorted { $0.nextDate < $1.nextDate }
 
         return List {
-            if subs.isEmpty {
+            if subs.isEmpty && candidates.isEmpty {
                 ContentUnavailableView("No Subscriptions Found", systemImage: "repeat",
                     description: Text("Recurring charges are detected from your transactions. Sync a bank "
                                       + "or add a few months of activity, then check back."))
-            } else {
+            }
+            if !subs.isEmpty {
                 Section {
                     VStack(spacing: 4) {
                         Text(annual.formatted(.currency(code: "USD"))).font(.largeTitle).fontWeight(.bold)
@@ -63,13 +65,67 @@ struct SubscriptionsView: View {
                         } label: {
                             row(sub, trailing: .annual)
                         }
+                        .swipeActions {
+                            Button("Not a Subscription", systemImage: "xmark.circle", role: .destructive) {
+                                addRule(merchantKey: sub.id, amount: sub.latestAmount,
+                                        displayName: brandModel.brand(for: sub).name, isSubscription: false)
+                            }
+                        }
                     }
+                }
+            }
+
+            if !candidates.isEmpty {
+                Section {
+                    ForEach(candidates) { candidateRow($0) }
+                } header: {
+                    Text("Possible Subscriptions")
+                } footer: {
+                    Text("Recurring charges we didn't auto-detect. Tap ＋ to track one as a subscription.")
                 }
             }
         }
         .navigationTitle("Subscriptions")
         .navigationBarTitleDisplayMode(.inline)
-        .task { await brandModel.resolve(subs) }
+        .toolbar {
+            if !rules.isEmpty {
+                ToolbarItem(placement: .topBarTrailing) {
+                    NavigationLink { SubscriptionRulesView() } label: { Image(systemName: "slider.horizontal.3") }
+                }
+            }
+        }
+        .task {
+            await brandModel.resolve(subs.map { ($0.id, $0.displayName) }
+                                     + candidates.map { ($0.id, $0.displayName) })
+        }
+    }
+
+    @ViewBuilder
+    private func candidateRow(_ c: SubscriptionCandidate) -> some View {
+        let brand = brandModel.brand(key: c.id, displayName: c.displayName)
+        HStack(spacing: 12) {
+            AvatarView(url: brand.logoURL, name: brand.name, size: 40, systemImage: "repeat")
+            VStack(alignment: .leading, spacing: 2) {
+                Text(brand.name).lineLimit(1)
+                Text("~\(c.amount.formatted(.currency(code: "USD")))"
+                     + (c.cadence.map { " · \($0.label.lowercased())" } ?? "")
+                     + " · \(c.occurrences) charges")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button {
+                addRule(merchantKey: c.id, amount: c.amount, displayName: brand.name, isSubscription: true)
+            } label: {
+                Image(systemName: "plus.circle.fill").font(.title2)
+            }
+            .buttonStyle(.borderless)
+        }
+    }
+
+    private func addRule(merchantKey: String, amount: Decimal, displayName: String, isSubscription: Bool) {
+        context.insert(SubscriptionRule(merchantKey: merchantKey, amount: amount,
+                                        isSubscription: isSubscription, displayName: displayName))
+        try? context.save()
     }
 
     private enum Trailing { case annual, upcoming }

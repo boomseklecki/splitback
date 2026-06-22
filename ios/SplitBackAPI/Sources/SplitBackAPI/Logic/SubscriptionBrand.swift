@@ -78,25 +78,30 @@ final class SubscriptionBrandModel {
     private(set) var resolved: [String: SubscriptionBrand] = [:]  // merchant key → brand
 
     /// The best brand known *right now* (cache → catalog → cleaned-name fallback), for synchronous render.
-    func brand(for sub: Subscription) -> SubscriptionBrand {
-        if let r = resolved[sub.id] { return r }
-        if let c = SubscriptionBrandCatalog.lookup(sub.id) ?? SubscriptionBrandCatalog.lookup(sub.displayName) {
+    func brand(key: String, displayName: String) -> SubscriptionBrand {
+        if let r = resolved[key] { return r }
+        if let c = SubscriptionBrandCatalog.lookup(key) ?? SubscriptionBrandCatalog.lookup(displayName) {
             return c
         }
-        return SubscriptionBrand(name: sub.displayName, domain: nil)
+        return SubscriptionBrand(name: displayName, domain: nil)
     }
 
-    /// Fills the cache: catalog hits immediately, then one on-device lookup per unknown merchant.
-    func resolve(_ subs: [Subscription]) async {
-        for sub in subs where resolved[sub.id] == nil {
-            if let known = SubscriptionBrandCatalog.lookup(sub.id)
-                ?? SubscriptionBrandCatalog.lookup(sub.displayName) {
-                resolved[sub.id] = known
+    func brand(for sub: Subscription) -> SubscriptionBrand { brand(key: sub.id, displayName: sub.displayName) }
+
+    /// Fills the cache for the given (key, displayName) merchants: catalog hits immediately, then one
+    /// on-device lookup per unknown.
+    func resolve(_ merchants: [(key: String, displayName: String)]) async {
+        for m in merchants where resolved[m.key] == nil {
+            if let known = SubscriptionBrandCatalog.lookup(m.key)
+                ?? SubscriptionBrandCatalog.lookup(m.displayName) {
+                resolved[m.key] = known
                 continue
             }
-            if let guessed = await guess(sub.displayName) { resolved[sub.id] = guessed }
+            if let guessed = await guess(m.displayName) { resolved[m.key] = guessed }
         }
     }
+
+    func resolve(_ subs: [Subscription]) async { await resolve(subs.map { ($0.id, $0.displayName) }) }
 
     private func guess(_ merchant: String) async -> SubscriptionBrand? {
         guard case .available = SystemLanguageModel.default.availability else { return nil }

@@ -85,4 +85,52 @@ final class SubscriptionDetectorTests: XCTestCase {
         XCTAssertEqual(SubscriptionDetector.merchantKey("NETFLIX.COM 866-579-7172 CA"), "netflix")
         XCTAssertEqual(SubscriptionDetector.merchantKey("Spotify USA"), "spotify")
     }
+
+    // MARK: Manual rules + candidates
+
+    func testExcludeRuleDropsDetectedSub() {
+        let txns = [txn(d("15.99"), "NETFLIX.COM", daysAgo: 90), txn(d("15.99"), "NETFLIX.COM", daysAgo: 60),
+                    txn(d("15.99"), "NETFLIX.COM", daysAgo: 30), txn(d("15.99"), "NETFLIX.COM", daysAgo: 0)]
+        XCTAssertEqual(SubscriptionDetector.detect(transactions: txns, expenses: [], lookup: [:], me: "me").count, 1)
+        let rule = SubscriptionRule(merchantKey: "netflix", amount: d("15.99"), isSubscription: false, displayName: "Netflix")
+        let result = SubscriptionDetector.analyze(transactions: txns, expenses: [], lookup: [:], me: "me", rules: [rule])
+        XCTAssertTrue(result.subscriptions.isEmpty)
+    }
+
+    func testIncludeRuleForcesUndetectedMerchant() {
+        // Two monthly charges — below the 3-occurrence auto bar, so not auto-detected.
+        let txns = [txn(d("20.00"), "Claude AI Subscription", daysAgo: 30),
+                    txn(d("20.00"), "Claude AI Subscription", daysAgo: 0)]
+        XCTAssertTrue(SubscriptionDetector.detect(transactions: txns, expenses: [], lookup: [:], me: "me").isEmpty)
+        let key = SubscriptionDetector.merchantKey("Claude AI Subscription")  // "claude ai" (drops "subscription")
+        let rule = SubscriptionRule(merchantKey: key, amount: d("20.00"), isSubscription: true, displayName: "Claude AI")
+        let subs = SubscriptionDetector.analyze(transactions: txns, expenses: [], lookup: [:], me: "me", rules: [rule]).subscriptions
+        XCTAssertEqual(subs.count, 1)
+        XCTAssertEqual(subs.first?.cadence, .monthly)
+    }
+
+    func testIncludeBandToleratesPriceIncrease() {
+        // $15 baseline + a $28 charge: too far apart to auto-cluster, but $28 is within the rule's ~2x band.
+        let txns = [txn(d("15.00"), "Spotify", daysAgo: 60), txn(d("15.00"), "Spotify", daysAgo: 30),
+                    txn(d("28.00"), "Spotify", daysAgo: 0)]
+        XCTAssertTrue(SubscriptionDetector.detect(transactions: txns, expenses: [], lookup: [:], me: "me").isEmpty)
+        let rule = SubscriptionRule(merchantKey: "spotify", amount: d("15.00"), isSubscription: true, displayName: "Spotify")
+        let subs = SubscriptionDetector.analyze(transactions: txns, expenses: [], lookup: [:], me: "me", rules: [rule]).subscriptions
+        XCTAssertEqual(subs.count, 1)
+        XCTAssertEqual(subs.first?.latestAmount, d("28.00"))  // the increased charge is matched + included
+    }
+
+    func testCandidateSurfacesNearMissAndRuleMovesIt() {
+        // Monthly but wildly variable amounts → fails the strict amount cluster → surfaces as a candidate.
+        let txns = [txn(d("10.00"), "City Gym", daysAgo: 60), txn(d("30.00"), "City Gym", daysAgo: 30),
+                    txn(d("60.00"), "City Gym", daysAgo: 0)]
+        let auto = SubscriptionDetector.analyze(transactions: txns, expenses: [], lookup: [:], me: "me", rules: [])
+        XCTAssertTrue(auto.subscriptions.isEmpty)
+        XCTAssertEqual(auto.candidates.first?.id, "city gym")
+        // Once included it becomes a subscription and leaves the candidate list.
+        let rule = SubscriptionRule(merchantKey: "city gym", amount: d("30.00"), isSubscription: true, displayName: "City Gym")
+        let ruled = SubscriptionDetector.analyze(transactions: txns, expenses: [], lookup: [:], me: "me", rules: [rule])
+        XCTAssertEqual(ruled.subscriptions.count, 1)
+        XCTAssertTrue(ruled.candidates.isEmpty)
+    }
 }

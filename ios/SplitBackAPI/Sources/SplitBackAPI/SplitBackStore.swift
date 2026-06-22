@@ -22,7 +22,8 @@ public enum SplitBackStore {
             Goal.self,
             CategoryMap.self,
             SpendCategory.self,
-            GroupBalance.self
+            GroupBalance.self,
+            SubscriptionRule.self
         ])
     }
 
@@ -61,6 +62,7 @@ public enum SplitBackStore {
         try context.delete(model: CategoryMap.self)
         try context.delete(model: SpendCategory.self)
         try context.delete(model: GroupBalance.self)
+        try context.delete(model: SubscriptionRule.self)
         try context.save()
     }
 

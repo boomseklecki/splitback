@@ -13,6 +13,7 @@ struct TransactionDetailView: View {
     @Query private var categoryMaps: [CategoryMap]
     @Query(sort: \SpendCategory.position) private var spendCategories: [SpendCategory]
     @Query private var accounts: [Account]
+    @Query private var subscriptionRules: [SubscriptionRule]
 
     @State private var showingCategoryPicker = false
     @State private var showingCreate = false
@@ -51,6 +52,15 @@ struct TransactionDetailView: View {
 
     private var amountText: String { transaction.amount.formatted(.currency(code: transaction.currency)) }
 
+    /// This transaction's merchant key + any matching subscription rule (for the Mark-as-Subscription row).
+    private var subscriptionMerchantKey: String { SubscriptionDetector.merchantKey(transaction.details) }
+    private var subscriptionRule: SubscriptionRule? {
+        subscriptionRules.first {
+            $0.merchantKey == subscriptionMerchantKey
+                && SubscriptionDetector.matches(amount: transaction.amount, rule: $0)
+        }
+    }
+
     var body: some View {
         List {
             Section { header }
@@ -79,6 +89,24 @@ struct TransactionDetailView: View {
                     Button("Reset to Automatic", role: .destructive) {
                         setOverride(nil)
                     }
+                }
+            }
+
+            if transaction.amount > 0 {
+                Section {
+                    if let rule = subscriptionRule {
+                        Button(rule.isSubscription ? "Remove from Subscriptions" : "Remove Exclusion",
+                               role: .destructive) {
+                            context.delete(rule)
+                            try? context.save()
+                        }
+                    } else {
+                        Button { markAsSubscription() } label: {
+                            Label("Mark as Subscription", systemImage: "repeat")
+                        }
+                    }
+                } footer: {
+                    Text("Track this recurring charge in Subscriptions (matches this merchant near this amount).")
                 }
             }
 
@@ -194,6 +222,16 @@ struct TransactionDetailView: View {
         var descriptor = FetchDescriptor<Expense>(predicate: #Predicate { $0.transactionId == tid })
         descriptor.fetchLimit = 1
         linkedExpense = (try? context.fetch(descriptor))?.first
+    }
+
+    /// Force this merchant into Subscriptions (an include rule keyed by merchant + this amount).
+    private func markAsSubscription() {
+        let name = subscriptionMerchantKey
+            .split(separator: " ").map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined(separator: " ")
+        context.insert(SubscriptionRule(merchantKey: subscriptionMerchantKey, amount: transaction.amount,
+                                        isSubscription: true,
+                                        displayName: name.isEmpty ? transaction.details : name))
+        try? context.save()
     }
 
     private func setOverride(_ category: String?) {
