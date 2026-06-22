@@ -204,7 +204,10 @@ async def test_expense_transaction_link_set_and_clear():
     try:
         eid = json.loads(_req("POST", "/expenses", {
             "group_id": gid, "description": "Mortgage", "amount": "2000.00",
-            "date": "2023-05-02", "splits": _balanced_splits(),
+            "date": "2023-05-02", "splits": [
+                {"user_identifier": "matt", "paid_share": "2000.00", "owed_share": "1000.00"},
+                {"user_identifier": "nikki", "paid_share": "0.00", "owed_share": "1000.00"},
+            ],
         })[1])["id"]
         tid = json.loads(_req("POST", "/transactions", {
             "description": "MORTGAGE PMT", "amount": "2000.00", "date": "2023-05-02",
