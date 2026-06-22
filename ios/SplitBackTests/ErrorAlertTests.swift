@@ -1,11 +1,24 @@
 import XCTest
+import OpenAPIRuntime
 @testable import SplitBackAPI
 
 final class ErrorAlertTests: XCTestCase {
-    /// Cancelled requests (navigating away from an in-flight .task) must not surface an alert.
+    private func clientError(_ underlying: Error) -> ClientError {
+        ClientError(operationID: "list_expenses_expenses_get", operationInput: "",
+                    causeDescription: "Unknown", underlyingError: underlying)
+    }
+
+    /// Cancelled requests (navigating away from an in-flight .task) must not surface an alert — directly
+    /// or wrapped in the OpenAPI ClientError (the form actually seen: ClientError(… CancellationError())).
     func testCancellationIsSilent() {
         XCTAssertNil(errorMessage(CancellationError()))
         XCTAssertNil(errorMessage(URLError(.cancelled)))
+        XCTAssertNil(errorMessage(clientError(CancellationError())))
+        XCTAssertNil(errorMessage(clientError(URLError(.cancelled))))
+    }
+
+    func testWrappedTransportFailureShowsUnreachable() {
+        XCTAssertTrue(errorMessage(clientError(URLError(.timedOut)))?.lowercased().contains("reach") == true)
     }
 
     /// Real transport failures still show the "can't reach the server" note.

@@ -9,12 +9,14 @@ private let unreachableMessage =
 /// request — e.g. navigating away from an in-flight `.task` — isn't a failure). BackendError messages are
 /// preferred; transport failures show a short "can't reach the server" note rather than a raw NSURLError.
 func errorMessage(_ error: Error) -> String? {
-    if error is CancellationError { return nil }
+    // The OpenAPI client wraps the real cause in a ClientError; unwrap to inspect it. A cancelled
+    // request (navigating away from an in-flight .task) surfaces as either a CancellationError or
+    // URLError.cancelled, directly or wrapped — none of which is a failure to show.
+    let underlying = (error as? ClientError)?.underlyingError
+    if error is CancellationError || underlying is CancellationError { return nil }
+    if (error as? URLError)?.code == .cancelled || (underlying as? URLError)?.code == .cancelled { return nil }
     if let backend = error as? BackendError { return backend.errorDescription ?? "Request failed." }
-    if let urlError = error as? URLError { return urlError.code == .cancelled ? nil : unreachableMessage }
-    if let clientError = error as? ClientError, let urlError = clientError.underlyingError as? URLError {
-        return urlError.code == .cancelled ? nil : unreachableMessage
-    }
+    if error is URLError || underlying is URLError { return unreachableMessage }
     return error.localizedDescription
 }
 
