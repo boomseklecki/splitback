@@ -52,9 +52,13 @@ struct SubscriptionsView: View {
 
                 if !upcoming.isEmpty {
                     Section("Upcoming") {
-                        ForEach(upcoming) { sub in
-                            row(sub, trailing: .upcoming)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 10) {
+                                ForEach(upcoming) { upcomingCard($0) }
+                            }
+                            .padding(.horizontal).padding(.vertical, 4)
                         }
+                        .listRowInsets(EdgeInsets())   // let the strip bleed to the edges; cards inset via padding
                     }
                 }
 
@@ -63,7 +67,7 @@ struct SubscriptionsView: View {
                         NavigationLink {
                             SubscriptionDetailView(subscription: sub, brand: brandModel.brand(for: sub))
                         } label: {
-                            row(sub, trailing: .annual)
+                            row(sub)
                         }
                         .swipeActions {
                             Button("Not a Subscription", systemImage: "xmark.circle", role: .destructive) {
@@ -128,10 +132,29 @@ struct SubscriptionsView: View {
         try? context.save()
     }
 
-    private enum Trailing { case annual, upcoming }
+    /// A compact card for the horizontal "Upcoming" gallery: logo, name, amount, and due date.
+    private func upcomingCard(_ sub: Subscription) -> some View {
+        let brand = brandModel.brand(for: sub)
+        return NavigationLink {
+            SubscriptionDetailView(subscription: sub, brand: brand)
+        } label: {
+            VStack(spacing: 6) {
+                AvatarView(url: brand.logoURL, name: brand.name, size: 44, systemImage: "repeat")
+                Text(brand.name).font(.caption).lineLimit(1)
+                Text(sub.latestAmount.formatted(.currency(code: sub.currency)))
+                    .font(.caption).fontWeight(.medium).monospacedDigit()
+                Text(sub.nextDate.formatted(.dateTime.month(.abbreviated).day()))
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            .frame(width: 96)
+            .padding(.vertical, 10)
+            .background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(.plain)
+    }
 
     @ViewBuilder
-    private func row(_ sub: Subscription, trailing: Trailing) -> some View {
+    private func row(_ sub: Subscription) -> some View {
         let brand = brandModel.brand(for: sub)
         HStack(spacing: 12) {
             AvatarView(url: brand.logoURL, name: brand.name, size: 40, systemImage: "repeat")
@@ -150,17 +173,8 @@ struct SubscriptionsView: View {
                 }
             }
             Spacer()
-            switch trailing {
-            case .annual:
-                Text("\(sub.annualCost.formatted(.currency(code: sub.currency)))/yr")
-                    .foregroundStyle(.secondary).monospacedDigit()
-            case .upcoming:
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text(sub.latestAmount.formatted(.currency(code: sub.currency))).monospacedDigit()
-                    Text("Due \(sub.nextDate.formatted(.dateTime.month(.abbreviated).day()))")
-                        .font(.caption2).foregroundStyle(.secondary)
-                }
-            }
+            Text("\(sub.annualCost.formatted(.currency(code: sub.currency)))/yr")
+                .foregroundStyle(.secondary).monospacedDigit()
         }
     }
 }
