@@ -87,7 +87,7 @@ struct GroupDetailView: View {
                         // Closure-based (not value-based) NavigationLink: value-based links nested in
                         // the Splits NavigationStack drop the first tap (off-by-one push).
                         NavigationLink {
-                            ExpenseDetailView(expense: expense)
+                            LazyView(ExpenseDetailView(expense: expense))
                         } label: {
                             ExpenseRow(expense: expense, users: users, meIdentifier: me)
                         }

@@ -31,9 +31,6 @@ struct TransactionsView: View {
     }
 
     var body: some View {
-        #if DEBUG
-        MainThreadWatchdog.mark("TXV.body account=\(account != nil) txns=\(transactions.count)")
-        #endif
         // Build the raw→canonical map ONCE per render. Referencing the `lookup` computed property from
         // inside the row closure rebuilt this dictionary for every transaction — O(rows × maps) of
         // dictionary construction on the main thread, which froze long lists.
@@ -128,11 +125,10 @@ struct TransactionsView: View {
     /// pushed inside the Accounts tab stack, where value-based links drop the first tap.
     private func transactionLink(_ transaction: Transaction, lookup: [String: String],
                                  isPending: Bool) -> some View {
+        // LazyView so SwiftUI doesn't eagerly build every row's detail view (with its @Query) on each
+        // render — that eager construction spun an infinite re-render loop (main-thread freeze).
         NavigationLink {
-            #if DEBUG
-            let _ = MainThreadWatchdog.mark("nav -> TDV build \(transaction.id)")
-            #endif
-            TransactionDetailView(transaction: transaction)
+            LazyView(TransactionDetailView(transaction: transaction))
         } label: {
             TransactionRow(transaction: transaction, lookup: lookup, isPending: isPending)
         }

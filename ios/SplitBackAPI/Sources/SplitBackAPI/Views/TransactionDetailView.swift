@@ -52,10 +52,7 @@ struct TransactionDetailView: View {
     private var amountText: String { transaction.amount.formatted(.currency(code: transaction.currency)) }
 
     var body: some View {
-        #if DEBUG
-        MainThreadWatchdog.mark("TDV.body \(transaction.id)")
-        #endif
-        return List {
+        List {
             Section { header }
 
             Section("Details") {
@@ -117,7 +114,7 @@ struct TransactionDetailView: View {
             Section {
                 if let expense = linkedExpense {
                     NavigationLink {
-                        ExpenseDetailView(expense: expense)
+                        LazyView(ExpenseDetailView(expense: expense))
                     } label: {
                         Label("View Expense", systemImage: "arrow.up.right.square")
                     }
@@ -143,14 +140,8 @@ struct TransactionDetailView: View {
         .navigationTitle("Transaction")
         .navigationBarTitleDisplayMode(.inline)
         .task {
-            #if DEBUG
-            MainThreadWatchdog.mark("TDV.task start")
-            #endif
             aiAvailable = CategoryMapper.isAvailable
             loadLinkedExpense()
-            #if DEBUG
-            MainThreadWatchdog.mark("TDV.task done")
-            #endif
         }
         .sheet(isPresented: $showingCategoryPicker) {
             CategoryPickerView(current: effectiveCategory) { setOverride($0) }

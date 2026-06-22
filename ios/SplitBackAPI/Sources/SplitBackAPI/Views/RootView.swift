@@ -32,9 +32,6 @@ public struct RootView: View {
                 }
             }
             .task {
-                #if DEBUG
-                MainThreadWatchdog.shared.start()  // diagnostic: logs the main-thread stack on a hang
-                #endif
                 await env.loadServerInfo()
                 checking = false
             }

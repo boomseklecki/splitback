@@ -61,9 +61,10 @@ struct ContributorRow: View {
 
     var body: some View {
         NavigationLink {
+            // LazyView so the @Query-heavy detail isn't eagerly built for every row each render.
             switch row.source {
-            case .transaction(let t): TransactionDetailView(transaction: t)
-            case .expense(let e): ExpenseDetailView(expense: e)
+            case .transaction(let t): LazyView(TransactionDetailView(transaction: t))
+            case .expense(let e): LazyView(ExpenseDetailView(expense: e))
             }
         } label: {
             HStack(spacing: 12) {

@@ -42,8 +42,8 @@ struct SubscriptionDetailView: View {
                 ForEach(subscription.charges) { charge in
                     NavigationLink {
                         switch charge.source {
-                        case .transaction(let t): TransactionDetailView(transaction: t)
-                        case .expense(let e): ExpenseDetailView(expense: e)
+                        case .transaction(let t): LazyView(TransactionDetailView(transaction: t))
+                        case .expense(let e): LazyView(ExpenseDetailView(expense: e))
                         }
                     } label: {
                         HStack {
