@@ -14,10 +14,9 @@ struct GroupDetailView: View {
     @Query private var expenses: [Expense]
     @Query private var members: [GroupMember]
     @Query private var users: [User]
+    @Query private var balanceRows: [GroupBalance]
     @Query(sort: \SpendCategory.position) private var spendCategories: [SpendCategory]
 
-    /// Authoritative balances from the server (nil until fetched); we render local balances meanwhile.
-    @State private var serverBalances: [Balance]?
     @State private var showingNewExpense = false
     @State private var showingMembers = false
     @AppStorage("groupDetail.showSettled") private var showSettled = false
@@ -37,6 +36,10 @@ struct GroupDetailView: View {
             filter: #Predicate<GroupMember> { $0.groupId == gid },
             sort: \GroupMember.userIdentifier
         )
+        _balanceRows = Query(
+            filter: #Predicate<GroupBalance> { $0.groupId == gid },
+            sort: \GroupBalance.net, order: .reverse
+        )
     }
 
     private var collapse: (visible: [Expense], collapsed: Int) {
@@ -48,9 +51,8 @@ struct GroupDetailView: View {
         // `env.currentUser` per row makes tapping a row (which triggers the ForEach update pass) freeze.
         let users = self.users
         let me = env.currentUser?.identifier
-        // Local balances render instantly from the cached expenses; the server's (once `reload` fetches
-        // them) take over as authoritative.
-        let balances = serverBalances ?? LocalBalances.forGroup(expenses)
+        // Cached server balances render instantly (a @Query); `reload` refreshes them in the background.
+        let balances = balanceRows
         return List {
             if group.avatarURL != nil || group.groupType != nil {
                 Section {
@@ -71,9 +73,9 @@ struct GroupDetailView: View {
                 Section("Balances") {
                     ForEach(balances) { entry in
                         let phrase = BalancePhrase.member(
-                            entry.net, isMe: entry.identifier == me)
+                            entry.net, isMe: entry.userIdentifier == me)
                         HStack {
-                            Text(entry.displayName?.titleCased ?? users.displayName(for: entry.identifier))
+                            Text(users.displayName(for: entry.userIdentifier))
                             Spacer()
                             Text(phrase.label).font(.caption).foregroundStyle(.secondary)
                             if let amount = phrase.amount {
@@ -191,7 +193,7 @@ struct GroupDetailView: View {
         do {
             try await env.expenses(context).reconcileAll(groupId: group.id)
             try await env.groups(context).refreshMembers(groupId: group.id)
-            serverBalances = try await env.balances.forGroup(group.id)
+            try await env.balances(context).refreshGroup(group.id)
         } catch {
             errorText = errorMessage(error)
         }

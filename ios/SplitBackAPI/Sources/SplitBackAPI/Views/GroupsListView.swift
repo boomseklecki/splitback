@@ -21,6 +21,7 @@ struct GroupsListView: View {
            sort: \ExpenseGroup.name)
     private var groups: [ExpenseGroup]
     @Query private var members: [GroupMember]
+    @Query private var balanceRows: [GroupBalance]
     @Query(sort: \SpendCategory.position) private var spendCategories: [SpendCategory]
 
     @AppStorage("expenses.sortMode") private var sortModeRaw = SortMode.activity.rawValue
@@ -33,13 +34,16 @@ struct GroupsListView: View {
     @State private var showingReceiptScanner = false
     @State private var receiptPhoto: PhotosPickerItem?
     @State private var scan = ReceiptScanModel()
-    /// Your net balance per group (group id → net), keyed by the signed-in user from `/me`.
-    @State private var myNets: [UUID: Decimal] = [:]
     /// Latest-expense summary per group (date for activity sort, settle-up flag for hiding). Loaded on
     /// demand with a `fetchLimit: 1` query per group rather than materializing every expense.
     @State private var lastExpense: [UUID: (date: Date, isSettleUp: Bool)] = [:]
 
     private var sortMode: SortMode { SortMode(rawValue: sortModeRaw) ?? .activity }
+
+    /// Your net per group, read instantly from the cached `GroupBalance` rows (refreshed in the background).
+    private var myNets: [UUID: Decimal] {
+        GroupSummary.myNets(from: balanceRows, me: env.currentUser?.identifier)
+    }
 
     /// Re-run the balance load whenever the signed-in user or the set of groups changes.
     private var balanceKey: [String] {
@@ -162,12 +166,13 @@ struct GroupsListView: View {
                 }
                 do { try await env.refreshAll(context) }
                 catch { errorText = errorMessage(error) }
-                loadMyBalances()
+                await loadMyBalances()
                 loadLastExpenses()
             }
             .task(id: balanceKey) {
-                loadMyBalances()
-                loadLastExpenses()
+                loadLastExpenses()        // renders instantly from the cached balances
+                await loadMyBalances()    // refresh the cache in the background
+                loadLastExpenses()        // recompute settled-hiding with fresh balances
             }
             .onChange(of: showSettled) { _, _ in loadLastExpenses() }
             .alert("New Group", isPresented: $showingNewGroup) {
@@ -224,8 +229,10 @@ struct GroupsListView: View {
         }
     }
 
-    private func loadMyBalances() {
-        myNets = LocalBalances.myNets(groups, me: env.currentUser?.identifier, context: context)
+    /// Refresh the cached balances for all groups in the background; the cache (a @Query) updates the
+    /// displayed nets as each group's fetch returns.
+    private func loadMyBalances() async {
+        await env.balances(context).refreshAll(groups.map(\.id))
     }
 
     private func loadLastExpenses() {

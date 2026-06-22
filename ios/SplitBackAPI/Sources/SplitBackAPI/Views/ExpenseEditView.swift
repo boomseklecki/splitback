@@ -27,6 +27,7 @@ struct ExpenseEditView: View {
            sort: \ExpenseGroup.name)
     private var groups: [ExpenseGroup]
     @Query private var allMembers: [GroupMember]
+    @Query private var balanceRows: [GroupBalance]
     @Query(sort: \SpendCategory.position) private var spendCategories: [SpendCategory]
 
     @State private var myNets: [UUID: Decimal] = [:]
@@ -476,7 +477,7 @@ struct ExpenseEditView: View {
                 // Default "Paid by" to you (from /me) when you're a participant.
                 if let me = env.currentUser?.identifier, participants.contains(me) { payer = me }
                 // Settled-filtering + activity sort for the group switcher (mirrors the transaction picker).
-                myNets = LocalBalances.myNets(groups, me: env.currentUser?.identifier, context: context)
+                myNets = GroupSummary.myNets(from: balanceRows, me: env.currentUser?.identifier)
                 lastExpense = GroupSummary.lastExpenses(groups, myNets: myNets, includeSettled: false, context: context)
             }
             .errorAlert($errorText)

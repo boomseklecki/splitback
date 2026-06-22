@@ -21,7 +21,8 @@ public enum SplitBackStore {
             SyncCursor.self,
             Goal.self,
             CategoryMap.self,
-            SpendCategory.self
+            SpendCategory.self,
+            GroupBalance.self
         ])
     }
 
@@ -59,6 +60,7 @@ public enum SplitBackStore {
         try context.delete(model: Goal.self)
         try context.delete(model: CategoryMap.self)
         try context.delete(model: SpendCategory.self)
+        try context.delete(model: GroupBalance.self)
         try context.save()
     }
 

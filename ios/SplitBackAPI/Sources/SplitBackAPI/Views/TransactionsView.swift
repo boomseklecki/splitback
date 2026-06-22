@@ -288,6 +288,7 @@ struct NewExpenseFromTransactionView: View {
            sort: \ExpenseGroup.name)
     private var groups: [ExpenseGroup]
     @Query private var members: [GroupMember]
+    @Query private var balanceRows: [GroupBalance]
     @State private var selectedGroupId: UUID?
     @State private var showingEditor = false
     @State private var showSettled = false
@@ -331,7 +332,7 @@ struct NewExpenseFromTransactionView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
             .task {
-                myNets = LocalBalances.myNets(groups, me: env.currentUser?.identifier, context: context)
+                myNets = GroupSummary.myNets(from: balanceRows, me: env.currentUser?.identifier)
                 loadLastExpenses()
             }
             .onChange(of: showSettled) { _, _ in loadLastExpenses() }
