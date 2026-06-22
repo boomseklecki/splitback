@@ -111,6 +111,12 @@ async def apply_sync(
 
 
 async def sync_item(session: AsyncSession, item: PlaidItem, client) -> dict:
+    # Backfill the institution name for items linked before it was resolved (older links stored null,
+    # which the app shows as "Bank"). Best-effort — leaves it null if the lookup fails.
+    if not item.institution_name:
+        name = await asyncio.to_thread(client.get_institution_name, item.access_token)
+        if name:
+            item.institution_name = name
     accounts = await asyncio.to_thread(client.get_accounts, item.access_token)
     sync_result = await asyncio.to_thread(
         accumulate_sync, client.fetch_transactions_page, item.access_token, item.transactions_cursor

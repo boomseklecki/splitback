@@ -30,6 +30,20 @@ Per-account management in the app (Settings → Plaid → Linked Banks → accou
   api (the tests hit `http://localhost:8000`). No data backfill needed (nullable).
 - **Contract:** `ios/openapi.json` + processed copy already regenerated on the Mac; no backend action.
 
+### Institution names (fix "Bank, Bank, Bank")
+
+`institution_name` was only ever set from the client's exchange body, which the app never sends → always
+null → the app shows "Bank". Now resolved **server-side** from Plaid (no contract/iOS change):
+
+- **`app/integrations/plaid/client.py`**: new `get_institution_name(access_token)` — `item_get` →
+  `institutions_get_by_id` → name (best-effort, returns None on any failure).
+- **`app/routers/plaid.py` exchange**: resolve the name when the body omits it; only ever writes a
+  **non-null** name (a failed lookup never wipes an existing one on conflict).
+- **`app/integrations/plaid/sync.py` `sync_item`**: backfills `institution_name` when null — so the
+  existing "Bank" items get real names on the **next Sync All Banks**, no re-link needed.
+- **Operator:** code-only (no migration) — redeploy/rebuild the api container(s), then run a sync
+  (Settings → Sync All Banks, or `python -m app.cli.plaid_sync`) to backfill existing items.
+
 ---
 
 ## NEW WORK — demo backend for TestFlight (guest login + per-tester seed) (2026-06-21)

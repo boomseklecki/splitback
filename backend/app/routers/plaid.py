@@ -51,23 +51,26 @@ async def exchange(
         client.exchange_public_token, body.public_token
     )
 
+    # Prefer the client-supplied name, else resolve it from Plaid. Only ever set a non-null name so a
+    # failed lookup never wipes an existing institution_name on conflict.
+    institution_name = body.institution_name or await asyncio.to_thread(
+        client.get_institution_name, access_token
+    )
+    values = {
+        "plaid_item_id": plaid_item_id,
+        "access_token": access_token,
+        "user_identifier": owner,
+    }
+    set_ = {"access_token": access_token, "user_identifier": owner}
+    if institution_name:
+        values["institution_name"] = institution_name
+        set_["institution_name"] = institution_name
+
     item_id = (
         await session.execute(
             pg_insert(PlaidItem)
-            .values(
-                plaid_item_id=plaid_item_id,
-                access_token=access_token,
-                institution_name=body.institution_name,
-                user_identifier=owner,
-            )
-            .on_conflict_do_update(
-                index_elements=[PlaidItem.plaid_item_id],
-                set_={
-                    "access_token": access_token,
-                    "institution_name": body.institution_name,
-                    "user_identifier": owner,
-                },
-            )
+            .values(**values)
+            .on_conflict_do_update(index_elements=[PlaidItem.plaid_item_id], set_=set_)
             .returning(PlaidItem.id)
         )
     ).scalar_one()
