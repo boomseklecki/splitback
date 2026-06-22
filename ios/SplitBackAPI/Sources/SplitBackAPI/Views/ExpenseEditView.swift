@@ -476,7 +476,7 @@ struct ExpenseEditView: View {
                 // Default "Paid by" to you (from /me) when you're a participant.
                 if let me = env.currentUser?.identifier, participants.contains(me) { payer = me }
                 // Settled-filtering + activity sort for the group switcher (mirrors the transaction picker).
-                myNets = await GroupSummary.myNets(groups, me: env.currentUser?.identifier, balances: env.balances)
+                myNets = LocalBalances.myNets(groups, me: env.currentUser?.identifier, context: context)
                 lastExpense = GroupSummary.lastExpenses(groups, myNets: myNets, includeSettled: false, context: context)
             }
             .errorAlert($errorText)

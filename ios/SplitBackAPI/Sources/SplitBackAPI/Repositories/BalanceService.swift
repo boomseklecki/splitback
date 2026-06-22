@@ -6,10 +6,6 @@ import Foundation
 struct BalanceService {
     let client: Client
 
-    func overall() async throws -> [Balance] {
-        try await client.overall_balances_balances_get().ok.body.json.map(Mapping.balance)
-    }
-
     func forGroup(_ groupId: UUID) async throws -> [Balance] {
         try await client.group_balances_groups__group_id__balances_get(
             path: .init(group_id: groupId.uuidString)

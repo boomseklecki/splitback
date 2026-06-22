@@ -16,7 +16,8 @@ struct GroupDetailView: View {
     @Query private var users: [User]
     @Query(sort: \SpendCategory.position) private var spendCategories: [SpendCategory]
 
-    @State private var balances: [Balance] = []
+    /// Authoritative balances from the server (nil until fetched); we render local balances meanwhile.
+    @State private var serverBalances: [Balance]?
     @State private var showingNewExpense = false
     @State private var showingMembers = false
     @AppStorage("groupDetail.showSettled") private var showSettled = false
@@ -47,6 +48,9 @@ struct GroupDetailView: View {
         // `env.currentUser` per row makes tapping a row (which triggers the ForEach update pass) freeze.
         let users = self.users
         let me = env.currentUser?.identifier
+        // Local balances render instantly from the cached expenses; the server's (once `reload` fetches
+        // them) take over as authoritative.
+        let balances = serverBalances ?? LocalBalances.forGroup(expenses)
         return List {
             if group.avatarURL != nil || group.groupType != nil {
                 Section {
@@ -187,7 +191,7 @@ struct GroupDetailView: View {
         do {
             try await env.expenses(context).reconcileAll(groupId: group.id)
             try await env.groups(context).refreshMembers(groupId: group.id)
-            balances = try await env.balances.forGroup(group.id)
+            serverBalances = try await env.balances.forGroup(group.id)
         } catch {
             errorText = errorMessage(error)
         }

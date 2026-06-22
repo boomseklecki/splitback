@@ -331,7 +331,7 @@ struct NewExpenseFromTransactionView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
             .task {
-                myNets = await GroupSummary.myNets(groups, me: env.currentUser?.identifier, balances: env.balances)
+                myNets = LocalBalances.myNets(groups, me: env.currentUser?.identifier, context: context)
                 loadLastExpenses()
             }
             .onChange(of: showSettled) { _, _ in loadLastExpenses() }

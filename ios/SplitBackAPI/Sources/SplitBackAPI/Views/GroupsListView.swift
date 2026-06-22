@@ -162,11 +162,11 @@ struct GroupsListView: View {
                 }
                 do { try await env.refreshAll(context) }
                 catch { errorText = errorMessage(error) }
-                await loadMyBalances()
+                loadMyBalances()
                 loadLastExpenses()
             }
             .task(id: balanceKey) {
-                await loadMyBalances()
+                loadMyBalances()
                 loadLastExpenses()
             }
             .onChange(of: showSettled) { _, _ in loadLastExpenses() }
@@ -224,8 +224,8 @@ struct GroupsListView: View {
         }
     }
 
-    private func loadMyBalances() async {
-        myNets = await GroupSummary.myNets(groups, me: env.currentUser?.identifier, balances: env.balances)
+    private func loadMyBalances() {
+        myNets = LocalBalances.myNets(groups, me: env.currentUser?.identifier, context: context)
     }
 
     private func loadLastExpenses() {

@@ -8,18 +8,6 @@ import SwiftData
 enum GroupSummary {
     typealias Last = (date: Date, isSettleUp: Bool)
 
-    /// Your net balance per group from `/me` (group id → net). Empty when not signed in.
-    static func myNets(_ groups: [ExpenseGroup], me: String?, balances: BalanceService) async -> [UUID: Decimal] {
-        guard let me else { return [:] }
-        var result: [UUID: Decimal] = [:]
-        for group in groups {
-            if let net = try? await balances.forGroup(group.id).first(where: { $0.identifier == me })?.net {
-                result[group.id] = net
-            }
-        }
-        return result
-    }
-
     /// Latest expense per group (date + settle-up flag) via a single-row fetch per group. Skips groups
     /// already hidden by a zero balance unless `includeSettled`, so unseen rows cost nothing.
     static func lastExpenses(_ groups: [ExpenseGroup], myNets: [UUID: Decimal],
