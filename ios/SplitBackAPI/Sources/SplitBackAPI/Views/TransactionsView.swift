@@ -31,6 +31,9 @@ struct TransactionsView: View {
     }
 
     var body: some View {
+        #if DEBUG
+        MainThreadWatchdog.mark("TXV.body account=\(account != nil) txns=\(transactions.count)")
+        #endif
         // Build the raw→canonical map ONCE per render. Referencing the `lookup` computed property from
         // inside the row closure rebuilt this dictionary for every transaction — O(rows × maps) of
         // dictionary construction on the main thread, which froze long lists.
@@ -126,6 +129,9 @@ struct TransactionsView: View {
     private func transactionLink(_ transaction: Transaction, lookup: [String: String],
                                  isPending: Bool) -> some View {
         NavigationLink {
+            #if DEBUG
+            let _ = MainThreadWatchdog.mark("nav -> TDV build \(transaction.id)")
+            #endif
             TransactionDetailView(transaction: transaction)
         } label: {
             TransactionRow(transaction: transaction, lookup: lookup, isPending: isPending)

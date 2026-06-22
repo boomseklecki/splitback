@@ -52,7 +52,10 @@ struct TransactionDetailView: View {
     private var amountText: String { transaction.amount.formatted(.currency(code: transaction.currency)) }
 
     var body: some View {
-        List {
+        #if DEBUG
+        MainThreadWatchdog.mark("TDV.body \(transaction.id)")
+        #endif
+        return List {
             Section { header }
 
             Section("Details") {
@@ -140,8 +143,14 @@ struct TransactionDetailView: View {
         .navigationTitle("Transaction")
         .navigationBarTitleDisplayMode(.inline)
         .task {
+            #if DEBUG
+            MainThreadWatchdog.mark("TDV.task start")
+            #endif
             aiAvailable = CategoryMapper.isAvailable
             loadLinkedExpense()
+            #if DEBUG
+            MainThreadWatchdog.mark("TDV.task done")
+            #endif
         }
         .sheet(isPresented: $showingCategoryPicker) {
             CategoryPickerView(current: effectiveCategory) { setOverride($0) }
