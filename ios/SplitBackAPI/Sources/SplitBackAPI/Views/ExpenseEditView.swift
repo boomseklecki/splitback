@@ -457,8 +457,23 @@ struct ExpenseEditView: View {
             }
             .task {
                 guard editing == nil else { return }
-                // For a new expense, default "Paid by" to you (from /me) when you're a participant —
-                // otherwise keep the first member chosen in init.
+                // A Splitwise group's members are only in the local cache after a member sync. If the
+                // editor opened before that ran, `participants` (from the caller's member list) is empty
+                // and you can't pick a payer or split. Sync the group's members and seed from its full
+                // roster. Self-hosted groups already have their members cached, so this is a no-op there.
+                try? await env.groups(context).refreshMembers(groupId: group.id)
+                let gid = group.id
+                let synced = ((try? context.fetch(
+                    FetchDescriptor<GroupMember>(predicate: #Predicate { $0.groupId == gid }))) ?? [])
+                    .map(\.userIdentifier).sorted()
+                if !synced.isEmpty {
+                    participants = synced
+                    if !synced.contains(payer) { payer = synced.first ?? "" }
+                    if settleUpTo.isEmpty || !synced.contains(settleUpTo) {
+                        settleUpTo = synced.first { $0 != payer } ?? ""
+                    }
+                }
+                // Default "Paid by" to you (from /me) when you're a participant.
                 if let me = env.currentUser?.identifier, participants.contains(me) { payer = me }
                 // Settled-filtering + activity sort for the group switcher (mirrors the transaction picker).
                 myNets = await GroupSummary.myNets(groups, me: env.currentUser?.identifier, balances: env.balances)
