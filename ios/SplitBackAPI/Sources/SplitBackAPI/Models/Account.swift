@@ -6,7 +6,11 @@ import SwiftData
 final class Account {
     @Attribute(.unique) var id: UUID
     var name: String
+    /// User-set display name overriding the Plaid `name`; nil = show `name`. Survives Plaid re-sync.
+    var displayName: String?
     var type: String?
+    /// User-set classification override ("cash_flow" | "liability" | "savings"); nil = derive from `type`.
+    var kindOverride: String?
     var plaidAccountId: String?
     /// Present server-side but not returned by `GET /accounts`; left nil when mapped from the API.
     var plaidItemId: UUID?
@@ -21,7 +25,9 @@ final class Account {
     init(
         id: UUID,
         name: String,
+        displayName: String? = nil,
         type: String? = nil,
+        kindOverride: String? = nil,
         plaidAccountId: String? = nil,
         plaidItemId: UUID? = nil,
         balance: Decimal,
@@ -33,7 +39,9 @@ final class Account {
     ) {
         self.id = id
         self.name = name
+        self.displayName = displayName
         self.type = type
+        self.kindOverride = kindOverride
         self.plaidAccountId = plaidAccountId
         self.plaidItemId = plaidItemId
         self.balance = balance

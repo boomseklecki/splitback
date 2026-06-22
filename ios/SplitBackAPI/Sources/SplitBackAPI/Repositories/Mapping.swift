@@ -127,7 +127,9 @@ enum Mapping {
         Account(
             id: try uuid(r.id, field: "Account.id"),
             name: r.name,
+            displayName: r.display_name,
             type: r._type,
+            kindOverride: r.kind,
             plaidAccountId: r.plaid_account_id,
             plaidItemId: nil,
             balance: try decimal(r.balance, field: "Account.balance"),
@@ -447,9 +449,11 @@ enum Mapping {
         .init(raw_category: raw, canonical_category: canonical, source: source)
     }
 
-    static func accountUpdate(includeInSpending: Bool?, includeInCashFlow: Bool?)
+    static func accountUpdate(displayName: String? = nil, kind: String? = nil,
+                              includeInSpending: Bool? = nil, includeInCashFlow: Bool? = nil)
         -> Components.Schemas.AccountUpdate {
-        .init(include_in_spending: includeInSpending, include_in_cash_flow: includeInCashFlow)
+        .init(display_name: displayName, kind: kind,
+              include_in_spending: includeInSpending, include_in_cash_flow: includeInCashFlow)
     }
 }
 

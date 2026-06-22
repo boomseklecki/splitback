@@ -20,7 +20,7 @@ struct AccountSummaryHeader: View {
     let account: Account
     let transactions: [Transaction]
 
-    private var kind: AccountKind { AccountKind.classify(account.type) }
+    private var kind: AccountKind { account.kind }
     private var code: String { account.currency }
 
     private var monthTransactions: [Transaction] {
@@ -65,7 +65,7 @@ struct AccountSummaryHeader: View {
         .padding(.vertical, 4)
     }
 
-    private var typeLabel: String { (account.type ?? "Account").capitalized }
+    private var typeLabel: String { account.kind.label }
 
     @ViewBuilder
     private func stat(_ label: String, _ value: String, _ color: Color) -> some View {

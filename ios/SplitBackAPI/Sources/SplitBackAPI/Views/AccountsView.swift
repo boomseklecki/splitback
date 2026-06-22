@@ -31,7 +31,7 @@ struct AccountsView: View {
 
     /// Type sections, in display order. Each renders only when it has accounts.
     private static let typeSections: [(title: String, kind: AccountKind)] = [
-        ("Cash-flow", .cashFlow), ("Liabilities", .liability), ("Holdings", .holdings),
+        ("Cash-flow", .cashFlow), ("Liabilities", .liability), ("Savings", .holdings),
     ]
 
     private func byBalance(_ list: [Account]) -> [Account] {
@@ -50,7 +50,7 @@ struct AccountsView: View {
                     }
                 } else if sortMode == .type {
                     ForEach(Self.typeSections, id: \.title) { section in
-                        let items = byBalance(accounts.filter { AccountKind.classify($0.type) == section.kind })
+                        let items = byBalance(accounts.filter { $0.kind == section.kind })
                         if !items.isEmpty {
                             Section(section.title) {
                                 ForEach(items) { accountRow($0) }
@@ -116,14 +116,12 @@ struct AccountsView: View {
         } label: {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(account.name)
-                    if let type = account.type {
-                        Text(type.capitalized).font(.caption).foregroundStyle(.secondary)
-                    }
+                    Text(account.displayLabel)
+                    Text(account.kind.label).font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Text(account.balance.formatted(.currency(code: account.currency)))
-                    .foregroundStyle(AccountKind.classify(account.type).balanceColor)
+                    .foregroundStyle(account.kind.balanceColor)
             }
         }
     }

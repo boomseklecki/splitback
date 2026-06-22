@@ -3,13 +3,41 @@ import Foundation
 /// How an account is summarized in its detail header. Derived from the Plaid subtype string stored in
 /// `Account.type` — the backend exposes no explicit asset/liability flag, so we classify by subtype
 /// and default anything unrecognized to a transactional cash-flow account.
-enum AccountKind {
+enum AccountKind: CaseIterable {
     /// Transactional deposit accounts (checking, savings, money market, cash management).
     case cashFlow
     /// Credit cards and loans — balance is money owed.
     case liability
-    /// Investment / retirement / locked savings vehicles with few or no transactions.
+    /// Investment / retirement / locked savings vehicles with few or no transactions. Shown to the user
+    /// as "Savings" (money parked, not part of spending or cash flow).
     case holdings
+
+    /// Canonical override string persisted on `Account.kind` / the backend.
+    var canonical: String {
+        switch self {
+        case .cashFlow: return "cash_flow"
+        case .liability: return "liability"
+        case .holdings: return "savings"
+        }
+    }
+
+    init?(canonical: String) {
+        switch canonical {
+        case "cash_flow": self = .cashFlow
+        case "liability": self = .liability
+        case "savings", "holdings": self = .holdings
+        default: return nil
+        }
+    }
+
+    /// User-facing name (the third bucket reads "Savings" rather than "Holdings").
+    var label: String {
+        switch self {
+        case .cashFlow: return "Cash flow"
+        case .liability: return "Liability"
+        case .holdings: return "Savings"
+        }
+    }
 
     /// Plaid subtypes (lowercased) treated as liabilities. Includes the top-level `credit`/`loan`
     /// fallbacks for accounts that report no subtype.
@@ -36,7 +64,17 @@ enum AccountKind {
 }
 
 extension Account {
-    var kind: AccountKind { AccountKind.classify(type) }
+    /// The account's classification — a user override (`kindOverride`) wins, otherwise it's derived from
+    /// the Plaid subtype.
+    var kind: AccountKind {
+        kindOverride.flatMap(AccountKind.init(canonical:)) ?? AccountKind.classify(type)
+    }
+
+    /// What to show as the account's name: the user's display name, or the Plaid `name` when unset.
+    var displayLabel: String {
+        if let displayName, !displayName.trimmingCharacters(in: .whitespaces).isEmpty { return displayName }
+        return name
+    }
 
     /// Whether this account's outflows count toward budgets/spending. Defaults to cash-flow + credit
     /// (true spend wherever it happens); the user can override per account.

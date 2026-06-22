@@ -13,7 +13,7 @@ from app.config import settings
 from app.db import get_session
 from app.models import Account, Transaction, TransactionItem
 from app.models.enums import TransactionSource
-from app.schemas.account import AccountCreate, AccountResponse, AccountUpdate
+from app.schemas.account import ACCOUNT_KINDS, AccountCreate, AccountResponse, AccountUpdate
 from app.schemas.transaction import (
     TransactionCreate,
     TransactionItemInput,
@@ -66,13 +66,20 @@ async def update_account(
     caller: str | None = Depends(require_auth),
     session: AsyncSession = Depends(get_session),
 ) -> Account:
-    """Set the Goals-analytics inclusion overrides. Plaid sync only touches name/type/balance/
-    currency, so these survive a re-sync."""
+    """Set the per-account overrides (display name, kind, Goals-analytics inclusion flags). Plaid sync
+    only touches name/type/balance/currency, so these survive a re-sync."""
     account = await session.get(Account, account_id)
     if account is None:
         raise HTTPException(status_code=404, detail="Account not found")
     assert_owner(account.owner_identifier, caller)
-    for field, value in body.model_dump(exclude_unset=True).items():
+    fields = body.model_dump(exclude_unset=True)
+    if "display_name" in fields:
+        # Empty/whitespace resets to Plaid's name.
+        name = (fields["display_name"] or "").strip()
+        fields["display_name"] = name or None
+    if fields.get("kind") is not None and fields["kind"] not in ACCOUNT_KINDS:
+        raise HTTPException(status_code=422, detail=f"kind must be one of {sorted(ACCOUNT_KINDS)}")
+    for field, value in fields.items():
         setattr(account, field, value)
     await session.commit()
     await session.refresh(account)

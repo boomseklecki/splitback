@@ -178,20 +178,16 @@ struct SettingsView: View {
                     }
                 }
 
-                Section("Linked Banks") {
-                    ForEach(items, id: \.id) { item in
-                        NavigationLink {
-                            LinkedBankView(item: item)
-                        } label: {
-                            let count = item.accounts?.count ?? 0
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(item.institution_name ?? "Bank")
-                                Text("\(count) account\(count == 1 ? "" : "s")")
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
+                Section("Plaid") {
+                    NavigationLink {
+                        LinkedBanksView(items: $items)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Linked Banks")
+                            Text("\(items.count) Bank\(items.count == 1 ? "" : "s")")
+                                .font(.caption).foregroundStyle(.secondary)
                         }
                     }
-                    .onDelete(perform: unlink)
                     Button(action: linkBank) {
                         Label(linking ? "Preparing…" : "Link Bank", systemImage: "building.columns")
                     }
@@ -335,13 +331,4 @@ struct SettingsView: View {
         } catch { errorText = errorMessage(error) }
     }
 
-    private func unlink(_ offsets: IndexSet) {
-        let ids = offsets.compactMap { UUID(uuidString: items[$0].id) }
-        Task {
-            do {
-                for id in ids { try await env.plaid(context).deleteItem(id: id) }
-                await loadItems()
-            } catch { errorText = errorMessage(error) }
-        }
-    }
 }

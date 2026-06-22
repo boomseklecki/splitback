@@ -67,7 +67,7 @@ struct TransactionsView: View {
                 }
             }
         }
-        .navigationTitle(account?.name ?? "Transactions")
+        .navigationTitle(account?.displayLabel ?? "Transactions")
         .toolbar {
             if account == nil {
                 ToolbarItem(placement: .primaryAction) {

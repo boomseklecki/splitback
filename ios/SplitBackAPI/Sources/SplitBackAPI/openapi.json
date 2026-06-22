@@ -3223,9 +3223,17 @@
             "type": "string",
             "title": "Name"
           },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
           "type": {
             "type": "string",
             "title": "Type"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
           },
           "plaid_account_id": {
             "type": "string",
@@ -3272,6 +3280,14 @@
       },
       "AccountUpdate": {
         "properties": {
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
           "include_in_spending": {
             "type": "boolean",
             "title": "Include In Spending"

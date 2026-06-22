@@ -11,6 +11,27 @@ this file reproduces what matters so the Linux instance needs nothing else.
 
 ---
 
+## NEW WORK — account display_name + kind overrides (2026-06-22)
+
+Per-account management in the app (Settings → Plaid → Linked Banks → account): rename, set type
+(Cash flow / Liability / Savings), toggle inclusion. Names/types must survive Plaid re-sync, so they're
+**override columns** like the existing inclusion flags.
+
+- **`app/models/account.py`**: added nullable `display_name` (`String(255)`) + `kind` (`String(16)`,
+  one of `cash_flow` | `liability` | `savings`). Plaid sync's `_upsert_account` (`app/integrations/plaid/
+  sync.py`) only updates name/type/balance/currency/plaid_item_id/owner_identifier, so these survive.
+- **Migration `0022_account_overrides`** (down_revision `0021_encrypt_tokens`): `add_column` for both.
+- **`app/schemas/account.py`**: `AccountUpdate` gains `display_name`/`kind`; `AccountResponse` returns them.
+  `ACCOUNT_KINDS` is the allowed set.
+- **`app/routers/accounts.py` PATCH**: empty/whitespace `display_name` → `None` (reset to Plaid name);
+  unknown `kind` → 422. Still `exclude_unset`, so omitted fields are untouched.
+- **Operator steps:** `alembic upgrade head` on **each** api container that should get the feature
+  (`api-prod`, `api-dev`, and `api-demo`). Then `pytest tests/test_goals.py -k account` against a running
+  api (the tests hit `http://localhost:8000`). No data backfill needed (nullable).
+- **Contract:** `ios/openapi.json` + processed copy already regenerated on the Mac; no backend action.
+
+---
+
 ## NEW WORK — demo backend for TestFlight (guest login + per-tester seed) (2026-06-21)
 
 A public, disposable **demo** stack so TestFlight testers explore the app with sample data before linking

@@ -85,11 +85,15 @@ struct AccountRepository {
         }
     }
 
-    /// Sets the Goals-analytics inclusion overrides on an account and caches the response.
-    func updateFlags(id: UUID, includeInSpending: Bool?, includeInCashFlow: Bool?) async throws {
+    /// Updates per-account overrides (any subset; a nil argument leaves that field unchanged server-side,
+    /// matching the backend's exclude_unset semantics) and caches the response. Pass an empty
+    /// `displayName` to reset the name back to the Plaid value.
+    func update(id: UUID, displayName: String? = nil, kind: String? = nil,
+                includeInSpending: Bool? = nil, includeInCashFlow: Bool? = nil) async throws {
         let output = try await client.update_account_accounts__account_id__patch(
             path: .init(account_id: id.uuidString),
             body: .json(Mapping.accountUpdate(
+                displayName: displayName, kind: kind,
                 includeInSpending: includeInSpending, includeInCashFlow: includeInCashFlow))
         )
         switch output {
@@ -99,6 +103,11 @@ struct AccountRepository {
         }
     }
 
+    /// Sets just the Goals-analytics inclusion overrides (thin wrapper over `update`).
+    func updateFlags(id: UUID, includeInSpending: Bool?, includeInCashFlow: Bool?) async throws {
+        try await update(id: id, includeInSpending: includeInSpending, includeInCashFlow: includeInCashFlow)
+    }
+
     func upsertAccounts(_ responses: [Components.Schemas.AccountResponse]) throws {
         for r in responses {
             let id = try Mapping.uuid(r.id, field: "Account.id")
@@ -106,7 +115,9 @@ struct AccountRepository {
                 FetchDescriptor<Account>(predicate: #Predicate { $0.id == id })
             ).first {
                 existing.name = r.name
+                existing.displayName = r.display_name
                 existing.type = r._type
+                existing.kindOverride = r.kind
                 existing.plaidAccountId = r.plaid_account_id
                 existing.balance = try Mapping.decimal(r.balance, field: "Account.balance")
                 existing.currency = r.currency
