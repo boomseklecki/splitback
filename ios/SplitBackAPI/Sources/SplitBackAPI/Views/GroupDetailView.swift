@@ -74,8 +74,10 @@ struct GroupDetailView: View {
                     ForEach(balances) { entry in
                         let phrase = BalancePhrase.member(
                             entry.net, isMe: entry.userIdentifier == me)
+                        let name = users.displayName(for: entry.userIdentifier)
                         HStack {
-                            Text(users.displayName(for: entry.userIdentifier))
+                            AvatarView(url: users.avatarURL(for: entry.userIdentifier), name: name, size: 28)
+                            Text(name)
                             Spacer()
                             Text(phrase.label).font(.caption).foregroundStyle(.secondary)
                             if let amount = phrase.amount {

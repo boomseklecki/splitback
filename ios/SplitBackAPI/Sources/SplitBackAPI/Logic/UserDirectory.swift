@@ -7,4 +7,9 @@ extension Collection where Element == User {
     func displayName(for identifier: String) -> String {
         first { $0.identifier == identifier }?.displayName.titleCased ?? identifier.titleCased
     }
+
+    /// The avatar URL for a person identifier, or nil when the user isn't in the directory or has none.
+    func avatarURL(for identifier: String) -> String? {
+        first { $0.identifier == identifier }?.avatarURL
+    }
 }
