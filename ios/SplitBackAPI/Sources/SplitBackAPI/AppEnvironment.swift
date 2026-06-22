@@ -9,6 +9,9 @@ import Observation
 @Observable
 public final class AppEnvironment {
     @ObservationIgnored private(set) var client: Client
+    /// A long-timeout client for slow operations (the Splitwise cold-backfill import + syncs), which can
+    /// run for minutes and otherwise hit NSURLErrorTimedOut on the default 60s request timeout.
+    @ObservationIgnored private(set) var slowClient: Client
     @ObservationIgnored private let tokenStore: KeychainTokenStore
 
     /// Whether a bearer token is stored (drives Settings UI). The backend is default-open without one.
@@ -39,6 +42,7 @@ public final class AppEnvironment {
         let store = KeychainTokenStore()
         self.tokenStore = store
         self.client = APIClientFactory.makeClient(tokenStore: store)
+        self.slowClient = APIClientFactory.makeClient(tokenStore: store, requestTimeout: 300)
         self.hasToken = (store.load()?.isEmpty == false)
         self.baseURLString = APIConfig.baseURL.absoluteString
     }
@@ -100,6 +104,8 @@ public final class AppEnvironment {
         APIConfig.setOverride(string)
         baseURLString = APIConfig.baseURL.absoluteString
         client = APIClientFactory.makeClient(baseURL: APIConfig.baseURL, tokenStore: tokenStore)
+        slowClient = APIClientFactory.makeClient(baseURL: APIConfig.baseURL, tokenStore: tokenStore,
+                                                 requestTimeout: 300)
     }
 
     /// Wipes the local SwiftData cache and signs out — used when switching backends so prod/dev data don't
@@ -120,7 +126,7 @@ public final class AppEnvironment {
     func plaid(_ context: ModelContext) -> PlaidRepository { .init(client: client, context: context) }
     func balances(_ context: ModelContext) -> BalanceRepository { .init(client: client, context: context) }
     func categories(_ context: ModelContext) -> CategoryRepository { .init(client: client, context: context) }
-    var splitwise: SplitwiseService { .init(client: client) }
+    var splitwise: SplitwiseService { .init(client: slowClient) }  // slow client: the cold-backfill import can run minutes
     func auth(_ context: ModelContext) -> AuthService { .init(client: client, context: context) }
 
     /// On-launch / pull-to-refresh: reconcile the cacheable collections (handles server-side deletes).
