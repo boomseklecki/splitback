@@ -114,7 +114,7 @@ async def test_sync_expenses_endpoint_stamps_cursor():
     c.fetch_expenses = lambda client, **kw: []
     try:
         async with async_session() as session:
-            result = await sync_expenses_endpoint(SyncRequest(as_user=TOKEN_USER), session)
+            result = await sync_expenses_endpoint(SyncRequest(as_user=TOKEN_USER), caller=None, session=session)
             assert result.cursor is not None
         async with async_session() as session:
             stamped = await session.scalar(
