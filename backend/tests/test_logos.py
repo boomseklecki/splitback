@@ -40,3 +40,9 @@ def test_logo_proxy_caches_and_serves():
 def test_logo_proxy_rejects_bad_domain():
     # Too short / invalid → 404, no upstream fetch.
     assert _get("/logos/x")[0] == 404
+
+
+if __name__ == "__main__":
+    from tests._runner import run
+
+    run(dict(globals()))
