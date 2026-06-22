@@ -80,18 +80,6 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    NavigationLink {
-                        PeopleView()
-                    } label: {
-                        HStack {
-                            Label("People", systemImage: "person.2")
-                            Spacer()
-                            Text("\(users.count)").foregroundStyle(.secondary)
-                        }
-                    }
-                }
-
-                Section {
                     TextField("Base URL", text: $baseURL)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
@@ -118,6 +106,70 @@ struct SettingsView: View {
                 } footer: {
                     Text("Set Dev/Prod presets once, then switch with a tap. After switching backends, "
                          + "Clear Local Data so cached prod and dev records don't mix.")
+                }
+
+                Section("Plaid") {
+                    NavigationLink {
+                        LinkedBanksView(items: $items)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Linked Banks")
+                            Text("\(items.count) Bank\(items.count == 1 ? "" : "s")")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    Button(action: linkBank) {
+                        Label(linking ? "Preparing…" : "Link Bank", systemImage: "building.columns")
+                    }
+                    .disabled(linking || env.currentUser == nil)
+                    if !items.isEmpty {
+                        Button(action: syncBanks) {
+                            Label(syncing ? "Syncing…" : "Sync All Banks",
+                                  systemImage: "arrow.triangle.2.circlepath")
+                        }
+                        .disabled(syncing)
+                    }
+                    if env.currentUser == nil {
+                        Text("Sign in to link a bank.").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+
+                Section("Splitwise") {
+                    // Status first (mirrors the Plaid section's Linked Banks row above the actions).
+                    Label(env.splitwiseConnected ? "Connected" : "Not connected",
+                          systemImage: env.splitwiseConnected ? "checkmark.circle.fill" : "xmark.circle")
+                        .foregroundStyle(env.splitwiseConnected ? .green : .secondary)
+                    Button("Connect Splitwise", systemImage: "link") { showingSplitwiseLogin = true }
+                        .disabled(splitwiseLoginURL == nil)
+                    Button("Run Import", action: runImport).disabled(importing)
+                    if let importSummary {
+                        Text(importSummary).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+
+                Section("Spending") {
+                    NavigationLink {
+                        ManageCategoriesView()
+                    } label: {
+                        Label("Spending Categories", systemImage: "tag")
+                    }
+                    NavigationLink {
+                        SubscriptionsView()
+                    } label: {
+                        Label("Subscriptions", systemImage: "repeat")
+                    }
+                }
+
+                Section {
+                    NavigationLink {
+                        PeopleView()
+                    } label: {
+                        HStack {
+                            Label("People", systemImage: "person.2")
+                            Spacer()
+                            Text("\(users.count)").foregroundStyle(.secondary)
+                        }
+                    }
                 }
 
                 if let joinURL = JoinLink.url(apiBaseURL: env.baseURLString, name: env.serverName) {
@@ -163,57 +215,6 @@ struct SettingsView: View {
                         if env.hasToken {
                             Text("A token is stored.").font(.caption).foregroundStyle(.secondary)
                         }
-                    }
-                }
-
-                Section("Splitwise") {
-                    Button("Connect Splitwise", systemImage: "link") { showingSplitwiseLogin = true }
-                        .disabled(splitwiseLoginURL == nil)
-                    Label(env.splitwiseConnected ? "Connected" : "Not connected",
-                          systemImage: env.splitwiseConnected ? "checkmark.circle.fill" : "xmark.circle")
-                        .foregroundStyle(env.splitwiseConnected ? .green : .secondary)
-                    Button("Run Import", action: runImport).disabled(importing)
-                    if let importSummary {
-                        Text(importSummary).font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-
-                Section("Spending") {
-                    NavigationLink {
-                        ManageCategoriesView()
-                    } label: {
-                        Label("Spending Categories", systemImage: "tag")
-                    }
-                    NavigationLink {
-                        SubscriptionsView()
-                    } label: {
-                        Label("Subscriptions", systemImage: "repeat")
-                    }
-                }
-
-                Section("Plaid") {
-                    NavigationLink {
-                        LinkedBanksView(items: $items)
-                    } label: {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Linked Banks")
-                            Text("\(items.count) Bank\(items.count == 1 ? "" : "s")")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                    Button(action: linkBank) {
-                        Label(linking ? "Preparing…" : "Link Bank", systemImage: "building.columns")
-                    }
-                    .disabled(linking || env.currentUser == nil)
-                    if !items.isEmpty {
-                        Button(action: syncBanks) {
-                            Label(syncing ? "Syncing…" : "Sync All Banks",
-                                  systemImage: "arrow.triangle.2.circlepath")
-                        }
-                        .disabled(syncing)
-                    }
-                    if env.currentUser == nil {
-                        Text("Sign in to link a bank.").font(.caption).foregroundStyle(.secondary)
                     }
                 }
             }
