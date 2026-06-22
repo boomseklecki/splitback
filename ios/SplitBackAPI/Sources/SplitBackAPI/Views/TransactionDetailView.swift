@@ -13,9 +13,6 @@ struct TransactionDetailView: View {
     @Query private var categoryMaps: [CategoryMap]
     @Query(sort: \SpendCategory.position) private var spendCategories: [SpendCategory]
     @Query private var accounts: [Account]
-    /// Scoped to just this transaction's linked expense (if any) — querying the whole expenses table
-    /// here would load every cached expense (and its relationships) on the main thread each open.
-    @Query private var linkedExpenses: [Expense]
 
     @State private var showingCategoryPicker = false
     @State private var showingCreate = false
@@ -24,12 +21,9 @@ struct TransactionDetailView: View {
     @State private var categorizing = false
     @State private var aiAvailable = false
     @State private var errorText: String?
-
-    init(transaction: Transaction) {
-        self.transaction = transaction
-        let tid = transaction.id
-        _linkedExpenses = Query(filter: #Predicate<Expense> { $0.transactionId == tid })
-    }
+    /// The expense linked to this transaction, loaded off the render path (see `loadLinkedExpense`). A
+    /// body-time `@Query` over the expenses table blocked the navigation push on large datasets.
+    @State private var linkedExpense: Expense?
 
     private var lookup: [String: String] { CategoryMapping.lookup(categoryMaps) }
     private var effectiveCategory: String? {
@@ -42,9 +36,6 @@ struct TransactionDetailView: View {
         guard let id = transaction.accountId else { return nil }
         return accounts.first { $0.id == id }
     }
-
-    /// An expense already created from this transaction, if any (links via `transactionId`).
-    private var linkedExpense: Expense? { linkedExpenses.first }
 
     /// This transaction's line items in entry order.
     private var itemsByAdded: [TransactionItem] {
@@ -148,14 +139,18 @@ struct TransactionDetailView: View {
         }
         .navigationTitle("Transaction")
         .navigationBarTitleDisplayMode(.inline)
-        .task { aiAvailable = CategoryMapper.isAvailable }
+        .task {
+            aiAvailable = CategoryMapper.isAvailable
+            loadLinkedExpense()
+        }
         .sheet(isPresented: $showingCategoryPicker) {
             CategoryPickerView(current: effectiveCategory) { setOverride($0) }
         }
-        .sheet(isPresented: $showingCreate) {
+        // Re-resolve the linked expense after creating/linking one (no @Query to auto-update now).
+        .sheet(isPresented: $showingCreate, onDismiss: loadLinkedExpense) {
             NewExpenseFromTransactionView(transaction: transaction)
         }
-        .sheet(isPresented: $showingLinkExpense) {
+        .sheet(isPresented: $showingLinkExpense, onDismiss: loadLinkedExpense) {
             ExpenseLinkPickerView(transaction: transaction)
         }
         .sheet(isPresented: $showingItems) {
@@ -190,6 +185,15 @@ struct TransactionDetailView: View {
             Spacer()
         }
         .padding(.vertical, 4)
+    }
+
+    /// Fetch the linked expense with a scoped, single-row descriptor — off the body/render path so opening
+    /// the detail never blocks on the expenses table.
+    private func loadLinkedExpense() {
+        let tid = transaction.id
+        var descriptor = FetchDescriptor<Expense>(predicate: #Predicate { $0.transactionId == tid })
+        descriptor.fetchLimit = 1
+        linkedExpense = (try? context.fetch(descriptor))?.first
     }
 
     private func setOverride(_ category: String?) {
