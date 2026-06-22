@@ -32,6 +32,10 @@ struct TransactionsView: View {
         // inside the row closure rebuilt this dictionary for every transaction — O(rows × maps) of
         // dictionary construction on the main thread, which froze long lists.
         let lookup = self.lookup
+        // Split once per render (not inside the ForEach — building these per row is the derived-values
+        // pitfall that froze long lists). The @Query is date-desc, so each group stays newest-first.
+        let pending = transactions.filter(\.pending)
+        let posted = transactions.filter { !$0.pending }
         return List {
             if let account {
                 AccountSummaryHeader(account: account, transactions: transactions)
@@ -44,27 +48,17 @@ struct TransactionsView: View {
                         : "No transactions for this account yet.")
                 )
             }
-            ForEach(transactions) { transaction in
-                NavigationLink {
-                    TransactionDetailView(transaction: transaction)
-                } label: {
-                    let category = CategoryMapping.effectiveCategory(for: transaction, lookup: lookup)
-                    HStack(spacing: 12) {
-                        Image(systemName: categorySymbol(category))
-                            .foregroundStyle(categoryColor(category)).frame(width: 26)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(transaction.details).foregroundStyle(.primary)
-                            HStack(spacing: 4) {
-                                Text(transaction.date.formatted(date: .abbreviated, time: .omitted))
-                                if let category { Text("· \(category)") }
-                            }
-                            .font(.caption).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Text(transaction.amount.formatted(.currency(code: transaction.currency)))
-                            .foregroundStyle(.primary)
-                    }
+            if !pending.isEmpty {
+                Section("Pending") {
+                    ForEach(pending) { transactionLink($0, lookup: lookup, isPending: true) }
                 }
+            }
+            // Header the posted group only when there's a pending group above it, so an all-posted list
+            // looks exactly as before (no stray "Posted" header).
+            Section {
+                ForEach(posted) { transactionLink($0, lookup: lookup, isPending: false) }
+            } header: {
+                if !pending.isEmpty { Text("Posted") }
             }
         }
         .navigationTitle(account?.displayLabel ?? "Transactions")
@@ -104,6 +98,17 @@ struct TransactionsView: View {
         .errorAlert($errorText)
     }
 
+    /// A row that drills into the transaction's detail. Closure-based (not value-based) nav: this list is
+    /// pushed inside the Accounts tab stack, where value-based links drop the first tap.
+    private func transactionLink(_ transaction: Transaction, lookup: [String: String],
+                                 isPending: Bool) -> some View {
+        NavigationLink {
+            TransactionDetailView(transaction: transaction)
+        } label: {
+            TransactionRow(transaction: transaction, lookup: lookup, isPending: isPending)
+        }
+    }
+
     /// Persists one inclusion override (the unspecified flag is left untouched server-side).
     private func setFlags(_ account: Account, includeInSpending: Bool? = nil,
                           includeInCashFlow: Bool? = nil) {
@@ -114,6 +119,49 @@ struct TransactionsView: View {
                     includeInCashFlow: includeInCashFlow)
             } catch { errorText = errorMessage(error) }
         }
+    }
+}
+
+/// One transaction row: category icon, description + date/category subtitle, and amount. A pending row is
+/// drawn in lighter (secondary) text with a "Pending" pill so it reads as not-yet-final.
+struct TransactionRow: View {
+    let transaction: Transaction
+    /// Prebuilt raw→canonical map (built once per render by the list — don't rebuild it here).
+    let lookup: [String: String]
+    var isPending: Bool = false
+
+    var body: some View {
+        // A dict lookup per row is fine; only rebuilding `lookup` per row was the perf bug.
+        let category = CategoryMapping.effectiveCategory(for: transaction, lookup: lookup)
+        HStack(spacing: 12) {
+            Image(systemName: categorySymbol(category))
+                .foregroundStyle(categoryColor(category)).frame(width: 26)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(transaction.details).foregroundStyle(isPending ? .secondary : .primary)
+                    if isPending { PendingPill() }
+                }
+                HStack(spacing: 4) {
+                    Text(transaction.date.formatted(date: .abbreviated, time: .omitted))
+                    if let category { Text("· \(category)") }
+                }
+                .font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Text(transaction.amount.formatted(.currency(code: transaction.currency)))
+                .foregroundStyle(isPending ? .secondary : .primary)
+        }
+    }
+}
+
+/// A small "Pending" pill, in the same orange the account summary uses for pending totals.
+struct PendingPill: View {
+    var body: some View {
+        Text("Pending")
+            .font(.caption2).fontWeight(.medium)
+            .padding(.horizontal, 6).padding(.vertical, 2)
+            .background(.orange.opacity(0.15), in: Capsule())
+            .foregroundStyle(.orange)
     }
 }
 
