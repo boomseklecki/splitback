@@ -1,4 +1,6 @@
-FROM python:3.12-slim
+# Pinned to bookworm: the PGDG apt repo line below targets bookworm-pgdg, and the bare `slim` tag has
+# rolled forward to trixie (Debian 13), whose libldap can't satisfy the bookworm libpq5 dependency.
+FROM python:3.12-slim-bookworm
 
 # postgresql-client-16 (pg_dump/pg_restore for admin backups) from the PGDG apt repo — the Debian
 # bookworm default client is 15, which can't dump a Postgres 16 server.
