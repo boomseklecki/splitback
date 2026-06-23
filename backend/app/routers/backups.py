@@ -5,8 +5,10 @@ Create and restore are long-running (a pg_dump/pg_restore + receipt IO); the iOS
 300s "slow" transport.
 """
 from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import require_admin
+from app.db import get_session
 from app.schemas.backup import BackupCreate, BackupResponse, RestoreResult
 from app.services import backups
 
@@ -29,7 +31,16 @@ async def create_backup(body: BackupCreate, _: str = Depends(require_admin)) -> 
 
 
 @router.post("/backups/{name}/restore", response_model=RestoreResult)
-async def restore_backup(name: str, _: str = Depends(require_admin)) -> RestoreResult:
+async def restore_backup(
+    name: str,
+    _: str = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+) -> RestoreResult:
+    # Release this request's DB connection BEFORE restoring. The auth dependency leaves this session
+    # idle-in-transaction holding an AccessShare lock on `users`; pg_restore --clean needs AccessExclusive
+    # on the same tables → a self-deadlock that wedges the whole DB (every login queues behind it). Closing
+    # frees the lock so pg_restore can proceed.
+    await session.close()
     return RestoreResult(**await backups.restore(name))
 
 

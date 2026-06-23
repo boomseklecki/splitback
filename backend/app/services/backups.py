@@ -148,7 +148,10 @@ async def restore(name: str) -> dict[str, str]:
             archive = os.path.join(workdir, "archive.tar.gz")
             await asyncio.to_thread(minio_client.download_to_file, settings.backups_bucket, name, archive)
             await asyncio.to_thread(_unpack, archive, workdir)
-            await _run("pg_restore", "--clean", "--if-exists", "--no-owner",
+            # --single-transaction: the whole restore is atomic — a failure rolls back cleanly instead of
+            # leaving a half-restored DB. (The caller must not hold locks on these tables; see the restore
+            # endpoint, which closes its request session first.)
+            await _run("pg_restore", "--clean", "--if-exists", "--no-owner", "--single-transaction",
                        "-d", settings.libpq_dsn, os.path.join(workdir, _DATABASE_DUMP))
             await asyncio.to_thread(_restore_receipts, os.path.join(workdir, _RECEIPTS_DIR))
             return {"restored": name, "safety_backup": safety.name}
