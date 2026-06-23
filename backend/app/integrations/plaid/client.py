@@ -79,11 +79,15 @@ class PlaidClient:
             products=[Products(p.strip()) for p in settings.plaid_products.split(",")],
             country_codes=[CountryCode(c.strip()) for c in settings.plaid_country_codes.split(",")],
             language=settings.plaid_language,
-            # Request up to ~24 months of history (default is far less); actual depth is bank-dependent.
-            transactions=LinkTokenTransactions(
-                days_requested=settings.plaid_transactions_days_requested
-            ),
         )
+        # Request extended history ONLY when configured (>0). Sending a `transactions.days_requested` block
+        # changes the data scope in the OAuth authorization, which some OAuth institutions (e.g. PNC) reject
+        # at the bank ("Access Denied"). Set PLAID_TRANSACTIONS_DAYS_REQUESTED=0 to omit it entirely — the
+        # original behavior that worked for those banks.
+        if settings.plaid_transactions_days_requested > 0:
+            kwargs["transactions"] = LinkTokenTransactions(
+                days_requested=settings.plaid_transactions_days_requested
+            )
         # Only include redirect_uri when configured — an unregistered value rejects every link token.
         if settings.plaid_redirect_uri:
             kwargs["redirect_uri"] = settings.plaid_redirect_uri
