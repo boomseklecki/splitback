@@ -27,6 +27,7 @@ struct SettingsView: View {
     @State private var syncing = false
     @State private var showingInviteQR = false
     @State private var errorText: String?
+    @State private var linkDiagnostics = PlaidLinkDiagnosticsStore.shared
 
     struct LinkSession: Identifiable { let id = UUID(); let token: String }
 
@@ -131,6 +132,13 @@ struct SettingsView: View {
                     }
                     if env.currentUser == nil {
                         Text("Sign in to link a bank.").font(.caption).foregroundStyle(.secondary)
+                    }
+                    if linkDiagnostics.last != nil {
+                        NavigationLink {
+                            PlaidLinkDiagnosticsView()
+                        } label: {
+                            Label("Last Link Diagnostics", systemImage: "ladybug")
+                        }
                     }
                 }
 

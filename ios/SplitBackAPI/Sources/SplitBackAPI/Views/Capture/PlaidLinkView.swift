@@ -46,9 +46,14 @@ struct PlaidLinkView: UIViewControllerRepresentable {
 
         func present(from controller: UIViewController) {
             var configuration = LinkTokenConfiguration(token: parent.linkToken) { [parent] success in
+                PlaidLinkDiagnosticsStore.shared.clear()  // the attempt succeeded — drop any prior error
                 parent.onSuccess(success.publicToken)
             }
-            configuration.onExit = { [parent] _ in parent.onExit() }
+            // Capture the exit's session/request ids + error so a failed link can be reported to Plaid.
+            configuration.onExit = { [parent] exit in
+                PlaidLinkDiagnosticsStore.shared.record(Self.diagnostics(token: parent.linkToken, exit: exit))
+                parent.onExit()
+            }
 
             switch Plaid.create(configuration) {
             case let .success(handler):
@@ -60,9 +65,28 @@ struct PlaidLinkView: UIViewControllerRepresentable {
                 } else {
                     handler.open(presentUsing: .viewController(controller))
                 }
-            case .failure:
+            case let .failure(error):
+                PlaidLinkDiagnosticsStore.shared.record(
+                    PlaidLinkDiagnostics(linkToken: parent.linkToken,
+                                         errorMessage: "Plaid.create failed: \(String(describing: error))"))
                 parent.onExit()
             }
+        }
+
+        /// Maps LinkKit's `LinkExit` (error + session metadata) to our stored diagnostics.
+        private static func diagnostics(token: String, exit: LinkExit) -> PlaidLinkDiagnostics {
+            let metadata = exit.metadata
+            return PlaidLinkDiagnostics(
+                linkToken: token,
+                linkSessionID: metadata.linkSessionID,
+                requestID: metadata.requestID,
+                institutionName: metadata.institution?.name,
+                institutionID: metadata.institution.map { String(describing: $0.id) },
+                status: metadata.status.map { String(describing: $0) },
+                errorCode: exit.error.map { String(describing: $0.errorCode) },
+                errorMessage: exit.error?.errorMessage,
+                displayMessage: exit.error?.displayMessage
+            )
         }
     }
 }
