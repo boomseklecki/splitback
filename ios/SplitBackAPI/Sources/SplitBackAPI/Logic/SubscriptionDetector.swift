@@ -259,13 +259,21 @@ enum SubscriptionDetector {
     /// A stable grouping key from a merchant string: lowercase, letters only, noise/short words dropped,
     /// first few significant words joined (e.g. "Netflix.com 866-579-7172 CA" → "netflix").
     static func merchantKey(_ details: String) -> String {
-        let words = details.lowercased()
+        significantWords(details).prefix(3).joined(separator: " ")
+    }
+
+    /// The brand-bearing words of a merchant string, in order: lowercased, letters only, with noise and
+    /// short (<3 char) words dropped. Shared by `merchantKey` and the description grouper.
+    static func significantWords(_ details: String) -> [String] {
+        details.lowercased()
             .map { ($0.isLetter || $0 == " ") ? $0 : " " }
             .reduce(into: "") { $0.append($1) }
             .split(separator: " ").map(String.init)
             .filter { $0.count >= 3 && !noise.contains($0) }
-        return words.prefix(3).joined(separator: " ")
     }
+
+    /// The unordered set of significant words — for fuzzy "same merchant?" overlap checks.
+    static func significantTokens(_ details: String) -> Set<String> { Set(significantWords(details)) }
 
     private static func displayName(_ key: String) -> String {
         key.split(separator: " ").map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined(separator: " ")

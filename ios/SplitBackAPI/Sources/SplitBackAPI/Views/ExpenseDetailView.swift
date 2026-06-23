@@ -167,6 +167,16 @@ struct ExpenseDetailView: View {
                 }
             }
 
+            Section {
+                NavigationLink {
+                    DescriptionDetailView(seedDescription: expense.details, seedCategory: expense.category)
+                } label: {
+                    Label("Find Related Transactions", systemImage: "text.magnifyingglass")
+                }
+            } footer: {
+                Text("Group bank/manual transactions with a similar description and recategorize them together.")
+            }
+
             if let notes = expense.notes, !notes.isEmpty {
                 Section("Notes") { Text(notes) }
             }

@@ -92,6 +92,16 @@ struct TransactionDetailView: View {
                 }
             }
 
+            Section {
+                NavigationLink {
+                    DescriptionDetailView(seedDescription: transaction.details, seedCategory: effectiveCategory)
+                } label: {
+                    Label("Find Related Transactions", systemImage: "text.magnifyingglass")
+                }
+            } footer: {
+                Text("Group bank/manual transactions with a similar description and recategorize them together.")
+            }
+
             if transaction.amount > 0 {
                 Section {
                     if let rule = subscriptionRule {
