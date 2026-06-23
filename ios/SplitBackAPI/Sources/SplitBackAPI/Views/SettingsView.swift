@@ -204,8 +204,16 @@ struct SettingsView: View {
                     }
                 }
 
-                // Operator-only: static bearer-token entry (impersonation/testing). Admins only.
+                // Operator-only: backups + static bearer-token entry. Admins only.
                 if env.currentUser?.isAdmin == true {
+                    Section {
+                        NavigationLink {
+                            BackupsView()
+                        } label: {
+                            Label("Backups", systemImage: "externaldrive")
+                        }
+                    }
+
                     Section("API Token") {
                         SecureField("Bearer token (optional)", text: $token)
                         Button("Save Token") {

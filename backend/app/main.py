@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
@@ -9,6 +10,7 @@ from app.integrations.storage import minio_client
 from app.routers import (
     accounts,
     auth,
+    backups,
     balances,
     categories,
     category_map,
@@ -24,6 +26,7 @@ from app.routers import (
     splitwise_auth,
     users,
 )
+from app.services.backup_scheduler import run_scheduler
 
 
 @asynccontextmanager
@@ -35,7 +38,14 @@ async def lifespan(app: FastAPI):
             break
         except Exception:
             await asyncio.sleep(1)
-    yield
+    # Scheduled backups (no-op unless BACKUP_INTERVAL_HOURS > 0).
+    scheduler = asyncio.create_task(run_scheduler())
+    try:
+        yield
+    finally:
+        scheduler.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await scheduler
 
 
 app = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan)
@@ -60,6 +70,7 @@ app.include_router(splitwise.router, dependencies=_protected)
 app.include_router(categories.router, dependencies=_protected)
 app.include_router(category_map.router, dependencies=_protected)
 app.include_router(goals.router, dependencies=_protected)
+app.include_router(backups.router)  # each route self-gates with require_admin
 
 
 @app.get("/")

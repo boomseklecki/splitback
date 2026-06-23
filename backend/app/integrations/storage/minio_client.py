@@ -4,6 +4,7 @@ A single internal client (in-cluster `minio:9000`) handles all object IO. Receip
 flow through the API — the iOS client never reaches MinIO directly, so there is no public
 client and no presigning. All calls here are blocking — wrap in asyncio.to_thread.
 """
+from datetime import datetime
 from functools import lru_cache
 from io import BytesIO
 from uuid import UUID, uuid4
@@ -72,3 +73,41 @@ def object_exists(object_key: str) -> bool:
 
 def remove(object_key: str) -> None:
     _internal_client().remove_object(settings.minio_bucket, object_key)
+
+
+# --- Generic, bucket-parameterized helpers (used by the backups service) -----------------------------
+# These take an explicit bucket so they can operate on the backups bucket as well as receipts. All are
+# blocking (minio SDK) — call from asyncio.to_thread.
+
+def ensure_bucket_named(bucket: str) -> None:
+    client = _internal_client()
+    if not client.bucket_exists(bucket):
+        client.make_bucket(bucket)
+
+
+def list_object_names(bucket: str) -> list[str]:
+    """Recursive object keys in a bucket (empty if the bucket doesn't exist yet)."""
+    client = _internal_client()
+    if not client.bucket_exists(bucket):
+        return []
+    return [obj.object_name for obj in client.list_objects(bucket, recursive=True)]
+
+
+def stat(bucket: str, object_key: str) -> tuple[int, datetime, dict[str, str]]:
+    """(size_bytes, last_modified, user_metadata) for one object."""
+    st = _internal_client().stat_object(bucket, object_key)
+    return st.size, st.last_modified, dict(st.metadata or {})
+
+
+def download_to_file(bucket: str, object_key: str, dest_path: str) -> None:
+    _internal_client().fget_object(bucket, object_key, dest_path)
+
+
+def upload_file(bucket: str, object_key: str, src_path: str,
+                content_type: str = "application/octet-stream",
+                metadata: dict[str, str] | None = None) -> None:
+    _internal_client().fput_object(bucket, object_key, src_path, content_type=content_type, metadata=metadata)
+
+
+def remove_named(bucket: str, object_key: str) -> None:
+    _internal_client().remove_object(bucket, object_key)

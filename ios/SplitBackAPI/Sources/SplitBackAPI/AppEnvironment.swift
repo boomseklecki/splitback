@@ -127,6 +127,7 @@ public final class AppEnvironment {
     func balances(_ context: ModelContext) -> BalanceRepository { .init(client: client, context: context) }
     func categories(_ context: ModelContext) -> CategoryRepository { .init(client: client, context: context) }
     var splitwise: SplitwiseService { .init(client: slowClient) }  // slow client: the cold-backfill import can run minutes
+    var backups: BackupsRepository { .init(client: slowClient) }   // slow client: pg_dump/restore + receipts can run minutes
     func auth(_ context: ModelContext) -> AuthService { .init(client: client, context: context) }
 
     /// On-launch / pull-to-refresh: reconcile the cacheable collections (handles server-side deletes).

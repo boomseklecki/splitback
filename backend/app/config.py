@@ -46,6 +46,16 @@ class Settings(BaseSettings):
     minio_secret_key: str = "splitback-secret"
     minio_bucket: str = "receipts"
     minio_secure: bool = False
+
+    # Backups (admin-only): full DB dump + receipt objects, stored as one tar.gz per backup in this MinIO
+    # bucket (parallel to the receipts bucket; set per stack, e.g. backups-prod). The in-process scheduler
+    # runs every `backup_interval_hours` (0 = off; enable on prod only) and then prunes: scheduled backups
+    # older than `backups_retention_days` are deleted, but the newest `backups_retention_min_keep` are always
+    # kept, and manual backups are never auto-deleted.
+    backups_bucket: str = "backups"
+    backup_interval_hours: int = 0
+    backups_retention_days: int = 30
+    backups_retention_min_keep: int = 7
     # When true, downloading original Splitwise receipt images into MinIO is enabled (convert-to-local
     # auto-downloads them, and the /download-receipts flow works). Off by default (bandwidth/storage).
     splitwise_receipt_download_enabled: bool = False
@@ -85,6 +95,12 @@ class Settings(BaseSettings):
     # user and auto-seeds isolated sample data. Surfaced on /server-info so the app shows the demo UX. Keep
     # FALSE on dev/prod (the endpoint 404s when off).
     demo_mode: bool = False
+
+    @property
+    def libpq_dsn(self) -> str:
+        """A plain libpq connection URI (for pg_dump/pg_restore), derived from the SQLAlchemy async URL by
+        dropping the `+asyncpg` driver tag. Credentials stay embedded so no PGPASSWORD wiring is needed."""
+        return self.database_url.replace("+asyncpg", "", 1)
 
     @model_validator(mode="after")
     def _require_strong_jwt_secret(self) -> "Settings":

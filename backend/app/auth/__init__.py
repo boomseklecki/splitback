@@ -11,7 +11,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import tokens
-from app.auth.access import is_allowed
+from app.auth.access import is_admin, is_allowed
 from app.config import settings
 from app.db import get_session
 from app.models import User
@@ -49,3 +49,12 @@ async def require_auth(
             headers={"WWW-Authenticate": "Bearer"},
         )
     return None
+
+
+async def require_admin(caller: str | None = Depends(require_auth)) -> str:
+    """Gate for operator-only endpoints (e.g. backups): the caller must resolve to a configured admin
+    (`ADMIN_USERS`). 403 otherwise. In open mode (no caller) this still forbids — admin actions always
+    require an identified admin."""
+    if not is_admin(caller):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin only")
+    return caller  # type: ignore[return-value]  # is_admin(None) is False, so caller is non-None here

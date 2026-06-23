@@ -125,6 +125,8 @@ services:
       # value can't cross the streams.
       DATABASE_URL: postgresql+asyncpg://splitback:splitback@db-prod:5432/splitback
       MINIO_BUCKET: receipts-prod
+      BACKUPS_BUCKET: backups-prod
+      BACKUP_INTERVAL_HOURS: "24"   # nightly scheduled backups (prod only)
     depends_on:
       db-prod:
         condition: service_healthy
@@ -161,6 +163,7 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://splitback:splitback@db-demo:5432/splitback
       MINIO_BUCKET: receipts-demo
+      BACKUPS_BUCKET: backups-demo
     depends_on:
       db-demo:
         condition: service_healthy

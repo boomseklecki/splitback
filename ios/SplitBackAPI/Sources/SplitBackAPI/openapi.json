@@ -3240,6 +3240,167 @@
           }
         }
       }
+    },
+    "/backups": {
+      "get": {
+        "tags": [
+          "backups"
+        ],
+        "summary": "List Backups",
+        "operationId": "list_backups_backups_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/BackupResponse"
+                  },
+                  "type": "array",
+                  "title": "Response List Backups Backups Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "backups"
+        ],
+        "summary": "Create Backup",
+        "operationId": "create_backup_backups_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackupCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/backups/{name}/restore": {
+      "post": {
+        "tags": [
+          "backups"
+        ],
+        "summary": "Restore Backup",
+        "operationId": "restore_backup_backups__name__restore_post",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RestoreResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/backups/{name}": {
+      "delete": {
+        "tags": [
+          "backups"
+        ],
+        "summary": "Delete Backup",
+        "operationId": "delete_backup_backups__name__delete",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -5207,6 +5368,67 @@
         },
         "type": "object",
         "title": "ExpenseTransactionLink"
+      },
+      "BackupResponse": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "title": "Size Bytes"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "size_bytes",
+          "created_at",
+          "kind"
+        ],
+        "title": "BackupResponse"
+      },
+      "BackupCreate": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "title": "BackupCreate"
+      },
+      "RestoreResult": {
+        "properties": {
+          "restored": {
+            "type": "string",
+            "title": "Restored"
+          },
+          "safety_backup": {
+            "type": "string",
+            "title": "Safety Backup"
+          }
+        },
+        "type": "object",
+        "required": [
+          "restored",
+          "safety_backup"
+        ],
+        "title": "RestoreResult"
       }
     },
     "securitySchemes": {
