@@ -124,7 +124,7 @@ public final class AppEnvironment {
     func goals(_ context: ModelContext) -> GoalRepository { .init(client: client, context: context) }
     func categoryMaps(_ context: ModelContext) -> CategoryMapRepository { .init(client: client, context: context) }
     func plaid(_ context: ModelContext) -> PlaidRepository { .init(client: client, context: context) }
-    func plaidSlow(_ context: ModelContext) -> PlaidRepository { .init(client: slowClient, context: context) }  // relink: ~24mo backfill runs minutes
+    func plaidSlow(_ context: ModelContext) -> PlaidRepository { .init(client: slowClient, context: context) }  // exchange auto-syncs the new bank, which can backfill many months
     func balances(_ context: ModelContext) -> BalanceRepository { .init(client: client, context: context) }
     func categories(_ context: ModelContext) -> CategoryRepository { .init(client: client, context: context) }
     var splitwise: SplitwiseService { .init(client: slowClient) }  // slow client: the cold-backfill import can run minutes

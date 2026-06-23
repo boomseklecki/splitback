@@ -36,7 +36,7 @@ async def _upsert_account(
     values = {**fields, "plaid_item_id": item_id, "owner_identifier": owner_identifier}
     update_cols = {
         k: values[k]
-        for k in ("name", "type", "balance", "currency", "plaid_item_id", "owner_identifier")
+        for k in ("name", "type", "mask", "balance", "currency", "plaid_item_id", "owner_identifier")
     }
     stmt = (
         pg_insert(Account)

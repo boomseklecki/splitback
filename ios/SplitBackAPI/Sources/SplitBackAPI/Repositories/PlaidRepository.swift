@@ -70,26 +70,4 @@ struct PlaidRepository {
         case let .undocumented(statusCode, _): throw BackendError.fromUndocumented(statusCode)
         }
     }
-
-    /// Extends an existing bank's history: the freshly-linked `publicToken` is exchanged + fully synced
-    /// (~24 months) and merged onto `oldItemId`, then the old item is removed. Long-running — call on the
-    /// slow client (see `AppEnvironment.plaidSlow`). Refreshes cached accounts + transactions after.
-    @discardableResult
-    func relink(oldItemId: UUID, publicToken: String,
-                institutionName: String? = nil) async throws -> Components.Schemas.RelinkResult {
-        let output = try await client.relink_plaid_relink_post(
-            body: .json(.init(old_item_id: oldItemId.uuidString, public_token: publicToken,
-                              institution_name: institutionName))
-        )
-        switch output {
-        case let .ok(ok):
-            let result = try ok.body.json
-            let accounts = AccountRepository(client: client, context: context)
-            try await accounts.refreshAccounts()
-            try await accounts.refreshTransactions()
-            return result
-        case let .unprocessableContent(error): throw BackendError.validation(BackendError.validationMessage(try? error.body.json))
-        case let .undocumented(statusCode, _): throw BackendError.fromUndocumented(statusCode)
-        }
-    }
 }

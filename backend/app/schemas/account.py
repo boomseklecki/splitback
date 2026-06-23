@@ -33,6 +33,7 @@ class AccountResponse(BaseModel):
     display_name: str | None
     type: str | None
     kind: str | None
+    mask: str | None
     plaid_account_id: str | None
     balance: Decimal
     currency: str

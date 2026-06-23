@@ -76,6 +76,12 @@ extension Account {
         return name
     }
 
+    /// The account number's last few digits, formatted for display (e.g. "•••• 1234"); nil when unknown.
+    var maskLabel: String? {
+        guard let mask, !mask.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+        return "•••• \(mask)"
+    }
+
     /// Whether this account's outflows count toward budgets/spending. Defaults to cash-flow + credit
     /// (true spend wherever it happens); the user can override per account.
     var countsInSpending: Bool {

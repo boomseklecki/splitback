@@ -21,12 +21,9 @@ from app.schemas.plaid import (
     LinkTokenRequest,
     LinkTokenResponse,
     PlaidItemResponse,
-    RelinkRequest,
-    RelinkResult,
     SyncRequest,
     SyncResponse,
 )
-from app.services import plaid_relink
 
 log = logging.getLogger(__name__)
 
@@ -96,39 +93,6 @@ async def exchange(
     return ExchangeResponse(
         item_id=item_id, plaid_item_id=item.plaid_item_id, accounts=list(rows)
     )
-
-
-@router.post("/relink", response_model=RelinkResult)
-async def relink(
-    body: RelinkRequest,
-    caller: str | None = Depends(require_auth),
-    session: AsyncSession = Depends(get_session),
-) -> RelinkResult:
-    """Extend an existing bank's history: a fresh link (which pulls up to ~24 months) is created, fully
-    synced, then merged onto the old item — preserving account customizations + transaction edits/links —
-    and the old item is removed. Long-running (full backfill)."""
-    old_item = await session.get(PlaidItem, body.old_item_id)
-    if old_item is None:
-        raise HTTPException(status_code=404, detail="Plaid item not found")
-    assert_owner(old_item.user_identifier, caller)
-    owner = old_item.user_identifier
-    old_access_token = old_item.access_token  # capture before migrate() deletes the row
-
-    client = plaid_client.make_client()
-    new_item_id = await _create_item_from_public_token(
-        session, client, body.public_token, owner, body.institution_name
-    )
-    new_item = await session.get(PlaidItem, new_item_id)
-
-    await plaid_sync.sync_item(session, new_item, client)  # cursor null → full ~24mo backfill
-    stats = await plaid_relink.migrate(session, old_item, new_item, client)
-
-    # Revoke the old token at Plaid (best-effort; the local row is already gone via migrate()).
-    try:
-        await asyncio.to_thread(client.item_remove, old_access_token)
-    except Exception:
-        pass
-    return RelinkResult(**stats)
 
 
 @router.post("/sync", response_model=SyncResponse)

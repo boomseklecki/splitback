@@ -130,6 +130,7 @@ enum Mapping {
             displayName: r.display_name,
             type: r._type,
             kindOverride: r.kind,
+            mask: r.mask,
             plaidAccountId: r.plaid_account_id,
             plaidItemId: nil,
             balance: try decimal(r.balance, field: "Account.balance"),

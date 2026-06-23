@@ -23,6 +23,7 @@ def map_account(account: dict) -> dict:
         "type": account.get("type"),
         "balance": Decimal(str(account.get("balance") if account.get("balance") is not None else "0")),
         "currency": account.get("currency") or "USD",
+        "mask": account.get("mask"),
     }
 
 

@@ -3401,52 +3401,6 @@
           }
         ]
       }
-    },
-    "/plaid/relink": {
-      "post": {
-        "tags": [
-          "plaid"
-        ],
-        "summary": "Relink",
-        "operationId": "relink_plaid_relink_post",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RelinkRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RelinkResult"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
     }
   },
   "components": {
@@ -3531,6 +3485,10 @@
             "type": "string",
             "format": "date-time",
             "title": "Updated At"
+          },
+          "mask": {
+            "type": "string",
+            "title": "Mask"
           }
         },
         "type": "object",
@@ -5475,62 +5433,6 @@
           "safety_backup"
         ],
         "title": "RestoreResult"
-      },
-      "RelinkRequest": {
-        "properties": {
-          "old_item_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Old Item Id"
-          },
-          "public_token": {
-            "type": "string",
-            "title": "Public Token"
-          },
-          "institution_name": {
-            "type": "string",
-            "title": "Institution Name"
-          }
-        },
-        "type": "object",
-        "required": [
-          "old_item_id",
-          "public_token"
-        ],
-        "title": "RelinkRequest"
-      },
-      "RelinkResult": {
-        "properties": {
-          "accounts_matched": {
-            "type": "integer",
-            "title": "Accounts Matched"
-          },
-          "transactions_merged": {
-            "type": "integer",
-            "title": "Transactions Merged"
-          },
-          "transactions_kept": {
-            "type": "integer",
-            "title": "Transactions Kept"
-          },
-          "links_moved": {
-            "type": "integer",
-            "title": "Links Moved"
-          },
-          "items_synced": {
-            "type": "integer",
-            "title": "Items Synced"
-          }
-        },
-        "type": "object",
-        "required": [
-          "accounts_matched",
-          "transactions_merged",
-          "transactions_kept",
-          "links_moved",
-          "items_synced"
-        ],
-        "title": "RelinkResult"
       }
     },
     "securitySchemes": {

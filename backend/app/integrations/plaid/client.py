@@ -37,7 +37,7 @@ def _normalize_account(account: dict) -> dict:
         "type": str(account.get("subtype") or account.get("type") or "") or None,
         "balance": balances.get("current"),
         "currency": balances.get("iso_currency_code") or "USD",
-        # Last few digits — stable across re-links of the same real account; used to match on relink.
+        # Account number's last few digits — persisted and shown on each account row.
         "mask": account.get("mask"),
     }
 

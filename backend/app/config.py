@@ -82,7 +82,7 @@ class Settings(BaseSettings):
     # to link-token creation when set (an unregistered value breaks ALL link tokens).
     plaid_redirect_uri: str = ""
     # Initial transaction history requested at link time (Plaid `days_requested`, max 730 = ~24 months).
-    # Burned in per item at link; existing items only gain history by re-linking (POST /plaid/relink).
+    # Burned in per item at link; 0 omits the request entirely (some OAuth banks reject the extra data scope).
     plaid_transactions_days_requested: int = 730
 
     # Splitwise (server-side only) — consumer key/secret act as the OAuth2 client id/secret

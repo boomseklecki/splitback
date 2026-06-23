@@ -12,15 +12,9 @@ struct LinkedBanksView: View {
     @Query(sort: \Account.name) private var accounts: [Account]
 
     @State private var confirmingUnlink: UnlinkTarget?
-    @State private var confirmingRelink: RelinkTarget?
-    @State private var relinkTarget: RelinkTarget?      // the bank being re-linked once Plaid Link starts
-    @State private var linkSession: LinkSession?
-    @State private var working: String?                 // status while preparing/merging a re-link
     @State private var errorText: String?
 
     struct UnlinkTarget: Identifiable { let id: String; let name: String }
-    struct RelinkTarget: Identifiable { let id: String; let name: String }
-    struct LinkSession: Identifiable { let id = UUID(); let token: String }
 
     var body: some View {
         // Correlate each item's accounts to the cached models once per render (avoid per-row dict builds).
@@ -46,7 +40,8 @@ struct LinkedBanksView: View {
                             HStack {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(account.displayLabel)
-                                    Text(account.kind.label).font(.caption).foregroundStyle(.secondary)
+                                    Text(account.kind.label + (account.maskLabel.map { " · \($0)" } ?? ""))
+                                        .font(.caption).foregroundStyle(.secondary)
                                 }
                                 Spacer()
                                 Text(account.balance.formatted(.currency(code: account.currency)))
@@ -54,10 +49,6 @@ struct LinkedBanksView: View {
                             }
                         }
                     }
-                    Button("Extend History (Re-link)", systemImage: "clock.arrow.circlepath") {
-                        confirmingRelink = RelinkTarget(id: item.id, name: item.institution_name ?? "Bank")
-                    }
-                    .disabled(working != nil)
                     Button("Unlink Bank", systemImage: "trash", role: .destructive) {
                         confirmingUnlink = UnlinkTarget(id: item.id, name: item.institution_name ?? "Bank")
                     }
@@ -65,36 +56,9 @@ struct LinkedBanksView: View {
                     Text(item.institution_name ?? "Bank").textCase(nil)
                 }
             }
-            if let working {
-                Section {
-                    HStack(spacing: 10) { ProgressView(); Text(working).foregroundStyle(.secondary) }
-                }
-            }
         }
         .navigationTitle("Linked Banks")
         .navigationBarTitleDisplayMode(.inline)
-        .confirmationDialog(
-            confirmingRelink.map { "Extend \($0.name)'s history?" } ?? "Extend history?",
-            isPresented: Binding(get: { confirmingRelink != nil },
-                                 set: { if !$0 { confirmingRelink = nil } }),
-            titleVisibility: .visible, presenting: confirmingRelink
-        ) { target in
-            Button("Re-link") { beginRelink(target) }
-        } message: { _ in
-            Text("Re-connect this bank to pull up to ~24 months of history. Your account names, types, "
-                 + "categories, and expense links are preserved and merged — no duplicates.")
-        }
-        .fullScreenCover(item: $linkSession) { session in
-            PlaidLinkView(
-                linkToken: session.token,
-                onSuccess: { publicToken in
-                    linkSession = nil
-                    PlaidLinkSession.shared.finish()
-                    if let target = relinkTarget { finishRelink(target, publicToken: publicToken) }
-                },
-                onExit: { linkSession = nil; relinkTarget = nil; PlaidLinkSession.shared.finish() }
-            )
-        }
         .confirmationDialog(
             confirmingUnlink.map { "Unlink \($0.name)?" } ?? "Unlink bank?",
             isPresented: Binding(get: { confirmingUnlink != nil },
@@ -115,41 +79,6 @@ struct LinkedBanksView: View {
             do {
                 try await env.plaid(context).deleteItem(id: id)
                 items.removeAll { $0.id == target.id }
-            } catch { errorText = errorMessage(error) }
-        }
-    }
-
-    /// Start Plaid Link to re-connect the bank; the public token is merged in `finishRelink`.
-    private func beginRelink(_ target: RelinkTarget) {
-        confirmingRelink = nil
-        guard let me = env.currentUser?.identifier else { errorText = "Sign in first."; return }
-        relinkTarget = target
-        Task {
-            working = "Preparing…"
-            defer { working = nil }
-            do {
-                let token = try await env.plaid(context).linkToken(userIdentifier: me)
-                PlaidLinkSession.shared.begin(token: token)
-                linkSession = LinkSession(token: token)
-            } catch {
-                relinkTarget = nil
-                errorText = errorMessage(error)
-            }
-        }
-    }
-
-    /// Exchange + full-sync + merge onto the old item (server-side), then refresh the linked-banks list.
-    private func finishRelink(_ target: RelinkTarget, publicToken: String) {
-        guard let oldId = UUID(uuidString: target.id) else { return }
-        relinkTarget = nil
-        Task {
-            working = "Importing ~24 months & merging… do not close the app"
-            defer { working = nil }
-            do {
-                _ = try await env.plaidSlow(context).relink(oldItemId: oldId, publicToken: publicToken,
-                                                            institutionName: target.name)
-                try await env.refreshAll(context)
-                items = (try? await env.plaid(context).items()) ?? items
             } catch { errorText = errorMessage(error) }
         }
     }

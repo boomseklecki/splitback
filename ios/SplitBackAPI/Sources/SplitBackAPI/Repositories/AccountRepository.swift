@@ -118,6 +118,7 @@ struct AccountRepository {
                 existing.displayName = r.display_name
                 existing.type = r._type
                 existing.kindOverride = r.kind
+                existing.mask = r.mask
                 existing.plaidAccountId = r.plaid_account_id
                 existing.balance = try Mapping.decimal(r.balance, field: "Account.balance")
                 existing.currency = r.currency

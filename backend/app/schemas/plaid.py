@@ -51,18 +51,3 @@ class SyncResponse(BaseModel):
     added: int
     modified: int
     removed: int
-
-
-class RelinkRequest(BaseModel):
-    # The existing item to extend; replaced by a fresh link that pulls more history, then merged onto it.
-    old_item_id: UUID
-    public_token: str
-    institution_name: str | None = None
-
-
-class RelinkResult(BaseModel):
-    accounts_matched: int
-    transactions_merged: int   # recent overlap de-duplicated (edits/links carried to the new rows)
-    transactions_kept: int     # user-meaningful old rows with no new match, re-parented
-    links_moved: int           # expense<->transaction links re-pointed to the new transactions
-    items_synced: int

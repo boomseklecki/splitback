@@ -35,7 +35,8 @@ struct AccountEditView: View {
             } header: {
                 Text("Display Name")
             } footer: {
-                Text("Shown throughout the app. Leave blank to use the bank's name (\(account.name)).")
+                Text("Shown throughout the app. Leave blank to use the bank's name (\(account.name))."
+                     + (account.maskLabel.map { " Account \($0)." } ?? ""))
             }
 
             Section {

@@ -11,6 +11,8 @@ final class Account {
     var type: String?
     /// User-set classification override ("cash_flow" | "liability" | "savings"); nil = derive from `type`.
     var kindOverride: String?
+    /// The account number's last few digits (Plaid `mask`), shown on the account row; nil for manual.
+    var mask: String?
     var plaidAccountId: String?
     /// Present server-side but not returned by `GET /accounts`; left nil when mapped from the API.
     var plaidItemId: UUID?
@@ -28,6 +30,7 @@ final class Account {
         displayName: String? = nil,
         type: String? = nil,
         kindOverride: String? = nil,
+        mask: String? = nil,
         plaidAccountId: String? = nil,
         plaidItemId: UUID? = nil,
         balance: Decimal,
@@ -42,6 +45,7 @@ final class Account {
         self.displayName = displayName
         self.type = type
         self.kindOverride = kindOverride
+        self.mask = mask
         self.plaidAccountId = plaidAccountId
         self.plaidItemId = plaidItemId
         self.balance = balance
