@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -26,6 +27,8 @@ from app.schemas.plaid import (
     SyncResponse,
 )
 from app.services import plaid_relink
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/plaid", tags=["plaid"])
 
@@ -150,11 +153,24 @@ async def run_sync(
 
     client = plaid_client.make_client()
     totals = {"accounts": 0, "added": 0, "modified": 0, "removed": 0}
+    synced = 0
     for item in items:
-        stats = await plaid_sync.sync_item(session, item, client)
+        # Isolate per-item failures: a single dead item (e.g. ITEM_NOT_FOUND after the bank was removed at
+        # Plaid) must not abort the whole "Sync All Banks" — skip it and keep syncing the healthy ones.
+        try:
+            stats = await plaid_sync.sync_item(session, item, client)
+        except Exception:
+            await session.rollback()
+            log.exception("Plaid sync failed for item %s (%s); skipping",
+                          item.id, item.institution_name)
+            continue
+        synced += 1
         for key in totals:
             totals[key] += stats[key]
-    return SyncResponse(items_synced=len(items), **totals)
+    # All items failed (e.g. every token revoked) — surface an error rather than a misleading success.
+    if items and synced == 0:
+        raise HTTPException(status_code=502, detail="No banks could be synced (all items failed at Plaid).")
+    return SyncResponse(items_synced=synced, **totals)
 
 
 @router.get("/items", response_model=list[PlaidItemResponse])
