@@ -26,7 +26,8 @@ from app.routers import (
     splitwise_auth,
     users,
 )
-from app.services.backup_scheduler import run_scheduler
+from app.services.backup_scheduler import run_scheduler as run_backup_scheduler
+from app.services.sync_scheduler import run_scheduler as run_sync_scheduler
 
 
 @asynccontextmanager
@@ -38,14 +39,16 @@ async def lifespan(app: FastAPI):
             break
         except Exception:
             await asyncio.sleep(1)
-    # Scheduled backups (no-op unless BACKUP_INTERVAL_HOURS > 0).
-    scheduler = asyncio.create_task(run_scheduler())
+    # Background loops (each a no-op unless its interval is > 0): scheduled backups + periodic data sync.
+    tasks = [asyncio.create_task(run_backup_scheduler()), asyncio.create_task(run_sync_scheduler())]
     try:
         yield
     finally:
-        scheduler.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await scheduler
+        for task in tasks:
+            task.cancel()
+        for task in tasks:
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
 
 
 app = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan)

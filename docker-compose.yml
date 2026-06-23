@@ -127,6 +127,7 @@ services:
       MINIO_BUCKET: receipts-prod
       BACKUPS_BUCKET: backups-prod
       BACKUP_INTERVAL_HOURS: "24"   # nightly scheduled backups (prod only)
+      SYNC_INTERVAL_HOURS: "12"     # periodic Plaid + Splitwise sync (prod only)
     depends_on:
       db-prod:
         condition: service_healthy

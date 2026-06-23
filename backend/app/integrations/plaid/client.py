@@ -13,6 +13,7 @@ from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchan
 from plaid.model.item_remove_request import ItemRemoveRequest
 from plaid.model.link_token_create_request import LinkTokenCreateRequest
 from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
+from plaid.model.link_token_transactions import LinkTokenTransactions
 from plaid.model.products import Products
 from plaid.model.transactions_sync_request import TransactionsSyncRequest
 
@@ -36,6 +37,8 @@ def _normalize_account(account: dict) -> dict:
         "type": str(account.get("subtype") or account.get("type") or "") or None,
         "balance": balances.get("current"),
         "currency": balances.get("iso_currency_code") or "USD",
+        # Last few digits — stable across re-links of the same real account; used to match on relink.
+        "mask": account.get("mask"),
     }
 
 
@@ -76,6 +79,10 @@ class PlaidClient:
             products=[Products(p.strip()) for p in settings.plaid_products.split(",")],
             country_codes=[CountryCode(c.strip()) for c in settings.plaid_country_codes.split(",")],
             language=settings.plaid_language,
+            # Request up to ~24 months of history (default is far less); actual depth is bank-dependent.
+            transactions=LinkTokenTransactions(
+                days_requested=settings.plaid_transactions_days_requested
+            ),
         )
         # Only include redirect_uri when configured — an unregistered value rejects every link token.
         if settings.plaid_redirect_uri:

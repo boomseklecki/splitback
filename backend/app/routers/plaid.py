@@ -20,9 +20,12 @@ from app.schemas.plaid import (
     LinkTokenRequest,
     LinkTokenResponse,
     PlaidItemResponse,
+    RelinkRequest,
+    RelinkResult,
     SyncRequest,
     SyncResponse,
 )
+from app.services import plaid_relink
 
 router = APIRouter(prefix="/plaid", tags=["plaid"])
 
@@ -39,28 +42,17 @@ async def create_link_token(
     return LinkTokenResponse(link_token=token)
 
 
-@router.post("/exchange", response_model=ExchangeResponse)
-async def exchange(
-    body: ExchangeRequest,
-    caller: str | None = Depends(require_auth),
-    session: AsyncSession = Depends(get_session),
-) -> ExchangeResponse:
-    owner = caller or body.user_identifier  # never trust the body's user_identifier when authenticated
-    client = plaid_client.make_client()
-    access_token, plaid_item_id = await asyncio.to_thread(
-        client.exchange_public_token, body.public_token
-    )
-
+async def _create_item_from_public_token(
+    session: AsyncSession, client, public_token: str, owner: str | None, institution_name: str | None
+) -> UUID:
+    """Exchange a public token, upsert the resulting PlaidItem + its accounts, and return the item id."""
+    access_token, plaid_item_id = await asyncio.to_thread(client.exchange_public_token, public_token)
     # Prefer the client-supplied name, else resolve it from Plaid. Only ever set a non-null name so a
     # failed lookup never wipes an existing institution_name on conflict.
-    institution_name = body.institution_name or await asyncio.to_thread(
+    institution_name = institution_name or await asyncio.to_thread(
         client.get_institution_name, access_token
     )
-    values = {
-        "plaid_item_id": plaid_item_id,
-        "access_token": access_token,
-        "user_identifier": owner,
-    }
+    values = {"plaid_item_id": plaid_item_id, "access_token": access_token, "user_identifier": owner}
     set_ = {"access_token": access_token, "user_identifier": owner}
     if institution_name:
         values["institution_name"] = institution_name
@@ -75,19 +67,65 @@ async def exchange(
         )
     ).scalar_one()
 
-    accounts_raw = await asyncio.to_thread(client.get_accounts, access_token)
-    for account in accounts_raw:
+    for account in await asyncio.to_thread(client.get_accounts, access_token):
         await plaid_sync._upsert_account(
             session, item_id, mapper.map_account(account), owner_identifier=owner
         )
     await session.commit()
+    return item_id
 
+
+@router.post("/exchange", response_model=ExchangeResponse)
+async def exchange(
+    body: ExchangeRequest,
+    caller: str | None = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
+) -> ExchangeResponse:
+    owner = caller or body.user_identifier  # never trust the body's user_identifier when authenticated
+    client = plaid_client.make_client()
+    item_id = await _create_item_from_public_token(
+        session, client, body.public_token, owner, body.institution_name
+    )
+    item = await session.get(PlaidItem, item_id)
     rows = await session.scalars(
         select(Account).where(Account.plaid_item_id == item_id).order_by(Account.created_at)
     )
     return ExchangeResponse(
-        item_id=item_id, plaid_item_id=plaid_item_id, accounts=list(rows)
+        item_id=item_id, plaid_item_id=item.plaid_item_id, accounts=list(rows)
     )
+
+
+@router.post("/relink", response_model=RelinkResult)
+async def relink(
+    body: RelinkRequest,
+    caller: str | None = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
+) -> RelinkResult:
+    """Extend an existing bank's history: a fresh link (which pulls up to ~24 months) is created, fully
+    synced, then merged onto the old item — preserving account customizations + transaction edits/links —
+    and the old item is removed. Long-running (full backfill)."""
+    old_item = await session.get(PlaidItem, body.old_item_id)
+    if old_item is None:
+        raise HTTPException(status_code=404, detail="Plaid item not found")
+    assert_owner(old_item.user_identifier, caller)
+    owner = old_item.user_identifier
+    old_access_token = old_item.access_token  # capture before migrate() deletes the row
+
+    client = plaid_client.make_client()
+    new_item_id = await _create_item_from_public_token(
+        session, client, body.public_token, owner, body.institution_name
+    )
+    new_item = await session.get(PlaidItem, new_item_id)
+
+    await plaid_sync.sync_item(session, new_item, client)  # cursor null → full ~24mo backfill
+    stats = await plaid_relink.migrate(session, old_item, new_item, client)
+
+    # Revoke the old token at Plaid (best-effort; the local row is already gone via migrate()).
+    try:
+        await asyncio.to_thread(client.item_remove, old_access_token)
+    except Exception:
+        pass
+    return RelinkResult(**stats)
 
 
 @router.post("/sync", response_model=SyncResponse)

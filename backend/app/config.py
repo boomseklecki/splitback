@@ -56,6 +56,11 @@ class Settings(BaseSettings):
     backup_interval_hours: int = 0
     backups_retention_days: int = 30
     backups_retention_min_keep: int = 7
+
+    # Periodic data sync: the in-process scheduler runs Plaid (cursor-incremental) + Splitwise (incremental,
+    # per stored token) every `sync_interval_hours` (0 = off; enable on prod, e.g. 12). Pull-to-refresh in the
+    # app still only reconciles local data — this keeps the backend fresh without user action.
+    sync_interval_hours: int = 0
     # When true, downloading original Splitwise receipt images into MinIO is enabled (convert-to-local
     # auto-downloads them, and the /download-receipts flow works). Off by default (bandwidth/storage).
     splitwise_receipt_download_enabled: bool = False
@@ -76,6 +81,9 @@ class Settings(BaseSettings):
     # Plaid dashboard AND handled by the iOS app. Leave blank for sandbox / non-OAuth — only passed
     # to link-token creation when set (an unregistered value breaks ALL link tokens).
     plaid_redirect_uri: str = ""
+    # Initial transaction history requested at link time (Plaid `days_requested`, max 730 = ~24 months).
+    # Burned in per item at link; existing items only gain history by re-linking (POST /plaid/relink).
+    plaid_transactions_days_requested: int = 730
 
     # Splitwise (server-side only) — consumer key/secret act as the OAuth2 client id/secret
     splitwise_consumer_key: str = ""
