@@ -19,14 +19,20 @@ struct PlaidRepository {
         }
     }
 
-    /// Exchanges the Plaid public token for an item + accounts, and caches the accounts.
+    /// Exchanges the Plaid public token for an item + accounts, caches the accounts, then auto-syncs just
+    /// that new bank so its transactions appear immediately. A fresh link can backfill ~24 months, so call
+    /// this on the slow client (see `AppEnvironment.plaidSlow`).
     func exchange(publicToken: String, userIdentifier: String, institutionName: String? = nil) async throws {
         let output = try await client.exchange_plaid_exchange_post(
             body: .json(.init(public_token: publicToken, user_identifier: userIdentifier, institution_name: institutionName))
         )
         switch output {
         case let .ok(ok):
-            try AccountRepository(client: client, context: context).upsertAccounts(try ok.body.json.accounts)
+            let response = try ok.body.json
+            try AccountRepository(client: client, context: context).upsertAccounts(response.accounts)
+            if let itemId = UUID(uuidString: response.item_id) {
+                try await sync(itemId: itemId)  // sync this bank only; refreshes its accounts + transactions
+            }
         case let .unprocessableContent(error): throw BackendError.validation(BackendError.validationMessage(try? error.body.json))
         case let .undocumented(statusCode, _): throw BackendError.fromUndocumented(statusCode)
         }

@@ -214,7 +214,8 @@ struct AccountsView: View {
     private func exchange(_ publicToken: String) async {
         guard let me = env.currentUser?.identifier else { return }
         do {
-            try await env.plaid(context).exchange(publicToken: publicToken, userIdentifier: me)
+            // Slow client: exchange auto-syncs the new bank, which can backfill ~24 months.
+            try await env.plaidSlow(context).exchange(publicToken: publicToken, userIdentifier: me)
             await reload()
         } catch { errorText = errorMessage(error) }
     }

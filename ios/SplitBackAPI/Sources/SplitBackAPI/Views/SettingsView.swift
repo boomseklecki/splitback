@@ -347,8 +347,11 @@ struct SettingsView: View {
             errorText = "Sign in to link a bank."
             return
         }
+        syncing = true
+        defer { syncing = false }
         do {
-            try await env.plaid(context).exchange(publicToken: publicToken, userIdentifier: me)
+            // Slow client: exchange auto-syncs the new bank, which can backfill ~24 months.
+            try await env.plaidSlow(context).exchange(publicToken: publicToken, userIdentifier: me)
             await loadItems()
         } catch { errorText = errorMessage(error) }
     }
