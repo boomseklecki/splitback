@@ -26,6 +26,14 @@ struct PlaidLinkDiagnosticsView: View {
                          + "(link_session_id and request_id are the key fields).")
                 }
 
+                if !d.events.isEmpty {
+                    Section("Link Events") {
+                        ForEach(Array(d.events.enumerated()), id: \.offset) { _, event in
+                            Text(event).font(.caption2).monospaced().textSelection(.enabled)
+                        }
+                    }
+                }
+
                 Section("Link Token") {
                     Text(d.linkToken).font(.caption2).textSelection(.enabled)
                 }

@@ -41,6 +41,8 @@ struct PlaidLinkView: UIViewControllerRepresentable {
     final class Coordinator {
         private let parent: PlaidLinkView
         private var handler: Handler?
+        /// The session's LinkKit event trail — captured so a failed OAuth flow shows where it died.
+        private var events: [String] = []
 
         init(_ parent: PlaidLinkView) { self.parent = parent }
 
@@ -49,9 +51,11 @@ struct PlaidLinkView: UIViewControllerRepresentable {
                 PlaidLinkDiagnosticsStore.shared.clear()  // the attempt succeeded — drop any prior error
                 parent.onSuccess(success.publicToken)
             }
-            // Capture the exit's session/request ids + error so a failed link can be reported to Plaid.
-            configuration.onExit = { [parent] exit in
-                PlaidLinkDiagnosticsStore.shared.record(Self.diagnostics(token: parent.linkToken, exit: exit))
+            configuration.onEvent = { [weak self] event in self?.record(event) }
+            // Capture the exit's session/request ids + error + event trail to report a failed link to Plaid.
+            configuration.onExit = { [weak self, parent] exit in
+                PlaidLinkDiagnosticsStore.shared.record(
+                    self?.diagnostics(exit: exit) ?? PlaidLinkDiagnostics(linkToken: parent.linkToken))
                 parent.onExit()
             }
 
@@ -68,16 +72,28 @@ struct PlaidLinkView: UIViewControllerRepresentable {
             case let .failure(error):
                 PlaidLinkDiagnosticsStore.shared.record(
                     PlaidLinkDiagnostics(linkToken: parent.linkToken,
-                                         errorMessage: "Plaid.create failed: \(String(describing: error))"))
+                                         errorMessage: "Plaid.create failed: \(String(describing: error))",
+                                         events: events))
                 parent.onExit()
             }
         }
 
-        /// Maps LinkKit's `LinkExit` (error + session metadata) to our stored diagnostics.
-        private static func diagnostics(token: String, exit: LinkExit) -> PlaidLinkDiagnostics {
+        /// Append a compact one-line summary of a LinkKit event (name + view + any error).
+        private func record(_ event: LinkEvent) {
+            guard events.count < 80 else { return }
+            let metadata = event.metadata
+            var parts = ["\(event.eventName)"]
+            if let view = metadata.viewName { parts.append("view=\(view)") }
+            if let code = metadata.errorCode { parts.append("errorCode=\(code)") }
+            if let message = metadata.errorMessage, !message.isEmpty { parts.append("error=\(message)") }
+            events.append(parts.joined(separator: " "))
+        }
+
+        /// Maps LinkKit's `LinkExit` (error + session metadata) + the event trail to our stored diagnostics.
+        private func diagnostics(exit: LinkExit) -> PlaidLinkDiagnostics {
             let metadata = exit.metadata
             return PlaidLinkDiagnostics(
-                linkToken: token,
+                linkToken: parent.linkToken,
                 linkSessionID: metadata.linkSessionID,
                 requestID: metadata.requestID,
                 institutionName: metadata.institution?.name,
@@ -85,7 +101,8 @@ struct PlaidLinkView: UIViewControllerRepresentable {
                 status: metadata.status.map { String(describing: $0) },
                 errorCode: exit.error.map { String(describing: $0.errorCode) },
                 errorMessage: exit.error?.errorMessage,
-                displayMessage: exit.error?.displayMessage
+                displayMessage: exit.error?.displayMessage,
+                events: events
             )
         }
     }

@@ -14,11 +14,14 @@ struct PlaidLinkDiagnostics: Codable, Equatable {
     var errorCode: String?
     var errorMessage: String?
     var displayMessage: String?
+    /// The LinkKit event trail for the session (e.g. OPEN → OPEN_OAUTH → TRANSITION_VIEW → ERROR), which
+    /// pinpoints where an OAuth flow died after the redirect.
+    var events: [String]
 
     init(capturedAt: Date = Date(), linkToken: String, linkSessionID: String? = nil,
          requestID: String? = nil, institutionName: String? = nil, institutionID: String? = nil,
          status: String? = nil, errorCode: String? = nil, errorMessage: String? = nil,
-         displayMessage: String? = nil) {
+         displayMessage: String? = nil, events: [String] = []) {
         self.capturedAt = capturedAt
         self.linkToken = linkToken
         self.linkSessionID = linkSessionID
@@ -29,6 +32,7 @@ struct PlaidLinkDiagnostics: Codable, Equatable {
         self.errorCode = errorCode
         self.errorMessage = errorMessage
         self.displayMessage = displayMessage
+        self.events = events
     }
 
     /// Whether the exit carried an actual error (vs a plain user cancel with no error).
@@ -50,6 +54,10 @@ struct PlaidLinkDiagnostics: Codable, Equatable {
         add("error_message", errorMessage)
         add("display_message", displayMessage)
         add("link_token", linkToken)
+        if !events.isEmpty {
+            lines.append("events:")
+            lines.append(contentsOf: events.map { "  \($0)" })
+        }
         return lines.joined(separator: "\n")
     }
 }

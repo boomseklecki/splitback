@@ -38,14 +38,17 @@ final class PlaidLinkDiagnosticsTests: XCTestCase {
         XCTAssertNil(PlaidLinkDiagnosticsStore(defaults: defaults, key: "diag").last)
     }
 
-    func testShareTextIncludesKeyFields() {
+    func testShareTextIncludesKeyFieldsAndEvents() {
         let d = PlaidLinkDiagnostics(linkToken: "tok", linkSessionID: "ls-9", requestID: "rq-9",
-                                     errorMessage: "denied")
+                                     errorMessage: "denied",
+                                     events: ["OPEN", "OPEN_OAUTH view=CONNECTED", "ERROR error=denied"])
         let text = d.shareText
         XCTAssertTrue(text.contains("link_session_id: ls-9"))
         XCTAssertTrue(text.contains("request_id: rq-9"))
         XCTAssertTrue(text.contains("link_token: tok"))
         XCTAssertFalse(text.contains("display_message"))  // omitted when nil
+        XCTAssertTrue(text.contains("events:"))
+        XCTAssertTrue(text.contains("OPEN_OAUTH view=CONNECTED"))
     }
 
     func testCleanCancelIsNotError() {
