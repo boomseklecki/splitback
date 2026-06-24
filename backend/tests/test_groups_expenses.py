@@ -105,17 +105,8 @@ async def test_backend_type_filter_and_splitwise_delete_409():
         await _purge(self_id, sw_id)
 
 
-async def test_hide_flag_on_splitwise_group():
-    sw_id = await _make_splitwise_group("test-sw-hide")
-    try:
-        status, body = _req("PATCH", f"/groups/{sw_id}", {"hidden": True})
-        assert status == 200 and json.loads(body)["hidden"] is True
-
-        assert not any(g["id"] == sw_id for g in json.loads(_req("GET", "/groups")[1]))
-        shown = json.loads(_req("GET", "/groups?include_hidden=true")[1])
-        assert any(g["id"] == sw_id for g in shown)
-    finally:
-        await _purge(sw_id)
+# Note: the per-user `hidden` group toggle moved to `group_overrides` (keyed by caller), so it no longer
+# reflects in open mode (caller=None) — it's covered caller-scoped in tests/test_group_overrides.py.
 
 
 async def test_expense_validation():

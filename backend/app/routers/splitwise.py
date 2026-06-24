@@ -247,6 +247,7 @@ async def import_group_local(
     source.archived_at = datetime.now(timezone.utc)
     await session.commit()
     await session.refresh(new_group)
+    new_group.hidden = False  # per-user `hidden` lives in group_overrides; a fresh import has none
     return LocalImportResult(
         group=GroupResponse.model_validate(new_group),
         expenses_copied=len(expenses),

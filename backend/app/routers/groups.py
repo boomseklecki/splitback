@@ -11,7 +11,7 @@ from app.auth.scope import assert_group_member
 from app.config import settings
 from app.db import get_session
 from app.integrations.storage import minio_client
-from app.models import BackendType, Expense, Group, GroupMember, Receipt
+from app.models import BackendType, Expense, Group, GroupMember, GroupOverride, Receipt
 from app.schemas.group import GroupCreate, GroupResponse, GroupUpdate
 from app.schemas.group_member import GroupMemberCreate, GroupMemberResponse
 from app.utils import ensure_utc
@@ -32,7 +32,28 @@ async def create_group(
         session.add(GroupMember(group_id=group.id, user_identifier=caller))
     await session.commit()
     await session.refresh(group)
+    await _attach_group_overrides(session, caller, [group])
     return group
+
+
+async def _attach_group_overrides(
+    session: AsyncSession, caller: str | None, groups: list[Group]
+) -> None:
+    """Populate each group's per-user `hidden` flag from the caller's `group_overrides` row (none in open
+    mode → default False). The column moved to `group_overrides`; this sets a transient attribute the response
+    serializes via `from_attributes`."""
+    by_id: dict = {}
+    ids = [g.id for g in groups]
+    if caller is not None and ids:
+        rows = await session.scalars(
+            select(GroupOverride).where(
+                GroupOverride.owner_identifier == caller, GroupOverride.group_id.in_(ids)
+            )
+        )
+        by_id = {o.group_id: o for o in rows}
+    for g in groups:
+        override = by_id.get(g.id)
+        g.hidden = bool(override.hidden) if override is not None and override.hidden is not None else False
 
 
 @router.get("", response_model=list[GroupResponse])
@@ -53,12 +74,19 @@ async def list_groups(
         stmt = stmt.where(Group.backend_type == backend_type)
     if not include_archived:
         stmt = stmt.where(Group.archived_at.is_(None))
-    if not include_hidden:
-        stmt = stmt.where(Group.hidden.is_(False))
+    if caller is not None and not include_hidden:  # exclude groups the caller has hidden (open mode hides none)
+        stmt = stmt.where(
+            Group.id.notin_(
+                select(GroupOverride.group_id).where(
+                    GroupOverride.owner_identifier == caller, GroupOverride.hidden.is_(True)
+                )
+            )
+        )
     if updated_since is not None:
         stmt = stmt.where(Group.updated_at >= ensure_utc(updated_since))
-    rows = await session.scalars(stmt.order_by(Group.created_at))
-    return list(rows)
+    rows = list(await session.scalars(stmt.order_by(Group.created_at)))
+    await _attach_group_overrides(session, caller, rows)
+    return rows
 
 
 @router.get("/{group_id}", response_model=GroupResponse)
@@ -71,6 +99,7 @@ async def get_group(
     if group is None:
         raise HTTPException(status_code=404, detail="Group not found")
     await assert_group_member(session, group_id, caller)
+    await _attach_group_overrides(session, caller, [group])
     return group
 
 
@@ -85,12 +114,24 @@ async def update_group(
     if group is None:
         raise HTTPException(status_code=404, detail="Group not found")
     await assert_group_member(session, group_id, caller)
-    if body.name is not None:
+    if body.name is not None:  # name is shared/sourced — stays on the group row
         group.name = body.name
-    if body.hidden is not None:
-        group.hidden = body.hidden
+    if body.hidden is not None and caller is not None:  # `hidden` is the caller's per-user override
+        override = await session.scalar(
+            select(GroupOverride).where(
+                GroupOverride.owner_identifier == caller, GroupOverride.group_id == group_id
+            )
+        )
+        if body.hidden:  # set the caller's override
+            if override is None:
+                session.add(GroupOverride(owner_identifier=caller, group_id=group_id, hidden=True))
+            else:
+                override.hidden = True
+        elif override is not None:  # hidden=False is the default → drop the row
+            await session.delete(override)
     await session.commit()
     await session.refresh(group)
+    await _attach_group_overrides(session, caller, [group])
     return group
 
 

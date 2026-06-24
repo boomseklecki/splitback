@@ -6,6 +6,7 @@ from app.models.expense_item import ExpenseItem
 from app.models.goal import Goal
 from app.models.group import Group
 from app.models.group_member import GroupMember
+from app.models.group_override import GroupOverride
 from app.models.oauth_state import SplitwiseOAuthState
 from app.models.plaid_item import PlaidItem
 from app.models.receipt import Receipt
@@ -26,6 +27,7 @@ __all__ = [
     "ExpenseItem",
     "Group",
     "GroupMember",
+    "GroupOverride",
     "PlaidItem",
     "Receipt",
     "Split",

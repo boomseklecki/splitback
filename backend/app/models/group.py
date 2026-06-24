@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, String
+from sqlalchemy import DateTime, Enum, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -23,8 +23,7 @@ class Group(UUIDMixin, TimestampMixin, Base):
     cover_photo_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     # Soft-delete marker (self-hosted only); null = active
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    # Cosmetic visibility toggle (any backend type)
-    hidden: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Note: the per-user `hidden` visibility toggle now lives in `group_overrides` (per (owner, group)).
 
     expenses: Mapped[list["Expense"]] = relationship(  # noqa: F821
         back_populates="group", cascade="all, delete-orphan", passive_deletes=True
