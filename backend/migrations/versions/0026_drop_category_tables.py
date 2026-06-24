@@ -1,18 +1,17 @@
-"""migrate shared category tables into per-user preference blobs, then drop them
+"""drop the unused shared category tables
 
-Categories are now local-authoritative (per user) and synced via the per-owner `user_preferences` blob
-(see 0025). The old global `categories` + `category_map` tables are unused by the app and the backend never
-read them. This migration first preserves any customizations: it builds the `categories.v1` snapshot (the
-iOS `CategorySnapshot` shape) from the shared tables and seeds it for every user (ON CONFLICT DO NOTHING, so
-a device that already pushed its own blob is never overwritten) — then drops the tables. Runs safely in a
-single `alembic upgrade head`, so no manual data-migration step is needed.
+Categories are now local-authoritative (per user): the canonical taxonomy is hardcoded on-device
+(`CanonicalCategory.all`) and seeded locally for every new user, and a user's customizations sync via the
+per-owner `user_preferences` blob (`categories.v1`, see 0025). The old global `categories` + `category_map`
+tables are unused by the app and the backend never read them, so just drop them. (No data backfill: existing
+customizations were already preserved into the per-user blob, and `user_preferences` keeps being written by
+the app — this migration is a one-time table removal, not a gate on creating blobs.)
 
 Revision ID: 0026_drop_category_tables
 Revises: 0025_user_preferences
 Create Date: 2026-06-24
 
 """
-import json
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -26,39 +25,6 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    conn = op.get_bind()
-    cats = conn.execute(sa.text(
-        "SELECT name, builtin, position, icon FROM categories ORDER BY position, name")).mappings().all()
-    maps = conn.execute(sa.text(
-        "SELECT raw_category, canonical_category, source FROM category_map ORDER BY raw_category")
-    ).mappings().all()
-
-    # Only seed a blob when there's something worth preserving (a manual map, a custom category, or a
-    # custom icon) — a pristine default taxonomy is reproduced locally by the app's built-in seed anyway.
-    has_custom = bool(maps) or any(not c["builtin"] or c["icon"] for c in cats)
-    if has_custom:
-        snapshot = {
-            "version": 1,
-            "categories": [
-                {"name": c["name"], "icon": c["icon"], "position": c["position"], "builtin": c["builtin"]}
-                for c in cats
-            ],
-            "maps": [
-                {"rawCategory": m["raw_category"], "canonicalCategory": m["canonical_category"],
-                 "source": m["source"]}
-                for m in maps
-            ],
-        }
-        value = json.dumps(snapshot, separators=(",", ":"), ensure_ascii=False)
-        conn.execute(
-            sa.text(
-                "INSERT INTO user_preferences (id, owner_identifier, key, value, created_at, updated_at) "
-                "SELECT gen_random_uuid(), u.identifier, 'categories.v1', :value, now(), now() FROM users u "
-                "ON CONFLICT (owner_identifier, key) DO NOTHING"
-            ),
-            {"value": value},
-        )
-
     op.drop_table("category_map")
     op.drop_table("categories")
 
