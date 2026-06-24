@@ -156,4 +156,9 @@ public final class AppEnvironment {
         CategorySeed.ensureBuiltins(context)
         await CategorySync.pull(context, client: client)
     }
+
+    /// Manual "Sync now" from Categories settings: restore a newer backup, else back up local.
+    func syncCategoriesNow(_ context: ModelContext) async {
+        await CategorySync.syncNow(context, client: client)
+    }
 }

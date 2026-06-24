@@ -14,6 +14,7 @@ struct ManageCategoriesView: View {
 
     @State private var sheet: Sheet?
     @State private var errorText: String?
+    @State private var syncing = false
 
     private enum Sheet: Identifiable {
         case edit(SpendCategory?)
@@ -67,6 +68,21 @@ struct ManageCategoriesView: View {
                     Label("Splitwise Categories", systemImage: "person.2")
                 }
             }
+
+            Section {
+                Button(action: syncNow) {
+                    HStack {
+                        Label("Sync Now", systemImage: "arrow.triangle.2.circlepath")
+                        Spacer()
+                        if syncing { ProgressView() }
+                    }
+                }
+                .disabled(syncing)
+            } footer: {
+                Text("Your categories live on this device and back up to your account. Sync to restore them on "
+                     + "a new device or pick up changes made on another."
+                     + (CategorySync.lastSyncedAt.map { " Last synced \($0.formatted(.relative(presentation: .named)))." } ?? ""))
+            }
         }
         .navigationTitle("Spending Categories")
         .navigationBarTitleDisplayMode(.inline)
@@ -82,6 +98,14 @@ struct ManageCategoriesView: View {
             }
         }
         .errorAlert($errorText)
+    }
+
+    private func syncNow() {
+        syncing = true
+        Task {
+            await env.syncCategoriesNow(context)
+            syncing = false
+        }
     }
 
     private func delete(_ offsets: IndexSet, dependents: [String: [CategoryDependent]]) {

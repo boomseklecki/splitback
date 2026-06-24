@@ -20,6 +20,21 @@ enum CategorySync {
     static let key = "categories.v1"
     private static let syncedAtKey = "categories.syncedAt"
 
+    /// When categories were last pushed to / restored from the backup blob (nil if never).
+    @MainActor
+    static var lastSyncedAt: Date? {
+        let t = UserDefaults.standard.double(forKey: syncedAtKey)
+        return t > 0 ? Date(timeIntervalSince1970: t) : nil
+    }
+
+    /// Manual "Sync now": restore a newer backup if one exists (e.g. edited on another device), otherwise
+    /// back up this device's local categories. Best-effort; never throws.
+    @MainActor
+    static func syncNow(_ context: ModelContext, client: Client) async {
+        if await pull(context, client: client) { return }  // applied a newer remote → already in sync
+        await pushBestEffort(context, client: client)       // else back up local
+    }
+
     @MainActor
     static func snapshot(_ context: ModelContext) throws -> CategorySnapshot {
         let cats = try context.fetch(
@@ -49,19 +64,22 @@ enum CategorySync {
         } catch { /* best-effort backup */ }
     }
 
-    /// Restore from the backend blob when it's newer than what we last applied (e.g. a new phone). No-op when
-    /// there's no backup, the backend lacks the endpoint, or we're already up to date.
+    /// Restore from the backend blob when it's newer than what we last applied (e.g. a new phone). Returns
+    /// whether it applied a restore. No-op when there's no backup, the backend lacks the endpoint, or we're
+    /// already up to date.
     @MainActor
-    static func pull(_ context: ModelContext, client: Client) async {
+    @discardableResult
+    static func pull(_ context: ModelContext, client: Client) async -> Bool {
         do {
             let prefs = try await client.list_preferences_preferences_get().ok.body.json
-            guard let pref = prefs.first(where: { $0.key == key }) else { return }
+            guard let pref = prefs.first(where: { $0.key == key }) else { return false }
             let remoteAt = pref.updated_at.timeIntervalSince1970
-            guard remoteAt > UserDefaults.standard.double(forKey: syncedAtKey) else { return }
+            guard remoteAt > UserDefaults.standard.double(forKey: syncedAtKey) else { return false }
             let snap = try JSONDecoder().decode(CategorySnapshot.self, from: Data(pref.value.utf8))
             try apply(snap, context)
             UserDefaults.standard.set(remoteAt, forKey: syncedAtKey)
-        } catch { /* offline / no backup: keep the local seed */ }
+            return true
+        } catch { return false }  // offline / no backup: keep the local seed
     }
 
     /// Replace local categories + maps with the snapshot, then forward-fill any built-in missing from an
