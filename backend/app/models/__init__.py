@@ -1,6 +1,4 @@
 from app.models.account import Account
-from app.models.category import Category
-from app.models.category_map import CategoryMap
 from app.models.enums import BackendType, TransactionSource, UserSource
 from app.models.expense import Expense
 from app.models.expense_item import ExpenseItem
@@ -20,8 +18,6 @@ from app.models.user_preference import UserPreference
 __all__ = [
     "Account",
     "BackendType",
-    "Category",
-    "CategoryMap",
     "Expense",
     "Goal",
     "ExpenseItem",

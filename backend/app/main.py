@@ -12,8 +12,6 @@ from app.routers import (
     auth,
     backups,
     balances,
-    categories,
-    category_map,
     expenses,
     goals,
     groups,
@@ -71,8 +69,6 @@ app.include_router(accounts.router, dependencies=_protected)
 app.include_router(users.router, dependencies=_protected)
 app.include_router(balances.router, dependencies=_protected)
 app.include_router(splitwise.router, dependencies=_protected)
-app.include_router(categories.router, dependencies=_protected)
-app.include_router(category_map.router, dependencies=_protected)
 app.include_router(goals.router, dependencies=_protected)
 app.include_router(preferences.router, dependencies=_protected)
 app.include_router(backups.router)  # each route self-gates with require_admin

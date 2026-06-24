@@ -170,27 +170,6 @@ enum Mapping {
         )
     }
 
-    static func categoryMap(_ r: Components.Schemas.CategoryMapResponse) throws -> CategoryMap {
-        CategoryMap(
-            id: try uuid(r.id, field: "CategoryMap.id"),
-            rawCategory: r.raw_category,
-            canonicalCategory: r.canonical_category,
-            source: r.source,
-            createdAt: r.created_at,
-            updatedAt: r.updated_at
-        )
-    }
-
-    static func category(_ r: Components.Schemas.CategoryResponse) throws -> SpendCategory {
-        SpendCategory(
-            id: try uuid(r.id, field: "Category.id"),
-            name: r.name,
-            builtin: r.builtin,
-            position: r.position,
-            icon: r.icon
-        )
-    }
-
     static func transaction(_ r: Components.Schemas.TransactionResponse) throws -> Transaction {
         Transaction(
             id: try uuid(r.id, field: "Transaction.id"),
@@ -452,11 +431,6 @@ enum Mapping {
             period: d.period,
             currency: d.currency
         )
-    }
-
-    static func categoryMapUpsert(raw: String, canonical: String, source: String)
-        -> Components.Schemas.CategoryMapUpsert {
-        .init(raw_category: raw, canonical_category: canonical, source: source)
     }
 
     static func accountUpdate(displayName: String? = nil, kind: String? = nil,

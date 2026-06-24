@@ -1,4 +1,4 @@
-"""Goals CRUD, account inclusion flags, and category-map manual mapping."""
+"""Goals CRUD and account inclusion flags."""
 import json
 import urllib.error
 import urllib.request
@@ -7,10 +7,8 @@ from sqlalchemy import delete, select
 
 from app.db import async_session
 from app.models import Account, Goal
-from app.models.category_map import CategoryMap
 
 API = "http://localhost:8000"
-RAW = "Coffee Shop ZZZ"
 
 
 def _req(method, path, data=None):
@@ -97,28 +95,6 @@ async def test_account_display_name_and_kind_overrides():
             async with async_session() as session:
                 await session.execute(delete(Account).where(Account.id == account_id))
                 await session.commit()
-
-
-async def test_category_map_upsert_sources():
-    try:
-        # An on-device suggestion, then a manual override of the same raw label.
-        status, body = _req("PUT", "/category-map",
-                            {"raw_category": RAW, "canonical_category": "Groceries", "source": "ondevice"})
-        assert status == 200, (status, body)
-        assert json.loads(body)["source"] == "ondevice"
-        status, body = _req("PUT", "/category-map", {"raw_category": RAW, "canonical_category": "Dining"})
-        assert status == 200, (status, body)
-        row = json.loads(body)
-        assert row["source"] == "manual" and row["canonical_category"] == "Dining"
-        assert any(m["raw_category"] == RAW for m in json.loads(_req("GET", "/category-map")[1]))
-        # Unknown canonical / source rejected.
-        assert _req("PUT", "/category-map", {"raw_category": RAW, "canonical_category": "Nope"})[0] == 422
-        assert _req("PUT", "/category-map",
-                    {"raw_category": RAW, "canonical_category": "Dining", "source": "bogus"})[0] == 422
-    finally:
-        async with async_session() as session:
-            await session.execute(delete(CategoryMap).where(CategoryMap.raw_category == RAW))
-            await session.commit()
 
 
 if __name__ == "__main__":
