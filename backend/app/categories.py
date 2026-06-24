@@ -1,7 +1,7 @@
 """Canonical category taxonomy.
 
-Shared reference for the category picker, Splitwise import mapping, and AI
-categorization so all three speak the same vocabulary.
+The category picker, import mapping, and AI categorization now live on-device; this list remains as the
+reference vocabulary the dev seed validates against (see `tests/test_dev_seed.py`).
 """
 
 CATEGORIES: list[str] = [

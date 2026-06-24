@@ -1,7 +1,7 @@
 import Foundation
 
-/// SF Symbol for a category: a user-chosen icon from the synced catalog if set, otherwise a
-/// keyword match on the name (Splitwise or self-hosted), falling back to a generic tag.
+/// SF Symbol for a category: the user's chosen local icon if set, otherwise a keyword match on the
+/// name (Splitwise or self-hosted), falling back to a generic tag.
 @MainActor
 func categorySymbol(_ category: String?) -> String {
     guard let name = category, !name.isEmpty else { return "tag" }

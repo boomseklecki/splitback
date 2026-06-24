@@ -29,8 +29,8 @@ class Transaction(UUIDMixin, TimestampMixin, Base):
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD")
     date: Mapped[date_type] = mapped_column(Date, nullable=False)
     category: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    # Per-transaction canonical category override (manual pick or on-device AI), independent of the
-    # label-wide category_map. Wins over the map in the app. Plaid sync never touches it.
+    # Per-transaction canonical category override (manual pick or on-device AI), independent of the app's
+    # local label-wide category map. Wins over the map in the app. Plaid sync never touches it.
     category_override: Mapped[str | None] = mapped_column(String(128), nullable=True)
     # The local identifier this transaction belongs to (per-caller scoping); inherited from its account
     # (the linker) for Plaid rows, or the creator for manual ones. Null = legacy/unowned.

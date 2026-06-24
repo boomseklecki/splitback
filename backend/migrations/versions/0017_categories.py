@@ -11,12 +11,17 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects.postgresql import UUID
 
-from app.categories import CATEGORIES
-
 revision: str = "0017_categories"
 down_revision: str | None = "0016_txn_category_override"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
+
+# The built-in taxonomy at this revision (inlined so the migration is self-contained, not coupled to app code).
+CATEGORIES = [
+    "Groceries", "Dining", "Transport", "Fuel", "Utilities", "Rent", "Mortgage", "Entertainment", "Travel",
+    "Health", "Insurance", "Shopping", "Household", "Subscriptions", "Education", "Gifts", "Personal Care",
+    "Pets", "Fees", "Income", "Transfer", "Settle-up", "Other",
+]
 
 
 def upgrade() -> None:

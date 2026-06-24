@@ -1,9 +1,9 @@
 import Foundation
 import SwiftData
 
-/// The editable canonical category taxonomy, synced from the backend. `builtin` rows are the seeded
-/// defaults; users can add/rename/delete any. `icon` is an optional SF Symbol chosen in the app (nil
-/// falls back to the keyword icon in `categorySymbol`). Mirrors the server `categories` table.
+/// The editable canonical category taxonomy (local/per-user): built-ins are seeded by `CategorySeed` and
+/// users can add/rename/delete any; changes back up to the per-owner `categories.v1` blob via `CategorySync`.
+/// `icon` is an optional SF Symbol chosen in the app (nil falls back to the keyword icon in `categorySymbol`).
 ///
 /// Named `SpendCategory` because the bare `Category` collides with `ObjectiveC.Category`.
 @Model

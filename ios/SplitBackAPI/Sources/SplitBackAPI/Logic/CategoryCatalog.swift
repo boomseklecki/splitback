@@ -1,8 +1,8 @@
 import Foundation
 
 /// In-memory `name → SF Symbol` cache so the free `categorySymbol(_:)` can honor a category's
-/// user-chosen icon without every call site holding the synced `Category` list. Rebuilt by
-/// `CategoryRepository` whenever categories reconcile/change. Main-thread only.
+/// user-chosen icon without every call site holding the local `SpendCategory` list. Rebuilt by
+/// `CategoryRepository`/`CategorySync` whenever categories change. Main-thread only.
 @MainActor
 final class CategoryCatalog {
     static let shared = CategoryCatalog()

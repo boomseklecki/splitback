@@ -2,8 +2,8 @@ import Foundation
 import SwiftData
 
 /// Maps a raw Plaid transaction category (as stored on `Transaction.category`) to one of the app's
-/// canonical categories. Mirrors the server `category_map` table; computed on-device (Apple
-/// Intelligence) or chosen manually, then synced. `source` is "manual" (sticky) or "ondevice".
+/// canonical categories. Local/per-user: computed on-device (Apple Intelligence) or chosen manually, and
+/// backed up via `CategorySync`. `source` is "manual" (sticky) or "ondevice".
 @Model
 final class CategoryMap {
     @Attribute(.unique) var id: UUID

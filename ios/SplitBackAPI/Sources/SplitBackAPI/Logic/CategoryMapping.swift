@@ -1,6 +1,6 @@
 import Foundation
 
-/// Resolves a transaction's raw Plaid category to a canonical one using the synced `category_map`.
+/// Resolves a transaction's raw Plaid category to a canonical one using the local category map.
 enum CategoryMapping {
     /// Builds a fast raw→canonical lookup from the cached map rows.
     static func lookup(_ maps: [CategoryMap]) -> [String: String] {
@@ -9,7 +9,7 @@ enum CategoryMapping {
     }
 
     /// The canonical category for a transaction. Precedence: an explicit per-transaction override
-    /// (manual/AI on this row) → an explicit user/on-device override in the synced label map → a
+    /// (manual/AI on this row) → an explicit user/on-device override in the local label map → a
     /// confident built-in Plaid mapping → the per-transaction on-device refinement (for vague rows) →
     /// the built-in "Other"/raw string. A per-transaction override applies even when the raw category is
     /// empty (e.g. a manual transaction). Nil only when there's nothing to show.
@@ -23,7 +23,7 @@ enum CategoryMapping {
         return builtin ?? raw
     }
 
-    /// Resolves a raw category string without a transaction's refinement: a synced override → the
+    /// Resolves a raw category string without a transaction's refinement: a local override → the
     /// built-in Plaid map → the Splitwise taxonomy map → the raw string. The Splitwise map folds imported
     /// expense categories (e.g. "Dining out") into canonical buckets so they don't fragment the donut.
     static func canonical(_ raw: String, lookup: [String: String]) -> String? {

@@ -31,7 +31,12 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     # Recreate the (empty) tables and reseed the built-in taxonomy; custom data is not restored.
-    from app.categories import CATEGORIES
+    # Inlined (not imported from app code) so the migration stays self-contained.
+    categories_seed = [
+        "Groceries", "Dining", "Transport", "Fuel", "Utilities", "Rent", "Mortgage", "Entertainment",
+        "Travel", "Health", "Insurance", "Shopping", "Household", "Subscriptions", "Education", "Gifts",
+        "Personal Care", "Pets", "Fees", "Income", "Transfer", "Settle-up", "Other",
+    ]
 
     op.create_table(
         "category_map",
@@ -56,5 +61,5 @@ def downgrade() -> None:
     )
     op.bulk_insert(
         categories,
-        [{"name": name, "builtin": True, "position": i} for i, name in enumerate(CATEGORIES)],
+        [{"name": name, "builtin": True, "position": i} for i, name in enumerate(categories_seed)],
     )
