@@ -165,6 +165,17 @@ def fetch_friends(client: Splitwise) -> list[dict]:
                 {"currency": _method(b, "getCurrencyCode"), "amount": _method(b, "getAmount")}
                 for b in (_method(friend, "getBalances") or [])
             ],
+            # Per-group breakdown: each entry's balance is the friend's net WITH YOU in that group.
+            "groups": [
+                {
+                    "splitwise_group_id": str(_method(g, "getId")),
+                    "balances": [
+                        {"currency": _method(b, "getCurrencyCode"), "amount": _method(b, "getAmount")}
+                        for b in (_method(g, "getBalances") or [])
+                    ],
+                }
+                for g in (_method(friend, "getGroups") or [])
+            ],
         })
     return out
 

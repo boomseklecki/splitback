@@ -5506,6 +5506,13 @@
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Net"
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FriendGroupBalance"
+            },
+            "title": "Groups"
           }
         },
         "type": "object",
@@ -5514,6 +5521,29 @@
           "net"
         ],
         "title": "FriendBalance"
+      },
+      "FriendGroupBalance": {
+        "properties": {
+          "splitwise_group_id": {
+            "type": "string",
+            "title": "Splitwise Group Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "net": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Net"
+          }
+        },
+        "type": "object",
+        "required": [
+          "splitwise_group_id",
+          "net"
+        ],
+        "title": "FriendGroupBalance"
       }
     },
     "securitySchemes": {

@@ -1,0 +1,139 @@
+import SwiftUI
+import SwiftData
+
+/// A friend (person) for the Friends list + detail drill-in. Carries the overall balance and the per-group
+/// breakdown (Splitwise-sourced), each group resolved to a local group when cached. Hashable so it can be a
+/// value-based navigation target.
+struct FriendRow: Identifiable, Hashable {
+    let id: String        // the person's identifier (e.g. "nikki")
+    let name: String
+    let net: Decimal      // overall: net > 0 => they owe you
+    let groups: [FriendGroupRef]
+}
+
+/// The friend's balance with you in one shared group. `groupId` is the local group (nil when not cached).
+struct FriendGroupRef: Hashable {
+    let groupId: UUID?
+    let name: String
+    let net: Decimal      // net > 0 => they owe you in this group
+}
+
+/// One friend: a banner with their avatar + your overall balance, the groups you share (each with your
+/// balance with them in that group), and your shared expenses. Mirrors `GroupDetailView`. Reached from the
+/// Friends view in `GroupsListView`.
+struct FriendDetailView: View {
+    let friend: FriendRow
+
+    @Environment(AppEnvironment.self) private var env
+    @Environment(\.modelContext) private var context
+
+    @Query private var expenses: [Expense]
+    @Query private var users: [User]
+    @Query private var allGroups: [ExpenseGroup]
+
+    @State private var errorText: String?
+
+    init(friend: FriendRow) {
+        self.friend = friend
+        let ids = friend.groups.compactMap(\.groupId)
+        _expenses = Query(
+            filter: #Predicate<Expense> { ids.contains($0.groupId) && $0.archivedAt == nil },
+            sort: \Expense.date, order: .reverse
+        )
+    }
+
+    /// Expenses in the shared groups that this friend is actually on (mirrors "expenses with this person").
+    private var sharedExpenses: [Expense] {
+        expenses.filter { e in e.splits.contains { $0.userIdentifier == friend.id } }
+    }
+
+    var body: some View {
+        let users = self.users
+        let me = env.currentUser?.identifier
+        let groupsById = Dictionary(allGroups.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return List {
+            Section {
+                HStack(spacing: 12) {
+                    AvatarView(url: users.avatarURL(for: friend.id), name: friend.name, size: 48)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(friend.name).font(.headline)
+                        let phrase = BalancePhrase.mine(friend.net)
+                        HStack(spacing: 4) {
+                            Text(phrase.label).font(.caption).foregroundStyle(.secondary)
+                            if let amount = phrase.amount {
+                                Text(amount).font(.caption).fontWeight(.medium)
+                                    .foregroundStyle(phrase.color).monospacedDigit()
+                            }
+                        }
+                    }
+                }
+            }
+
+            if !friend.groups.isEmpty {
+                Section("Groups") {
+                    ForEach(friend.groups.sorted { abs($0.net) > abs($1.net) }, id: \.self) { g in
+                        if let group = g.groupId.flatMap({ groupsById[$0] }) {
+                            // One level below the Splits stack root → closure-based link (value-based drops
+                            // the first tap here).
+                            NavigationLink {
+                                LazyView(GroupDetailView(group: group))
+                            } label: {
+                                groupRow(g, group: group)
+                            }
+                        } else {
+                            groupRow(g, group: nil)
+                        }
+                    }
+                }
+            }
+
+            ForEach(expenseMonthGroups(sharedExpenses), id: \.id) { month in
+                Section {
+                    ForEach(month.expenses) { expense in
+                        NavigationLink {
+                            LazyView(ExpenseDetailView(expense: expense))
+                        } label: {
+                            ExpenseRow(expense: expense, users: users, meIdentifier: me)
+                        }
+                    }
+                } header: {
+                    Text(month.label).textCase(nil)
+                }
+            }
+            if sharedExpenses.isEmpty {
+                Section { Text("No shared expenses cached yet. Pull to refresh.").foregroundStyle(.secondary) }
+            }
+        }
+        .navigationTitle(friend.name)
+        .navigationBarTitleDisplayMode(.inline)
+        .refreshable { await reload() }
+        .task { await reload() }
+        .errorAlert($errorText)
+    }
+
+    @ViewBuilder
+    private func groupRow(_ g: FriendGroupRef, group: ExpenseGroup?) -> some View {
+        let phrase = BalancePhrase.mine(g.net)
+        HStack(spacing: 12) {
+            AvatarView(url: group?.avatarURL, name: g.name, size: 28, systemImage: group?.typeSymbol)
+            Text(g.name)
+            Spacer()
+            Text(phrase.label).font(.caption).foregroundStyle(.secondary)
+            if let amount = phrase.amount {
+                Text(amount).foregroundStyle(phrase.color).monospacedDigit()
+            }
+        }
+    }
+
+    /// Best-effort refresh of the shared groups' expenses so this friend's expense list fills in (the local
+    /// cache can be partial for large groups).
+    private func reload() async {
+        if env.splitwiseConnected {
+            do { try await env.splitwise.syncExpenses() } catch { /* best-effort */ }
+        }
+        for gid in friend.groups.compactMap(\.groupId) {
+            do { try await env.expenses(context).reconcileAll(groupId: gid) }
+            catch { errorText = errorMessage(error) }
+        }
+    }
+}

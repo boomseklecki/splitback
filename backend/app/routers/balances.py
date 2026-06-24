@@ -14,7 +14,7 @@ from app.db import get_session
 from app.integrations.splitwise import client as sw_client
 from app.models import Expense, Group, GroupMember, Split, User
 from app.models.splitwise_token import SplitwiseToken
-from app.schemas.balance import BalanceEntry, FriendBalance
+from app.schemas.balance import BalanceEntry, FriendBalance, FriendGroupBalance
 from app.services import friend_balances
 
 logger = logging.getLogger(__name__)
@@ -90,13 +90,30 @@ async def _splitwise_friends(
     the source of truth — not a sum of per-expense repayments). Mapped to local identifiers so the app resolves
     names/avatars from its user directory. Positive net = that person owes the caller."""
     friends = await asyncio.to_thread(sw_client.fetch_friends, sw_client.make_client(token.access_token))
+    # Local group names by Splitwise group id, so each per-group row can show the cached name + link locally.
+    group_rows = await session.execute(
+        select(Group.splitwise_group_id, Group.name).where(Group.splitwise_group_id.is_not(None))
+    )
+    group_names = {sw_gid: name for sw_gid, name in group_rows}
+
+    def _sum(balances) -> Decimal:
+        # Single-currency for now; multi-currency balances are summed (a known v1 simplification).
+        return sum((Decimal(str(b["amount"])) for b in balances if b.get("amount")), Decimal(0))
+
     out: list[FriendBalance] = []
     for f in friends:
-        # Single-currency for now; multi-currency balances are summed (a known v1 simplification).
-        net = sum((Decimal(str(b["amount"])) for b in f["balances"] if b.get("amount")), Decimal(0))
         identifier = sw_map.get(f["splitwise_id"]) or f"swuser_{f['splitwise_id']}"
         name = " ".join(p for p in (f.get("first_name"), f.get("last_name")) if p) or None
-        out.append(FriendBalance(identifier=identifier, display_name=name, net=net))
+        groups = [
+            FriendGroupBalance(
+                splitwise_group_id=g["splitwise_group_id"],
+                name=group_names.get(g["splitwise_group_id"]),
+                net=_sum(g["balances"]),
+            )
+            for g in f.get("groups", [])
+        ]
+        out.append(FriendBalance(
+            identifier=identifier, display_name=name, net=_sum(f["balances"]), groups=groups))
     return sorted(out, key=lambda fb: (fb.display_name or fb.identifier).lower())
 
 

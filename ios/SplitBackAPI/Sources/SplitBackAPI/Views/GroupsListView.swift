@@ -29,6 +29,9 @@ struct GroupsListView: View {
     @Query private var members: [GroupMember]
     @Query private var balanceRows: [GroupBalance]
     @Query private var users: [User]
+    /// Unfiltered (incl. hidden/archived) — used only to resolve a friend's Splitwise group ids to local
+    /// groups for the Friend Detail drill-in, independent of the visible-groups filter above.
+    @Query private var allGroups: [ExpenseGroup]
     @Query(sort: \SpendCategory.position) private var spendCategories: [SpendCategory]
 
     @AppStorage("expenses.sortMode") private var sortModeRaw = SortMode.activity.rawValue
@@ -52,14 +55,21 @@ struct GroupsListView: View {
     private var sortMode: SortMode { SortMode(rawValue: sortModeRaw) ?? .activity }
     private var viewMode: ViewMode { ViewMode(rawValue: viewModeRaw) ?? .groups }
 
-    private struct FriendRow: Identifiable { let id: String; let name: String; let net: Decimal }
-
-    /// All friend rows (unfiltered), resolved with names from the user directory.
+    /// All friend rows (unfiltered), resolved with names from the user directory and each friend's per-group
+    /// balances mapped to local groups for the detail drill-in.
     private var allFriendRows: [FriendRow] {
-        friendBalances.compactMap { fb in
-            (try? Mapping.decimal(fb.net, field: "FriendBalance.net")).map {
-                FriendRow(id: fb.identifier, name: users.displayName(for: fb.identifier), net: $0)
+        let groupsBySwId = Dictionary(
+            allGroups.compactMap { g in g.splitwiseGroupId.map { ($0, g) } },
+            uniquingKeysWith: { first, _ in first })
+        return friendBalances.compactMap { fb in
+            guard let net = try? Mapping.decimal(fb.net, field: "FriendBalance.net") else { return nil }
+            let groups: [FriendGroupRef] = (fb.groups ?? []).compactMap { g in
+                guard let gnet = try? Mapping.decimal(g.net, field: "FriendGroupBalance.net") else { return nil }
+                let local = groupsBySwId[g.splitwise_group_id]
+                return FriendGroupRef(groupId: local?.id, name: local?.name ?? g.name ?? "Group", net: gnet)
             }
+            return FriendRow(id: fb.identifier, name: users.displayName(for: fb.identifier),
+                             net: net, groups: groups)
         }
     }
 
@@ -124,16 +134,18 @@ struct GroupsListView: View {
                 if viewMode == .friends {
                     Section("Friends") {
                         ForEach(friendRows) { row in
-                            HStack(spacing: 12) {
-                                AvatarView(url: users.avatarURL(for: row.id), name: row.name, size: 36)
-                                Text(row.name)
-                                Spacer()
-                                let phrase = BalancePhrase.mine(row.net)
-                                VStack(alignment: .trailing, spacing: 1) {
-                                    Text(phrase.label).font(.caption2).foregroundStyle(.secondary)
-                                    if let amount = phrase.amount {
-                                        Text(amount).font(.subheadline).fontWeight(.medium)
-                                            .foregroundStyle(phrase.color).monospacedDigit()
+                            NavigationLink(value: row) {
+                                HStack(spacing: 12) {
+                                    AvatarView(url: users.avatarURL(for: row.id), name: row.name, size: 36)
+                                    Text(row.name)
+                                    Spacer()
+                                    let phrase = BalancePhrase.mine(row.net)
+                                    VStack(alignment: .trailing, spacing: 1) {
+                                        Text(phrase.label).font(.caption2).foregroundStyle(.secondary)
+                                        if let amount = phrase.amount {
+                                            Text(amount).font(.subheadline).fontWeight(.medium)
+                                                .foregroundStyle(phrase.color).monospacedDigit()
+                                        }
                                     }
                                 }
                             }
@@ -184,6 +196,7 @@ struct GroupsListView: View {
             }
             .navigationTitle("Splits")
             .navigationDestination(for: ExpenseGroup.self) { GroupDetailView(group: $0) }
+            .navigationDestination(for: FriendRow.self) { FriendDetailView(friend: $0) }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Menu {
