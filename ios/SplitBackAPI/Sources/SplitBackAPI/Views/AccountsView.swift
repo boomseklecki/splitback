@@ -159,7 +159,7 @@ struct AccountsView: View {
             HStack(spacing: 12) {
                 AvatarView(url: account.institutionLogoURL,
                            name: account.institutionName ?? account.displayLabel, size: 32,
-                           systemImage: "building.columns")
+                           systemImage: "building.columns", logo: true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(account.displayLabel)
                     Text([account.institutionName, account.kind.label].compactMap { $0 }.joined(separator: " · "))

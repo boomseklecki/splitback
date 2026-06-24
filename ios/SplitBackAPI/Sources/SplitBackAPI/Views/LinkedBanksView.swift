@@ -57,7 +57,7 @@ struct LinkedBanksView: View {
                         AvatarView(url: InstitutionBrand.logoURL(domain: item.institution_domain,
                                                                  name: item.institution_name),
                                    name: item.institution_name ?? "Bank", size: 22,
-                                   systemImage: "building.columns")
+                                   systemImage: "building.columns", logo: true)
                         Text(item.institution_name ?? "Bank").textCase(nil)
                     }
                 }

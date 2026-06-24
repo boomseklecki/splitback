@@ -8,13 +8,16 @@ struct AvatarView: View {
     var size: CGFloat = 36
     /// When there's no remote image, show this SF Symbol instead of initials (e.g. a group-type icon).
     var systemImage: String? = nil
+    /// Render a brand/bank logo (fit whole, on a white tile) instead of a photo (fill). Brand logos are
+    /// often transparent with dark artwork, so the white tile keeps them visible — including in dark mode.
+    var logo: Bool = false
 
     var body: some View {
         SwiftUI.Group {
             if let url, let resolved = URL(string: url) {
                 AsyncImage(url: resolved) { phase in
                     if let image = phase.image {
-                        image.resizable().scaledToFill()
+                        renderImage(image)
                     } else if phase.error != nil {
                         placeholder
                     } else {
@@ -27,6 +30,18 @@ struct AvatarView: View {
         }
         .frame(width: size, height: size)
         .clipShape(Circle())
+    }
+
+    @ViewBuilder
+    private func renderImage(_ image: Image) -> some View {
+        if logo {
+            image.resizable().scaledToFit()
+                .padding(size * 0.14)
+                .frame(width: size, height: size)
+                .background(Color.white)  // so dark, transparent logos stay visible in any appearance
+        } else {
+            image.resizable().scaledToFill()
+        }
     }
 
     private var placeholder: some View {

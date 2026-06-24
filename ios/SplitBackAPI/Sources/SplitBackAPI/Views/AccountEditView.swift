@@ -34,7 +34,7 @@ struct AccountEditView: View {
                     HStack(spacing: 12) {
                         AvatarView(url: account.institutionLogoURL,
                                    name: account.institutionName ?? account.name, size: 40,
-                                   systemImage: "building.columns")
+                                   systemImage: "building.columns", logo: true)
                         Text(account.institutionName ?? "Bank").fontWeight(.medium)
                         Spacer()
                         if let color = Color(hex: account.institutionColor) {
