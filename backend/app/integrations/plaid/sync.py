@@ -10,6 +10,7 @@ from sqlalchemy import delete
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.integrations import logos
 from app.integrations.plaid import mapper
 from app.integrations.storage import minio_client
 from app.models import Account, PlaidItem, Transaction, TransactionSource
@@ -120,9 +121,10 @@ async def apply_sync(
 
 
 async def resolve_institution(item: PlaidItem, client) -> None:
-    """Fetch the item's institution branding from Plaid and cache it on the item (best-effort). Also seeds
-    Plaid's logo into MinIO at `logos/{domain}.img` so `/logos/{domain}` serves the authoritative bank logo
-    (works for any institution, including ones with weak favicons)."""
+    """Fetch the item's institution branding from Plaid and cache it on the item (best-effort). Also pre-warms
+    the logo into MinIO at `logos/{domain}.img`: favicon-first (square marks read better in an avatar), with
+    Plaid's logo as the fallback when no favicon is available. Pre-warming means the app's first
+    `/logos/{domain}` request is an immediate cache hit."""
     info = await asyncio.to_thread(client.get_institution, item.access_token)
     if not info:
         return
@@ -131,12 +133,15 @@ async def resolve_institution(item: PlaidItem, client) -> None:
     item.institution_domain = info.get("domain") or item.institution_domain
     item.institution_color = info.get("primary_color") or item.institution_color
     item.institution_status = info.get("status") or item.institution_status
-    domain, logo = item.institution_domain, info.get("logo_bytes")
-    if domain and logo:
-        try:
-            await asyncio.to_thread(minio_client.put_object, f"logos/{domain}.img", logo, "image/png")
-        except Exception:
-            pass  # logo seeding is best-effort; the favicon proxy still resolves
+    domain = item.institution_domain
+    if domain:
+        favicon = await asyncio.to_thread(logos.fetch_favicon, domain)
+        data = favicon or info.get("logo_bytes")  # favicon-first; Plaid's logo only when no favicon
+        if data:
+            try:
+                await asyncio.to_thread(minio_client.put_object, logos.object_key(domain), data, "image/png")
+            except Exception:
+                pass  # logo seeding is best-effort; the favicon proxy still resolves on demand
 
 
 async def sync_item(session: AsyncSession, item: PlaidItem, client) -> dict:
