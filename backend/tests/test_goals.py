@@ -1,12 +1,12 @@
-"""Goals CRUD and account inclusion flags."""
+"""Goals CRUD. (Per-(owner, account) overrides are covered in test_account_overrides.)"""
 import json
 import urllib.error
 import urllib.request
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete
 
 from app.db import async_session
-from app.models import Account, Goal
+from app.models import Goal
 
 API = "http://localhost:8000"
 
@@ -47,53 +47,6 @@ async def test_spend_goal_crud_and_archive():
         if goal_id:
             async with async_session() as session:
                 await session.execute(delete(Goal).where(Goal.id == goal_id))
-                await session.commit()
-
-
-async def test_account_inclusion_flags():
-    account_id = None
-    try:
-        account_id = json.loads(_req("POST", "/accounts", {"name": "Brokerage ZZZ", "type": "investment"})[1])["id"]
-        status, body = _req("PATCH", f"/accounts/{account_id}", {"include_in_spending": False})
-        assert status == 200, (status, body)
-        acc = json.loads(body)
-        assert acc["include_in_spending"] is False and acc["include_in_cash_flow"] is None
-        assert _req("DELETE", f"/accounts/{account_id}")[0] == 204
-        account_id = None
-    finally:
-        if account_id:
-            async with async_session() as session:
-                await session.execute(delete(Account).where(Account.id == account_id))
-                await session.commit()
-
-
-async def test_account_display_name_and_kind_overrides():
-    account_id = None
-    try:
-        account_id = json.loads(_req("POST", "/accounts", {"name": "CREDIT CARD ZZZ", "type": "credit card"})[1])["id"]
-
-        # Set a display name + kind override.
-        status, body = _req("PATCH", f"/accounts/{account_id}",
-                            {"display_name": "Sapphire", "kind": "liability"})
-        assert status == 200, (status, body)
-        acc = json.loads(body)
-        assert acc["display_name"] == "Sapphire" and acc["kind"] == "liability"
-        # The Plaid `name` is untouched (the editor renders display_name ?? name).
-        assert acc["name"] == "CREDIT CARD ZZZ"
-
-        # Empty display_name resets to null (falls back to the Plaid name).
-        acc = json.loads(_req("PATCH", f"/accounts/{account_id}", {"display_name": "  "})[1])
-        assert acc["display_name"] is None and acc["kind"] == "liability"
-
-        # An unknown kind is rejected.
-        assert _req("PATCH", f"/accounts/{account_id}", {"kind": "bogus"})[0] == 422
-
-        assert _req("DELETE", f"/accounts/{account_id}")[0] == 204
-        account_id = None
-    finally:
-        if account_id:
-            async with async_session() as session:
-                await session.execute(delete(Account).where(Account.id == account_id))
                 await session.commit()
 
 
