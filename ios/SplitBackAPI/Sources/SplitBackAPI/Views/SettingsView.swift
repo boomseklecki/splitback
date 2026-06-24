@@ -10,6 +10,7 @@ struct SettingsView: View {
     @Query(sort: \User.displayName) private var users: [User]
 
     @AppStorage(AppLock.enabledKey) private var lockEnabled = false
+    @AppStorage("appearance") private var appearanceRaw = AppearanceMode.system.rawValue
     /// Remembered backend presets so switching dev↔prod is one tap (set once, then quick-fill the field).
     @AppStorage("backend.devURL") private var devURL = ""
     @AppStorage("backend.prodURL") private var prodURL = ""
@@ -65,6 +66,19 @@ struct SettingsView: View {
                     } else {
                         Text("Not signed in").foregroundStyle(.secondary)
                         Button("Sign In…") { showingSignIn = true }
+                    }
+                }
+
+                Section("Appearance") {
+                    Picker(selection: $appearanceRaw) {
+                        ForEach(AppearanceMode.allCases) { Text($0.label).tag($0.rawValue) }
+                    } label: {
+                        Label("Theme", systemImage: "circle.lefthalf.filled")
+                    }
+                    NavigationLink {
+                        CustomizeTabsView()
+                    } label: {
+                        Label("Customize Tabs", systemImage: "rectangle.3.group")
                     }
                 }
 

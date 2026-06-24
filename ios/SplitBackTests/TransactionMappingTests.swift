@@ -1,7 +1,34 @@
 import XCTest
+import SwiftUI
 @testable import SplitBackAPI
 
 final class TransactionMappingTests: XCTestCase {
+    func testMainTabParseIsRobust() {
+        // A valid order is preserved.
+        XCTAssertEqual(MainTab.parse("goals,accounts,splits"), [.goals, .accounts, .splits])
+        // Missing tabs are appended in canonical order; invalid ids and dupes dropped.
+        XCTAssertEqual(MainTab.parse("goals,bogus,goals"), [.goals, .accounts, .splits])
+        // Empty falls back to the full canonical order.
+        XCTAssertEqual(MainTab.parse(""), MainTab.allCases)
+        // Round-trips through serialize.
+        XCTAssertEqual(MainTab.parse(MainTab.serialize([.splits, .goals, .accounts])),
+                       [.splits, .goals, .accounts])
+    }
+
+    func testTabOrderSnapshotRoundTrip() throws {
+        let snap = TabOrderSnapshot(order: ["goals", "accounts", "splits"])
+        let decoded = try JSONDecoder().decode(
+            TabOrderSnapshot.self, from: try JSONEncoder().encode(snap))
+        XCTAssertEqual(decoded.version, 1)
+        XCTAssertEqual(decoded.order, ["goals", "accounts", "splits"])
+    }
+
+    func testAppearanceModeColorScheme() {
+        XCTAssertNil(AppearanceMode.system.colorScheme)
+        XCTAssertEqual(AppearanceMode.light.colorScheme, .light)
+        XCTAssertEqual(AppearanceMode.dark.colorScheme, .dark)
+    }
+
     func testTransactionCreateReverseMapper() {
         let draft = TransactionDraft(
             details: "Coffee", amount: Decimal(string: "4.50")!,

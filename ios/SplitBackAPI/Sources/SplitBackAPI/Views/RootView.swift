@@ -8,6 +8,7 @@ public struct RootView: View {
     @Environment(\.modelContext) private var context
     @State private var checking = true
     @State private var plaidSession = PlaidLinkSession.shared
+    @AppStorage("appearance") private var appearanceRaw = AppearanceMode.system.rawValue
 
     public init() {}
 
@@ -54,6 +55,7 @@ public struct RootView: View {
             )
             .ignoresSafeArea()
         }
+        .preferredColorScheme(AppearanceMode(rawValue: appearanceRaw)?.colorScheme)
     }
 
     /// Exchanges a public token after a terminated-then-resumed Plaid OAuth flow.
@@ -75,25 +77,27 @@ private struct DemoBanner: View {
     }
 }
 
-/// The signed-in app: the four tabs plus the on-launch data refresh.
+/// The signed-in app: the reorderable main tabs (Settings pinned last) plus the on-launch data refresh.
 private struct MainTabView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.modelContext) private var context
     @State private var didInitialRefresh = false
     @State private var errorMessageText: String?
+    @AppStorage("tabOrder") private var tabOrderRaw = MainTab.serialize(MainTab.allCases)
+    @State private var selection = MainTab.accounts.rawValue
 
     var body: some View {
         VStack(spacing: 0) {
             if env.serverIsDemo { DemoBanner() }
-            TabView {
-                AccountsView()
-                    .tabItem { Label("Accounts", systemImage: "building.columns.fill") }
-                GroupsListView()
-                    .tabItem { Label("Splits", systemImage: "person.2.fill") }
-                GoalsView()
-                    .tabItem { Label("Goals", systemImage: "target") }
+            TabView(selection: $selection) {
+                ForEach(MainTab.parse(tabOrderRaw)) { tab in
+                    tabContent(tab)
+                        .tabItem { Label(tab.title, systemImage: tab.icon) }
+                        .tag(tab.rawValue)
+                }
                 SettingsView()
                     .tabItem { Label("Settings", systemImage: "gearshape.fill") }
+                    .tag("settings")
             }
         }
         .errorAlert($errorMessageText)
@@ -102,9 +106,18 @@ private struct MainTabView: View {
             didInitialRefresh = true
             await env.refreshCurrentUser(context)
             await env.refreshSplitwiseStatus()
-            await env.bootstrapCategories(context)
+            await env.bootstrapPreferences(context)
             do { try await env.refreshAll(context) }
             catch { errorMessageText = errorMessage(error) }
+        }
+    }
+
+    @ViewBuilder
+    private func tabContent(_ tab: MainTab) -> some View {
+        switch tab {
+        case .accounts: AccountsView()
+        case .splits: GroupsListView()
+        case .goals: GoalsView()
         }
     }
 }

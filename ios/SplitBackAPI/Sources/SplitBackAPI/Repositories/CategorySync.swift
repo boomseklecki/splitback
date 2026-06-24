@@ -31,8 +31,9 @@ enum CategorySync {
     /// back up this device's local categories. Best-effort; never throws.
     @MainActor
     static func syncNow(_ context: ModelContext, client: Client) async {
-        if await pull(context, client: client) { return }  // applied a newer remote → already in sync
-        await pushBestEffort(context, client: client)       // else back up local
+        let rows = await Preferences.fetchAll(client)
+        if applyIfNewer(from: rows, context: context) { return }  // applied a newer remote → already in sync
+        await pushBestEffort(context, client: client)             // else back up local
     }
 
     @MainActor
@@ -53,33 +54,26 @@ enum CategorySync {
     /// an offline failure is swallowed (the next edit or launch retries).
     @MainActor
     static func pushBestEffort(_ context: ModelContext, client: Client) async {
-        do {
-            let value = String(decoding: try JSONEncoder().encode(try snapshot(context)), as: UTF8.self)
-            let output = try await client.upsert_preference_preferences__key__put(
-                path: .init(key: key), body: .json(.init(value: value)))
-            if case let .ok(ok) = output {
-                let updatedAt = try ok.body.json.updated_at
-                UserDefaults.standard.set(updatedAt.timeIntervalSince1970, forKey: syncedAtKey)
-            }
-        } catch { /* best-effort backup */ }
+        guard let snap = try? snapshot(context),
+              let data = try? JSONEncoder().encode(snap) else { return }
+        if let updatedAt = await Preferences.put(key, String(decoding: data, as: UTF8.self), client: client) {
+            UserDefaults.standard.set(updatedAt.timeIntervalSince1970, forKey: syncedAtKey)
+        }
     }
 
-    /// Restore from the backend blob when it's newer than what we last applied (e.g. a new phone). Returns
-    /// whether it applied a restore. No-op when there's no backup, the backend lacks the endpoint, or we're
+    /// Restore from a prefetched preferences set when the `categories.v1` blob is newer than what we last
+    /// applied (e.g. a new phone). Returns whether it applied a restore. No-op when there's no backup or we're
     /// already up to date.
     @MainActor
     @discardableResult
-    static func pull(_ context: ModelContext, client: Client) async -> Bool {
-        do {
-            let prefs = try await client.list_preferences_preferences_get().ok.body.json
-            guard let pref = prefs.first(where: { $0.key == key }) else { return false }
-            let remoteAt = pref.updated_at.timeIntervalSince1970
-            guard remoteAt > UserDefaults.standard.double(forKey: syncedAtKey) else { return false }
-            let snap = try JSONDecoder().decode(CategorySnapshot.self, from: Data(pref.value.utf8))
-            try apply(snap, context)
-            UserDefaults.standard.set(remoteAt, forKey: syncedAtKey)
-            return true
-        } catch { return false }  // offline / no backup: keep the local seed
+    static func applyIfNewer(from rows: [String: (value: String, updatedAt: Date)],
+                             context: ModelContext) -> Bool {
+        guard let row = rows[key], row.updatedAt.timeIntervalSince1970 > UserDefaults.standard.double(
+            forKey: syncedAtKey) else { return false }
+        guard let snap = try? JSONDecoder().decode(CategorySnapshot.self, from: Data(row.value.utf8)),
+              (try? apply(snap, context)) != nil else { return false }
+        UserDefaults.standard.set(row.updatedAt.timeIntervalSince1970, forKey: syncedAtKey)
+        return true
     }
 
     /// Replace local categories + maps with the snapshot, then forward-fill any built-in missing from an

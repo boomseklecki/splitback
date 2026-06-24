@@ -4,7 +4,7 @@ import SwiftData
 /// The editable canonical category taxonomy. Categories are local-authoritative (per user) and backed up
 /// to the per-owner preferences blob via `CategorySync`, so mutations write SwiftData and then push a
 /// best-effort backup. After any change it refreshes `CategoryCatalog` so `categorySymbol` honors custom
-/// icons. (Built-ins are seeded by `CategorySeed`; restore happens via `CategorySync.pull`.)
+/// icons. (Built-ins are seeded by `CategorySeed`; restore happens via `CategorySync.applyIfNewer`.)
 @MainActor
 struct CategoryRepository {
     let client: Client

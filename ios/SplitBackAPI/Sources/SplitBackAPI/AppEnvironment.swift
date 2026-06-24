@@ -141,7 +141,7 @@ public final class AppEnvironment {
     func auth(_ context: ModelContext) -> AuthService { .init(client: client, context: context) }
 
     /// On-launch / pull-to-refresh: reconcile the cacheable collections (handles server-side deletes).
-    /// Categories are local-authoritative now (see `bootstrapCategories`), so they're not reconciled here.
+    /// Categories are local-authoritative now (see `bootstrapPreferences`), so they're not reconciled here.
     func refreshAll(_ context: ModelContext) async throws {
         try await groups(context).reconcileAll()
         try await users(context).refresh()
@@ -149,16 +149,24 @@ public final class AppEnvironment {
         try await goals(context).refresh()
     }
 
-    /// On launch: ensure built-in categories exist, then restore the per-user category config from the
-    /// backend backup blob if it's newer (a new phone gets its categories/maps back). Pull-before-push so a
-    /// freshly-seeded install restores rather than clobbering the backup.
-    func bootstrapCategories(_ context: ModelContext) async {
+    /// On launch: ensure built-in categories exist, then restore any per-user preference blobs (categories,
+    /// tab order) that are newer than what this device last applied — a new phone gets them back. One fetch
+    /// serves all consumers; apply-if-newer never clobbers a device that's ahead.
+    func bootstrapPreferences(_ context: ModelContext) async {
         CategorySeed.ensureBuiltins(context)
-        await CategorySync.pull(context, client: client)
+        let rows = await Preferences.fetchAll(client)
+        CategorySync.applyIfNewer(from: rows, context: context)
+        TabOrderSync.applyIfNewer(from: rows)
     }
 
     /// Manual "Sync now" from Categories settings: restore a newer backup, else back up local.
     func syncCategoriesNow(_ context: ModelContext) async {
         await CategorySync.syncNow(context, client: client)
+    }
+
+    /// Persist a new main-tab order locally (the TabView re-renders) and back it up to the preferences blob.
+    func setTabOrder(_ order: [MainTab]) async {
+        TabOrderSync.write(order)
+        await TabOrderSync.pushBestEffort(client: client)
     }
 }
