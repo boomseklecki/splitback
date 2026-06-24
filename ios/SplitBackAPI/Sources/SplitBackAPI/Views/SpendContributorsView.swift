@@ -6,8 +6,22 @@ import SwiftData
 /// `TransactionDetailView` / `ExpenseDetailView`.
 struct SpendContributorsView: View {
     let title: String
-    let month: Date
+    let start: Date
+    let end: Date
     let scope: SpendContributors.Scope
+
+    /// Single-month drill (Goals donut/top-6, Trends per-bar).
+    init(title: String, month: Date, scope: SpendContributors.Scope) {
+        self.init(title: title, from: month, to: month, scope: scope)
+    }
+
+    /// Range drill (All Categories with a period filter). `start`/`end` are inclusive month bounds.
+    init(title: String, from start: Date, to end: Date, scope: SpendContributors.Scope) {
+        self.title = title
+        self.start = start
+        self.end = end
+        self.scope = scope
+    }
 
     @Environment(AppEnvironment.self) private var env
 
@@ -20,8 +34,8 @@ struct SpendContributorsView: View {
     private var me: String? { env.currentUser?.identifier }
 
     private var rows: [SpendContributor] {
-        SpendContributors.of(scope: scope, month: month, transactions: transactions, accounts: accounts,
-                             expenses: expenses, lookup: lookup, me: me)
+        SpendContributors.of(scope: scope, from: start, to: end, transactions: transactions,
+                             accounts: accounts, expenses: expenses, lookup: lookup, me: me)
     }
     /// Signed total: spend totals for category/spending, net (inflows − outflows) for cash flow.
     private var total: Decimal { rows.reduce(0) { $0 + $1.amount } }
@@ -30,7 +44,7 @@ struct SpendContributorsView: View {
         List {
             Section {
                 if rows.isEmpty {
-                    Text("Nothing this month.").foregroundStyle(.secondary)
+                    Text("Nothing in this period.").foregroundStyle(.secondary)
                 } else {
                     ForEach(rows) { ContributorRow(row: $0) }
                 }

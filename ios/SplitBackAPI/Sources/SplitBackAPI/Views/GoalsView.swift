@@ -51,13 +51,11 @@ struct GoalsView: View {
                                 CategorySpendRow(slice: slice)
                             }
                         }
-                        if categorySpend.count > 6 {
-                            NavigationLink {
-                                AllCategoriesView(slices: categorySpend, month: month)
-                            } label: {
-                                Label("All Categories", systemImage: "list.bullet")
-                                    .font(.caption)
-                            }
+                        NavigationLink {
+                            AllCategoriesView(month: month)
+                        } label: {
+                            Label("All Categories", systemImage: "list.bullet")
+                                .font(.caption)
                         }
                     }
                 }
@@ -150,6 +148,7 @@ struct GoalsView: View {
 struct SpendingDonut: View {
     let slices: [CategorySpend]
     let total: Decimal
+    var caption: String = "Spent this month"
     var onSelect: (String) -> Void
 
     @State private var selectedAngle: Double?
@@ -169,7 +168,7 @@ struct SpendingDonut: View {
         .frame(height: 220)
         .overlay {
             VStack(spacing: 2) {
-                Text("Spent this month").font(.caption2).foregroundStyle(.secondary)
+                Text(caption).font(.caption2).foregroundStyle(.secondary)
                 Text(total.formatted(.currency(code: "USD"))).font(.title2.bold()).monospacedDigit()
             }
             .allowsHitTesting(false)  // let taps reach the slices behind the center label

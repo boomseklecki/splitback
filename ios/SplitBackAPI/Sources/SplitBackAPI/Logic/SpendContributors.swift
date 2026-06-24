@@ -25,11 +25,25 @@ enum SpendContributors {
     /// The contributing rows for `scope` in `month`, outflows first (largest spend), then inflows.
     static func of(scope: Scope, month: Date, transactions: [Transaction], accounts: [Account],
                    expenses: [Expense] = [], lookup: [String: String], me: String?) -> [SpendContributor] {
-        let target = SpendingAnalytics.monthStart(month)
+        let m = SpendingAnalytics.monthStart(month)
+        return of(scope: scope, from: m, to: m, transactions: transactions, accounts: accounts,
+                  expenses: expenses, lookup: lookup, me: me)
+    }
+
+    /// The contributing rows for `scope` across an inclusive month range `start...end` (both first-of-month),
+    /// outflows first (largest spend), then inflows.
+    static func of(scope: Scope, from start: Date, to end: Date, transactions: [Transaction],
+                   accounts: [Account], expenses: [Expense] = [], lookup: [String: String],
+                   me: String?) -> [SpendContributor] {
+        let lo = SpendingAnalytics.monthStart(start)
+        let hi = SpendingAnalytics.monthStart(end)
         let resolved = SpendingAnalytics.resolvedEvents(transactions: transactions, accounts: accounts,
                                                         lookup: lookup, expenses: expenses, me: me)
         let rows = resolved
-            .filter { SpendingAnalytics.monthStart($0.event.date) == target && matches(scope, $0.event) }
+            .filter {
+                let m = SpendingAnalytics.monthStart($0.event.date)
+                return m >= lo && m <= hi && matches(scope, $0.event)
+            }
             .map { contributor(from: $0) }
         // Outflows by amount desc, then inflows by magnitude desc.
         return rows.sorted { a, b in

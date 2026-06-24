@@ -53,6 +53,9 @@ enum SpendingAnalytics {
         return c
     }
 
+    /// The gregorian/device-tz calendar used for all month bucketing — shared with `SpendPeriod`.
+    static var spendCalendar: Calendar { calendar }
+
     static func monthStart(_ date: Date, _ cal: Calendar = calendar) -> Date {
         cal.date(from: cal.dateComponents([.year, .month], from: date)) ?? date
     }
@@ -171,6 +174,26 @@ enum SpendingAnalytics {
         var totals: [String: Decimal] = [:]
         for e in events where monthStart(e.date, cal) == target && isSpend(e) {
             if let category = e.category { totals[category, default: 0] += e.amount }
+        }
+        return totals.map { CategorySpend(category: $0.key, total: $0.value) }
+            .sorted { $0.total > $1.total }
+    }
+
+    /// Spend by canonical category across an inclusive month range `start...end` (both first-of-month),
+    /// descending. `start == end` matches a single month (same result as `byCategory(in:)`).
+    static func byCategory(from start: Date, to end: Date, transactions: [Transaction],
+                           accounts: [Account], lookup: [String: String], expenses: [Expense] = [],
+                           me: String? = nil) -> [CategorySpend] {
+        let cal = calendar
+        let lo = monthStart(start, cal)
+        let hi = monthStart(end, cal)
+        let events = spendEvents(transactions: transactions, accounts: accounts, lookup: lookup,
+                                 expenses: expenses, me: me)
+        var totals: [String: Decimal] = [:]
+        for e in events where isSpend(e) {
+            let m = monthStart(e.date, cal)
+            guard m >= lo, m <= hi, let category = e.category else { continue }
+            totals[category, default: 0] += e.amount
         }
         return totals.map { CategorySpend(category: $0.key, total: $0.value) }
             .sorted { $0.total > $1.total }

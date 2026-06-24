@@ -14,16 +14,20 @@ struct TrendsView: View {
     @Query private var expenses: [Expense]
     @Query private var categoryMaps: [CategoryMap]
 
-    private let months = 6
+    @AppStorage("trends.period") private var periodRaw = SpendPeriod.last6.rawValue
+    private var period: SpendPeriod { SpendPeriod(rawValue: periodRaw) ?? .last6 }
+    private var window: (start: Date, end: Date, label: String, months: Int) {
+        period.resolve(anchor: SpendingAnalytics.monthStart(Date()))
+    }
     private var lookup: [String: String] { CategoryMapping.lookup(categoryMaps) }
     private var me: String? { env.currentUser?.identifier }
     private var spending: [MonthlyValue] {
-        SpendingAnalytics.monthlySpending(transactions: transactions, accounts: accounts,
-                                          lookup: lookup, months: months, expenses: expenses, me: me)
+        SpendingAnalytics.monthlySpending(transactions: transactions, accounts: accounts, lookup: lookup,
+                                          months: window.months, ending: window.end, expenses: expenses, me: me)
     }
     private var netIncome: [MonthlyValue] {
-        SpendingAnalytics.monthlyNetIncome(transactions: transactions, accounts: accounts,
-                                           lookup: lookup, months: months, expenses: expenses, me: me)
+        SpendingAnalytics.monthlyNetIncome(transactions: transactions, accounts: accounts, lookup: lookup,
+                                           months: window.months, ending: window.end, expenses: expenses, me: me)
     }
     private var rangeLabel: String {
         guard let first = spending.first?.month, let last = spending.last?.month else { return "" }
@@ -48,6 +52,20 @@ struct TrendsView: View {
         }
         .navigationTitle("Trends")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Picker("Period", selection: $periodRaw) {
+                        ForEach(SpendPeriod.allCases) { p in
+                            Text(p.resolve(anchor: SpendingAnalytics.monthStart(Date())).label)
+                                .tag(p.rawValue)
+                        }
+                    }
+                } label: {
+                    Image(systemName: "calendar")
+                }
+            }
+        }
     }
 }
 

@@ -550,6 +550,69 @@ final class GoalsAnalyticsTests: XCTestCase {
         XCTAssertEqual(item.addedBy, "me")
     }
 
+    // MARK: SpendPeriod + range analytics
+
+    private func firstOfMonth(_ y: Int, _ m: Int) -> Date {
+        SpendingAnalytics.spendCalendar.date(from: DateComponents(year: y, month: m, day: 1))!
+    }
+
+    func testSpendPeriodResolveBoundsAndLabels() {
+        let cal = SpendingAnalytics.spendCalendar
+        let now = cal.date(from: DateComponents(year: 2026, month: 6, day: 15))!
+        let june = firstOfMonth(2026, 6)
+
+        let last6 = SpendPeriod.last6.resolve(anchor: june, now: now)
+        XCTAssertEqual(last6.months, 6)
+        XCTAssertEqual(last6.end, june)
+        XCTAssertEqual(last6.start, firstOfMonth(2026, 1))
+        XCTAssertEqual(last6.label, "Last 6 months")
+
+        let ytd = SpendPeriod.yearToDate.resolve(anchor: june, now: now)
+        XCTAssertEqual(ytd.start, firstOfMonth(2026, 1))
+        XCTAssertEqual(ytd.end, june)
+        XCTAssertEqual(ytd.months, 6)
+        XCTAssertEqual(ytd.label, "2026 YTD")
+
+        let prev = SpendPeriod.previousYear.resolve(anchor: june, now: now)
+        XCTAssertEqual(prev.start, firstOfMonth(2025, 1))
+        XCTAssertEqual(prev.end, firstOfMonth(2025, 12))
+        XCTAssertEqual(prev.months, 12)
+        XCTAssertEqual(prev.label, "2025")
+
+        let month = SpendPeriod.month.resolve(anchor: june, now: now)
+        XCTAssertEqual(month.start, june)
+        XCTAssertEqual(month.end, june)
+        XCTAssertEqual(month.months, 1)
+    }
+
+    func testByCategoryRangeSumsAcrossMonths() {
+        let checking = account(type: "checking")
+        let cal = SpendingAnalytics.spendCalendar
+        let thisMonth = SpendingAnalytics.monthStart(Date())
+        let lastMonth = cal.date(byAdding: .month, value: -1, to: thisMonth)!
+        let txns = [txn(20, category: "Dining", account: checking, date: thisMonth),
+                    txn(30, category: "Dining", account: checking, date: lastMonth)]
+        // A single month sees only its own spend; the two-month range sums both.
+        XCTAssertEqual(SpendingAnalytics.byCategory(from: thisMonth, to: thisMonth, transactions: txns,
+                                                    accounts: [checking], lookup: [:]).first?.total, 20)
+        XCTAssertEqual(SpendingAnalytics.byCategory(from: lastMonth, to: thisMonth, transactions: txns,
+                                                    accounts: [checking], lookup: [:]).first?.total, 50)
+    }
+
+    func testContributorsRangeSpansMonths() {
+        let checking = account(type: "checking")
+        let cal = SpendingAnalytics.spendCalendar
+        let thisMonth = SpendingAnalytics.monthStart(Date())
+        let lastMonth = cal.date(byAdding: .month, value: -1, to: thisMonth)!
+        let txns = [txn(20, category: "Dining", account: checking, date: thisMonth),
+                    txn(30, category: "Dining", account: checking, date: lastMonth)]
+        let rows = SpendContributors.of(scope: .category("Dining"), from: lastMonth, to: thisMonth,
+                                        transactions: txns, accounts: [checking], expenses: [],
+                                        lookup: [:], me: nil)
+        XCTAssertEqual(rows.count, 2)
+        XCTAssertEqual(rows.reduce(Decimal(0)) { $0 + $1.amount }, 50)
+    }
+
     // MARK: GoalProgress
 
     func testBudgetStatusAndFraction() {
