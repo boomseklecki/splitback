@@ -1,7 +1,7 @@
 import uuid
 from decimal import Decimal
 
-from sqlalchemy import Boolean, ForeignKey, Numeric, String
+from sqlalchemy import ForeignKey, Numeric, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -13,14 +13,12 @@ class Account(UUIDMixin, TimestampMixin, Base):
     __tablename__ = "accounts"
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    # User-set display name overriding Plaid's `name`; null = show `name`. Survives re-sync (Plaid sync
-    # only updates name/type/balance/currency — see plaid/sync.py _upsert_account).
-    display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Per-user overrides (display_name, kind, include_in_spending, include_in_cash_flow) live in
+    # `account_overrides`, keyed by (owner_identifier, account_id) so they're independent per user (future
+    # shared accounts). The accounts router attaches the caller's override onto the response. Plaid sync only
+    # touches name/type/balance/currency/mask/institution_* — see plaid/sync.py _upsert_account.
     # Plaid account type/subtype (e.g. depository/checking); free-form for now
     type: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    # User-set classification override ("cash_flow" | "liability" | "savings"); null = derive from `type`.
-    # Survives re-sync like the inclusion flags below.
-    kind: Mapped[str | None] = mapped_column(String(16), nullable=True)
     # The account number's last few digits (Plaid `mask`), for display on the account row; null for manual.
     mask: Mapped[str | None] = mapped_column(String(32), nullable=True)
     plaid_account_id: Mapped[str | None] = mapped_column(String(128), unique=True, nullable=True)
@@ -39,9 +37,6 @@ class Account(UUIDMixin, TimestampMixin, Base):
     institution_domain: Mapped[str | None] = mapped_column(String(255), nullable=True)
     institution_color: Mapped[str | None] = mapped_column(String(16), nullable=True)
     institution_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    # User overrides for Goals analytics; null = derive from the account's classification (subtype).
-    include_in_spending: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
-    include_in_cash_flow: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     plaid_item: Mapped["PlaidItem | None"] = relationship(  # noqa: F821
         back_populates="accounts"

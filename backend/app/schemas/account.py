@@ -30,15 +30,16 @@ class AccountResponse(BaseModel):
 
     id: UUID
     name: str
-    display_name: str | None
+    # The caller's per-user overrides (from `account_overrides`); the router attaches them.
+    display_name: str | None = None
     type: str | None
-    kind: str | None
+    kind: str | None = None
     mask: str | None
     plaid_account_id: str | None
     balance: Decimal
     currency: str
-    include_in_spending: bool | None
-    include_in_cash_flow: bool | None
+    include_in_spending: bool | None = None
+    include_in_cash_flow: bool | None = None
     institution_name: str | None
     institution_domain: str | None
     institution_color: str | None

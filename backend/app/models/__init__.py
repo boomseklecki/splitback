@@ -1,4 +1,5 @@
 from app.models.account import Account
+from app.models.account_override import AccountOverride
 from app.models.enums import BackendType, TransactionSource, UserSource
 from app.models.expense import Expense
 from app.models.expense_item import ExpenseItem
@@ -18,6 +19,7 @@ from app.models.user_preference import UserPreference
 
 __all__ = [
     "Account",
+    "AccountOverride",
     "BackendType",
     "Expense",
     "Goal",

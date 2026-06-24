@@ -11,7 +11,7 @@ from app.auth import require_auth
 from app.auth.scope import assert_owner
 from app.config import settings
 from app.db import get_session
-from app.models import Account, Transaction, TransactionCategoryOverride, TransactionItem
+from app.models import Account, AccountOverride, Transaction, TransactionCategoryOverride, TransactionItem
 from app.models.enums import TransactionSource
 from app.schemas.account import ACCOUNT_KINDS, AccountCreate, AccountResponse, AccountUpdate
 from app.schemas.transaction import (
@@ -36,8 +36,33 @@ async def list_accounts(
         stmt = stmt.where(Account.owner_identifier == caller)
     if updated_since is not None:
         stmt = stmt.where(Account.updated_at >= ensure_utc(updated_since))
-    rows = await session.scalars(stmt.order_by(Account.name))
-    return list(rows)
+    rows = list(await session.scalars(stmt.order_by(Account.name)))
+    await _attach_account_overrides(session, caller, rows)
+    return rows
+
+
+_OVERRIDE_FIELDS = ("display_name", "kind", "include_in_spending", "include_in_cash_flow")
+
+
+async def _attach_account_overrides(
+    session: AsyncSession, caller: str | None, accounts: list[Account]
+) -> None:
+    """Populate each account's per-user override fields (display_name/kind/include_*) from the caller's
+    `account_overrides` row (none in open mode). The columns moved to `account_overrides`; this sets transient
+    attributes the response serializes via `from_attributes`."""
+    ids = [a.id for a in accounts]
+    by_id: dict = {}
+    if caller is not None and ids:
+        rows = await session.scalars(
+            select(AccountOverride).where(
+                AccountOverride.owner_identifier == caller, AccountOverride.account_id.in_(ids)
+            )
+        )
+        by_id = {o.account_id: o for o in rows}
+    for a in accounts:
+        override = by_id.get(a.id)
+        for field in _OVERRIDE_FIELDS:
+            setattr(a, field, getattr(override, field) if override is not None else None)
 
 
 @router.post("/accounts", response_model=AccountResponse, status_code=201)
@@ -56,6 +81,7 @@ async def create_account(
     session.add(account)
     await session.commit()
     await session.refresh(account)
+    await _attach_account_overrides(session, caller, [account])
     return account
 
 
@@ -66,8 +92,9 @@ async def update_account(
     caller: str | None = Depends(require_auth),
     session: AsyncSession = Depends(get_session),
 ) -> Account:
-    """Set the per-account overrides (display name, kind, Goals-analytics inclusion flags). Plaid sync
-    only touches name/type/balance/currency, so these survive a re-sync."""
+    """Set the caller's per-user account overrides (display name, kind, Goals-analytics inclusion flags) in
+    `account_overrides`, keyed by owner + account. Plaid sync only touches name/type/balance/currency/mask, so
+    these survive a re-sync."""
     account = await session.get(Account, account_id)
     if account is None:
         raise HTTPException(status_code=404, detail="Account not found")
@@ -79,10 +106,23 @@ async def update_account(
         fields["display_name"] = name or None
     if fields.get("kind") is not None and fields["kind"] not in ACCOUNT_KINDS:
         raise HTTPException(status_code=422, detail=f"kind must be one of {sorted(ACCOUNT_KINDS)}")
-    for field, value in fields.items():
-        setattr(account, field, value)
-    await session.commit()
-    await session.refresh(account)
+    if caller is not None:  # open mode has no per-user override to key on
+        override = await session.scalar(
+            select(AccountOverride).where(
+                AccountOverride.owner_identifier == caller, AccountOverride.account_id == account_id
+            )
+        )
+        if override is None:
+            override = AccountOverride(owner_identifier=caller, account_id=account_id)
+            session.add(override)
+        for field, value in fields.items():  # only the provided fields (exclude_unset) change
+            setattr(override, field, value)
+        # Drop the row once every override is cleared.
+        if all(getattr(override, field) is None for field in _OVERRIDE_FIELDS):
+            await session.delete(override)
+        await session.commit()
+        await session.refresh(account)  # reload the real columns after commit-expire
+    await _attach_account_overrides(session, caller, [account])
     return account
 
 
