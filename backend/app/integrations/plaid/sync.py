@@ -122,8 +122,9 @@ async def apply_sync(
 
 async def resolve_institution(item: PlaidItem, client) -> None:
     """Fetch the item's institution branding from Plaid and cache it on the item (best-effort). Also pre-warms
-    the logo into MinIO at `logos/{domain}.img`: favicon-first (square marks read better in an avatar), with
-    Plaid's logo as the fallback when no favicon is available. Pre-warming means the app's first
+    MinIO with both logo variants so the app can offer a per-bank Icon/Logo choice: the favicon at
+    `logos/{domain}.img` (the default avatar — square marks read better) and Plaid's full logo at
+    `logos/{domain}.plaid.img` (served via `/logos/{domain}?variant=plaid`). Pre-warming means the app's first
     `/logos/{domain}` request is an immediate cache hit."""
     info = await asyncio.to_thread(client.get_institution, item.access_token)
     if not info:
@@ -136,10 +137,15 @@ async def resolve_institution(item: PlaidItem, client) -> None:
     domain = item.institution_domain
     if domain:
         favicon = await asyncio.to_thread(logos.fetch_favicon, domain)
-        data = favicon or info.get("logo_bytes")  # favicon-first; Plaid's logo only when no favicon
-        if data:
+        # Seed both variants so the app can switch this bank between Icon (favicon) and Logo (Plaid's).
+        # The default key is favicon-first, falling back to Plaid's logo when no favicon is available.
+        plaid_logo = info.get("logo_bytes")
+        for data, variant in ((favicon or plaid_logo, None), (plaid_logo, "plaid")):
+            if not data:
+                continue
             try:
-                await asyncio.to_thread(minio_client.put_object, logos.object_key(domain), data, "image/png")
+                key = logos.object_key(domain, variant)
+                await asyncio.to_thread(minio_client.put_object, key, data, "image/png")
             except Exception:
                 pass  # logo seeding is best-effort; the favicon proxy still resolves on demand
 

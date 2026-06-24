@@ -17,10 +17,19 @@ router = APIRouter(tags=["logos"])
 
 
 @router.get("/logos/{domain}")
-async def brand_logo(domain: str) -> Response:
+async def brand_logo(domain: str, variant: str | None = None) -> Response:
     domain = domain.lower()
     if not logos.DOMAIN_RE.match(domain):
         raise HTTPException(status_code=404, detail="Not found")
+
+    # `variant=plaid` serves Plaid's full logo if it's been seeded; any other/absent variant (and the
+    # plaid fallback below) serves the default favicon, resolving it on demand on a cache miss.
+    if variant == "plaid":
+        plaid_key = logos.object_key(domain, "plaid")
+        if await asyncio.to_thread(minio_client.object_exists, plaid_key):
+            data = await asyncio.to_thread(minio_client.get_bytes, plaid_key)
+            return Response(content=data, media_type="image/png")
+        # fall through to the default favicon so an un-seeded bank still shows an icon rather than 404ing
 
     object_key = logos.object_key(domain)
     if await asyncio.to_thread(minio_client.object_exists, object_key):

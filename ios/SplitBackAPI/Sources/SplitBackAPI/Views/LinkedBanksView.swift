@@ -13,6 +13,7 @@ struct LinkedBanksView: View {
 
     @State private var confirmingUnlink: UnlinkTarget?
     @State private var errorText: String?
+    @State private var styleVersion = 0  // bumped on Icon/Logo change to re-render header avatars
 
     struct UnlinkTarget: Identifiable { let id: String; let name: String }
 
@@ -54,10 +55,7 @@ struct LinkedBanksView: View {
                     }
                 } header: {
                     HStack(spacing: 8) {
-                        AvatarView(url: InstitutionBrand.logoURL(domain: item.institution_domain,
-                                                                 name: item.institution_name),
-                                   name: item.institution_name ?? "Bank", size: 22,
-                                   systemImage: "building.columns", logo: true)
+                        bankAvatar(for: item)
                         Text(item.institution_name ?? "Bank").textCase(nil)
                     }
                 }
@@ -76,6 +74,33 @@ struct LinkedBanksView: View {
             Text("Removes this bank and its cached accounts from SplitBack and revokes access at Plaid.")
         }
         .errorAlert($errorText)
+    }
+
+    /// The bank's avatar. When the bank has a resolved domain, it's a Menu to switch that bank between its
+    /// Icon (favicon) and Logo (Plaid's full logo) — the choice persists and applies wherever the bank shows.
+    @ViewBuilder
+    private func bankAvatar(for item: Components.Schemas.PlaidItemResponse) -> some View {
+        let avatar = AvatarView(url: InstitutionBrand.logoURL(domain: item.institution_domain,
+                                                              name: item.institution_name),
+                                name: item.institution_name ?? "Bank", size: 22,
+                                systemImage: "building.columns", logo: true)
+        if let domain = item.institution_domain, !domain.isEmpty {
+            let _ = styleVersion  // re-evaluate the URL after a style change
+            let current = InstitutionBrand.style(forDomain: domain)
+            Menu {
+                Picker("Avatar", selection: Binding(
+                    get: { current },
+                    set: { InstitutionBrand.setStyle($0, forDomain: domain); styleVersion += 1 }
+                )) {
+                    Label("Icon", systemImage: "app.dashed").tag(InstitutionBrand.BankLogoStyle.icon)
+                    Label("Logo", systemImage: "building.columns").tag(InstitutionBrand.BankLogoStyle.logo)
+                }
+            } label: {
+                avatar
+            }
+        } else {
+            avatar
+        }
     }
 
     private func unlink(_ target: UnlinkTarget) {

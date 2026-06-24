@@ -61,12 +61,36 @@ enum InstitutionBrand {
         return APIConfig.baseURL.appendingPathComponent("logos/\(domain)").absoluteString
     }
 
-    /// Logo URL preferring the backend-resolved `domain` (authoritative, any bank — Plaid's logo is seeded
-    /// into the proxy), falling back to the on-device catalog by name for items not yet re-synced.
+    /// Logo URL preferring the backend-resolved `domain` (authoritative, any bank — both the favicon and
+    /// Plaid's full logo are seeded into the proxy), falling back to the on-device catalog by name for items
+    /// not yet re-synced. Honors the per-bank Icon/Logo preference: a `domain` set to `.logo` requests Plaid's
+    /// full logo (`?variant=plaid`); everything else (and the catalog fallback) requests the favicon.
     static func logoURL(domain: String?, name: String?) -> String? {
-        let resolved = (domain.flatMap { $0.isEmpty ? nil : $0 }) ?? self.domain(for: name)
-        guard let resolved else { return nil }
-        return APIConfig.baseURL.appendingPathComponent("logos/\(resolved)").absoluteString
+        let backendDomain = domain.flatMap { $0.isEmpty ? nil : $0 }
+        guard let resolved = backendDomain ?? self.domain(for: name) else { return nil }
+        var url = APIConfig.baseURL.appendingPathComponent("logos/\(resolved)").absoluteString
+        // Only the backend-resolved domain has a seeded Plaid logo; the catalog fallback stays favicon-only.
+        if let backendDomain, style(forDomain: backendDomain) == .logo {
+            url += "?variant=plaid"
+        }
+        return url
+    }
+
+    // MARK: - Per-bank Icon/Logo preference
+
+    /// Which image a bank's avatar shows: its square favicon (`.icon`, the default) or Plaid's full logo
+    /// (`.logo`). Stored per-domain in `UserDefaults` so the choice persists and applies wherever the bank's
+    /// avatar appears.
+    enum BankLogoStyle: String { case icon, logo }
+
+    private static func styleKey(_ domain: String) -> String { "bankLogoStyle.\(domain)" }
+
+    static func style(forDomain domain: String) -> BankLogoStyle {
+        UserDefaults.standard.string(forKey: styleKey(domain)).flatMap(BankLogoStyle.init) ?? .icon
+    }
+
+    static func setStyle(_ style: BankLogoStyle, forDomain domain: String) {
+        UserDefaults.standard.set(style.rawValue, forKey: styleKey(domain))
     }
 }
 

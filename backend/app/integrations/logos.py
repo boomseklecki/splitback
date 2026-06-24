@@ -14,8 +14,10 @@ from app.config import settings
 DOMAIN_RE = re.compile(r"^[a-z0-9.-]{3,255}$")
 
 
-def object_key(domain: str) -> str:
-    return f"logos/{domain}.img"
+def object_key(domain: str, variant: str | None = None) -> str:
+    """Cache key for a domain's logo. The default (favicon) lives at `logos/{domain}.img`; a named variant
+    (e.g. Plaid's full logo) lives alongside it at `logos/{domain}.{variant}.img`."""
+    return f"logos/{domain}.{variant}.img" if variant else f"logos/{domain}.img"
 
 
 def fetch_favicon(domain: str) -> bytes | None:
