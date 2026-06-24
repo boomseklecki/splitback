@@ -137,6 +137,10 @@ enum Mapping {
             currency: r.currency,
             includeInSpending: r.include_in_spending,
             includeInCashFlow: r.include_in_cash_flow,
+            institutionName: r.institution_name,
+            institutionDomain: r.institution_domain,
+            institutionColor: r.institution_color,
+            institutionStatus: r.institution_status,
             createdAt: r.created_at,
             updatedAt: r.updated_at
         )

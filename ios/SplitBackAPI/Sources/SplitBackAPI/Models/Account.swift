@@ -21,6 +21,12 @@ final class Account {
     /// Goals-analytics inclusion overrides; nil = derive from the account's classification (subtype).
     var includeInSpending: Bool?
     var includeInCashFlow: Bool?
+    /// Institution branding (denormalized from the account's bank): name, logo domain, brand hex color, and
+    /// Plaid connection status. nil for manual accounts (or Plaid accounts not yet re-synced).
+    var institutionName: String?
+    var institutionDomain: String?
+    var institutionColor: String?
+    var institutionStatus: String?
     var createdAt: Date
     var updatedAt: Date
 
@@ -37,6 +43,10 @@ final class Account {
         currency: String,
         includeInSpending: Bool? = nil,
         includeInCashFlow: Bool? = nil,
+        institutionName: String? = nil,
+        institutionDomain: String? = nil,
+        institutionColor: String? = nil,
+        institutionStatus: String? = nil,
         createdAt: Date,
         updatedAt: Date
     ) {
@@ -52,6 +62,10 @@ final class Account {
         self.currency = currency
         self.includeInSpending = includeInSpending
         self.includeInCashFlow = includeInCashFlow
+        self.institutionName = institutionName
+        self.institutionDomain = institutionDomain
+        self.institutionColor = institutionColor
+        self.institutionStatus = institutionStatus
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }

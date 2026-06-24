@@ -33,6 +33,12 @@ class Account(UUIDMixin, TimestampMixin, Base):
     # The local identifier this account belongs to (per-caller scoping). For Plaid accounts this is the
     # linker (plaid_items.user_identifier); for manual accounts, the creator. Null = legacy/unowned.
     owner_identifier: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # Institution branding denormalized from the account's PlaidItem (so AccountResponse carries it without a
+    # join). Refreshed on each Plaid sync; null for manual accounts.
+    institution_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    institution_domain: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    institution_color: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    institution_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
     # User overrides for Goals analytics; null = derive from the account's classification (subtype).
     include_in_spending: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     include_in_cash_flow: Mapped[bool | None] = mapped_column(Boolean, nullable=True)

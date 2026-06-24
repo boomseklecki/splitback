@@ -29,6 +29,33 @@ struct AccountEditView: View {
 
     var body: some View {
         Form {
+            if account.institutionName != nil || account.institutionLogoURL != nil {
+                Section("Institution") {
+                    HStack(spacing: 12) {
+                        AvatarView(url: account.institutionLogoURL,
+                                   name: account.institutionName ?? account.name, size: 40,
+                                   systemImage: "building.columns")
+                        Text(account.institutionName ?? "Bank").fontWeight(.medium)
+                        Spacer()
+                        if let color = Color(hex: account.institutionColor) {
+                            RoundedRectangle(cornerRadius: 4).fill(color).frame(width: 18, height: 18)
+                        }
+                    }
+                    if let domain = account.institutionDomain, !domain.isEmpty,
+                       let url = URL(string: "https://\(domain)") {
+                        Link(destination: url) { Label(domain, systemImage: "safari") }
+                    }
+                    if let status = statusText {
+                        LabeledContent("Status") {
+                            HStack(spacing: 6) {
+                                Circle().fill(statusColor).frame(width: 8, height: 8)
+                                Text(status)
+                            }
+                        }
+                    }
+                }
+            }
+
             Section {
                 TextField(account.name, text: $displayName)
                     .autocorrectionDisabled()
@@ -70,6 +97,26 @@ struct AccountEditView: View {
             }
         }
         .errorAlert($errorText)
+    }
+
+    /// Plaid connection status, humanized (nil when unknown).
+    private var statusText: String? {
+        switch account.institutionStatus?.uppercased() {
+        case "HEALTHY": return "Healthy"
+        case "DEGRADED": return "Degraded"
+        case "DOWN": return "Down"
+        case let other?: return other.capitalized
+        default: return nil
+        }
+    }
+
+    private var statusColor: Color {
+        switch account.institutionStatus?.uppercased() {
+        case "HEALTHY": return .green
+        case "DEGRADED": return .orange
+        case "DOWN": return .red
+        default: return .secondary
+        }
     }
 
     private func save() {

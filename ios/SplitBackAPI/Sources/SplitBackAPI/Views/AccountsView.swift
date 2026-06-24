@@ -156,10 +156,14 @@ struct AccountsView: View {
         NavigationLink {
             TransactionsView(account: account)
         } label: {
-            HStack {
+            HStack(spacing: 12) {
+                AvatarView(url: account.institutionLogoURL,
+                           name: account.institutionName ?? account.displayLabel, size: 32,
+                           systemImage: "building.columns")
                 VStack(alignment: .leading, spacing: 2) {
                     Text(account.displayLabel)
-                    Text(account.kind.label).font(.caption).foregroundStyle(.secondary)
+                    Text([account.institutionName, account.kind.label].compactMap { $0 }.joined(separator: " · "))
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Text(account.balance.formatted(.currency(code: account.currency)))

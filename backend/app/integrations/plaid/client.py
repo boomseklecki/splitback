@@ -3,11 +3,15 @@
 Responses are converted to plain dicts via `.to_dict()` so the rest of the code
 never touches Plaid model objects. All methods are blocking — call via to_thread.
 """
+import base64
+from urllib.parse import urlsplit
+
 import plaid
 from plaid.api import plaid_api
 from plaid.model.accounts_get_request import AccountsGetRequest
 from plaid.model.country_code import CountryCode
 from plaid.model.institutions_get_by_id_request import InstitutionsGetByIdRequest
+from plaid.model.institutions_get_by_id_request_options import InstitutionsGetByIdRequestOptions
 from plaid.model.item_get_request import ItemGetRequest
 from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchangeRequest
 from plaid.model.item_remove_request import ItemRemoveRequest
@@ -27,6 +31,38 @@ def _build_api() -> plaid_api.PlaidApi:
         api_key={"clientId": settings.plaid_client_id, "secret": settings.plaid_secret},
     )
     return plaid_api.PlaidApi(plaid.ApiClient(configuration))
+
+
+def _domain_from_url(url: str | None) -> str | None:
+    """Registrable host from an institution URL (lowercased, `www.` stripped), for the /logos proxy."""
+    if not url:
+        return None
+    host = urlsplit(url if "//" in url else f"//{url}").hostname
+    if not host:
+        return None
+    host = host.lower()
+    return host[4:] if host.startswith("www.") else host
+
+
+def _institution_status(status: dict | None) -> str | None:
+    """A coarse connection-health string, preferring the transactions product's status."""
+    if not isinstance(status, dict):
+        return None
+    for key in ("transactions_updates", "item_logins", "auth"):
+        section = status.get(key)
+        if isinstance(section, dict) and section.get("status"):
+            return section["status"]  # e.g. "HEALTHY" / "DEGRADED" / "DOWN"
+    return None
+
+
+def _decode_logo(logo: str | None) -> bytes | None:
+    """Decode Plaid's base64 institution logo (PNG) to bytes, or None."""
+    if not logo:
+        return None
+    try:
+        return base64.b64decode(logo)
+    except (ValueError, TypeError):
+        return None
 
 
 def _normalize_account(account: dict) -> dict:
@@ -99,10 +135,11 @@ class PlaidClient:
         ).to_dict()
         return response["access_token"], response["item_id"]
 
-    def get_institution_name(self, access_token: str) -> str | None:
-        """Resolve an item's human institution name from Plaid (best-effort; None on any failure, so a
+    def get_institution(self, access_token: str) -> dict | None:
+        """Resolve an item's institution metadata from Plaid (best-effort; None on any failure, so a
         link/sync never breaks just because the lookup did). Two calls: item_get for the institution id,
-        then institutions_get_by_id for its name."""
+        then institutions_get_by_id (with optional metadata + status). Returns
+        {institution_id, name, domain, primary_color, status, logo_bytes}."""
         try:
             item = self._api.item_get(ItemGetRequest(access_token=access_token)).to_dict()
             institution_id = (item.get("item") or {}).get("institution_id")
@@ -113,12 +150,29 @@ class PlaidClient:
             ]
             response = self._api.institutions_get_by_id(
                 InstitutionsGetByIdRequest(
-                    institution_id=institution_id, country_codes=country_codes
+                    institution_id=institution_id,
+                    country_codes=country_codes,
+                    options=InstitutionsGetByIdRequestOptions(
+                        include_optional_metadata=True, include_status=True
+                    ),
                 )
             ).to_dict()
-            return (response.get("institution") or {}).get("name")
+            inst = response.get("institution") or {}
+            return {
+                "institution_id": institution_id,
+                "name": inst.get("name"),
+                "domain": _domain_from_url(inst.get("url")),
+                "primary_color": inst.get("primary_color"),
+                "status": _institution_status(inst.get("status")),
+                "logo_bytes": _decode_logo(inst.get("logo")),
+            }
         except Exception:
             return None
+
+    def get_institution_name(self, access_token: str) -> str | None:
+        """Back-compat convenience: just the institution name."""
+        info = self.get_institution(access_token)
+        return info.get("name") if info else None
 
     def item_remove(self, access_token: str) -> None:
         """Invalidate an item's access token at Plaid (called on unlink / account deletion)."""

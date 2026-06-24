@@ -67,9 +67,13 @@ async def _create_item_from_public_token(
         )
     ).scalar_one()
 
+    # Resolve + cache the institution branding now, then denormalize it onto the accounts as we upsert them.
+    item = await session.get(PlaidItem, item_id)
+    await plaid_sync.resolve_institution(item, client)
+    institution = {k: getattr(item, k) for k in plaid_sync._INSTITUTION_FIELDS}
     for account in await asyncio.to_thread(client.get_accounts, access_token):
         await plaid_sync._upsert_account(
-            session, item_id, mapper.map_account(account), owner_identifier=owner
+            session, item_id, mapper.map_account(account), owner_identifier=owner, institution=institution
         )
     await session.commit()
     return item_id

@@ -124,6 +124,10 @@ struct AccountRepository {
                 existing.currency = r.currency
                 existing.includeInSpending = r.include_in_spending
                 existing.includeInCashFlow = r.include_in_cash_flow
+                existing.institutionName = r.institution_name
+                existing.institutionDomain = r.institution_domain
+                existing.institutionColor = r.institution_color
+                existing.institutionStatus = r.institution_status
                 existing.createdAt = r.created_at
                 existing.updatedAt = r.updated_at
             } else {

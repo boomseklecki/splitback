@@ -12,6 +12,9 @@ class PlaidItemResponse(BaseModel):
     id: UUID
     plaid_item_id: str
     institution_name: str | None
+    institution_domain: str | None
+    institution_color: str | None
+    institution_status: str | None
     user_identifier: str | None
     accounts: list[AccountResponse] = []
     created_at: datetime

@@ -3489,6 +3489,22 @@
           "mask": {
             "type": "string",
             "title": "Mask"
+          },
+          "institution_name": {
+            "type": "string",
+            "title": "Institution Name"
+          },
+          "institution_domain": {
+            "type": "string",
+            "title": "Institution Domain"
+          },
+          "institution_color": {
+            "type": "string",
+            "title": "Institution Color"
+          },
+          "institution_status": {
+            "type": "string",
+            "title": "Institution Status"
           }
         },
         "type": "object",
@@ -4603,6 +4619,18 @@
             "type": "string",
             "format": "date-time",
             "title": "Updated At"
+          },
+          "institution_domain": {
+            "type": "string",
+            "title": "Institution Domain"
+          },
+          "institution_color": {
+            "type": "string",
+            "title": "Institution Color"
+          },
+          "institution_status": {
+            "type": "string",
+            "title": "Institution Status"
           }
         },
         "type": "object",

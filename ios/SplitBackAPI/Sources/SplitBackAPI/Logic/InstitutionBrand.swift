@@ -1,4 +1,4 @@
-import Foundation
+import SwiftUI
 
 /// Maps a Plaid institution name to a logo, served by our own favicon proxy (`/logos/{domain}`) — the same
 /// service that powers subscription brand logos, so bank domains never leave the self-hosted server. Matching
@@ -59,5 +59,26 @@ enum InstitutionBrand {
     static func logoURL(for institutionName: String?) -> String? {
         guard let domain = domain(for: institutionName) else { return nil }
         return APIConfig.baseURL.appendingPathComponent("logos/\(domain)").absoluteString
+    }
+
+    /// Logo URL preferring the backend-resolved `domain` (authoritative, any bank — Plaid's logo is seeded
+    /// into the proxy), falling back to the on-device catalog by name for items not yet re-synced.
+    static func logoURL(domain: String?, name: String?) -> String? {
+        let resolved = (domain.flatMap { $0.isEmpty ? nil : $0 }) ?? self.domain(for: name)
+        guard let resolved else { return nil }
+        return APIConfig.baseURL.appendingPathComponent("logos/\(resolved)").absoluteString
+    }
+}
+
+extension Color {
+    /// A SwiftUI `Color` from a Plaid-style hex string ("#0079be" or "0079be"); nil when unparseable.
+    init?(hex: String?) {
+        guard var hex, !hex.isEmpty else { return nil }
+        if hex.hasPrefix("#") { hex.removeFirst() }
+        guard hex.count == 6, let value = Int(hex, radix: 16) else { return nil }
+        self.init(.sRGB,
+                  red: Double((value >> 16) & 0xFF) / 255,
+                  green: Double((value >> 8) & 0xFF) / 255,
+                  blue: Double(value & 0xFF) / 255)
     }
 }

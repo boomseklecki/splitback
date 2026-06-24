@@ -39,5 +39,9 @@ class AccountResponse(BaseModel):
     currency: str
     include_in_spending: bool | None
     include_in_cash_flow: bool | None
+    institution_name: str | None
+    institution_domain: str | None
+    institution_color: str | None
+    institution_status: str | None
     created_at: datetime
     updated_at: datetime

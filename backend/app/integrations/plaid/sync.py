@@ -11,7 +11,12 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.integrations.plaid import mapper
+from app.integrations.storage import minio_client
 from app.models import Account, PlaidItem, Transaction, TransactionSource
+
+_INSTITUTION_FIELDS = (
+    "institution_name", "institution_domain", "institution_color", "institution_status",
+)
 
 
 def accumulate_sync(fetch_page, access_token: str, cursor: str | None) -> dict:
@@ -31,12 +36,15 @@ def accumulate_sync(fetch_page, access_token: str, cursor: str | None) -> dict:
 
 
 async def _upsert_account(
-    session: AsyncSession, item_id: UUID, fields: dict, owner_identifier: str | None = None
+    session: AsyncSession, item_id: UUID, fields: dict, owner_identifier: str | None = None,
+    institution: dict | None = None,
 ) -> UUID:
-    values = {**fields, "plaid_item_id": item_id, "owner_identifier": owner_identifier}
+    inst = {k: (institution or {}).get(k) for k in _INSTITUTION_FIELDS}  # denormalized branding
+    values = {**fields, "plaid_item_id": item_id, "owner_identifier": owner_identifier, **inst}
     update_cols = {
         k: values[k]
-        for k in ("name", "type", "mask", "balance", "currency", "plaid_item_id", "owner_identifier")
+        for k in ("name", "type", "mask", "balance", "currency", "plaid_item_id", "owner_identifier",
+                  *_INSTITUTION_FIELDS)
     }
     stmt = (
         pg_insert(Account)
@@ -80,11 +88,12 @@ async def _upsert_transaction(
 async def apply_sync(
     session: AsyncSession, item: PlaidItem, accounts: list[dict], sync_result: dict
 ) -> dict:
+    institution = {k: getattr(item, k) for k in _INSTITUTION_FIELDS}  # denormalize the item's branding
     account_map: dict[str, UUID] = {}
     for account in accounts:
         fields = mapper.map_account(account)
         account_map[fields["plaid_account_id"]] = await _upsert_account(
-            session, item.id, fields, owner_identifier=item.user_identifier
+            session, item.id, fields, owner_identifier=item.user_identifier, institution=institution
         )
 
     for transaction in sync_result["added"] + sync_result["modified"]:
@@ -110,13 +119,31 @@ async def apply_sync(
     }
 
 
+async def resolve_institution(item: PlaidItem, client) -> None:
+    """Fetch the item's institution branding from Plaid and cache it on the item (best-effort). Also seeds
+    Plaid's logo into MinIO at `logos/{domain}.img` so `/logos/{domain}` serves the authoritative bank logo
+    (works for any institution, including ones with weak favicons)."""
+    info = await asyncio.to_thread(client.get_institution, item.access_token)
+    if not info:
+        return
+    item.institution_id = info.get("institution_id") or item.institution_id
+    item.institution_name = info.get("name") or item.institution_name
+    item.institution_domain = info.get("domain") or item.institution_domain
+    item.institution_color = info.get("primary_color") or item.institution_color
+    item.institution_status = info.get("status") or item.institution_status
+    domain, logo = item.institution_domain, info.get("logo_bytes")
+    if domain and logo:
+        try:
+            await asyncio.to_thread(minio_client.put_object, f"logos/{domain}.img", logo, "image/png")
+        except Exception:
+            pass  # logo seeding is best-effort; the favicon proxy still resolves
+
+
 async def sync_item(session: AsyncSession, item: PlaidItem, client) -> dict:
-    # Backfill the institution name for items linked before it was resolved (older links stored null,
-    # which the app shows as "Bank"). Best-effort — leaves it null if the lookup fails.
-    if not item.institution_name:
-        name = await asyncio.to_thread(client.get_institution_name, item.access_token)
-        if name:
-            item.institution_name = name
+    # Resolve the institution's branding once (items linked before this, or before it resolved, have a null
+    # institution_id). Best-effort — a failed lookup just leaves the fields null.
+    if not item.institution_id:
+        await resolve_institution(item, client)
     accounts = await asyncio.to_thread(client.get_accounts, item.access_token)
     sync_result = await asyncio.to_thread(
         accumulate_sync, client.fetch_transactions_page, item.access_token, item.transactions_cursor

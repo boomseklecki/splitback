@@ -54,7 +54,8 @@ struct LinkedBanksView: View {
                     }
                 } header: {
                     HStack(spacing: 8) {
-                        AvatarView(url: InstitutionBrand.logoURL(for: item.institution_name),
+                        AvatarView(url: InstitutionBrand.logoURL(domain: item.institution_domain,
+                                                                 name: item.institution_name),
                                    name: item.institution_name ?? "Bank", size: 22,
                                    systemImage: "building.columns")
                         Text(item.institution_name ?? "Bank").textCase(nil)

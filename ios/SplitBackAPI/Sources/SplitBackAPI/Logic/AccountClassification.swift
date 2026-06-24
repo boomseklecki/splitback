@@ -82,6 +82,12 @@ extension Account {
         return "•••• \(mask)"
     }
 
+    /// The bank's logo URL (favicon proxy), preferring the backend-resolved domain and falling back to the
+    /// on-device catalog by name; nil for manual/unknown institutions.
+    var institutionLogoURL: String? {
+        InstitutionBrand.logoURL(domain: institutionDomain, name: institutionName)
+    }
+
     /// Whether this account's outflows count toward budgets/spending. Defaults to cash-flow + credit
     /// (true spend wherever it happens); the user can override per account.
     var countsInSpending: Bool {
