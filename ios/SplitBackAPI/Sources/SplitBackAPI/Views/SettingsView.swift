@@ -25,6 +25,7 @@ struct SettingsView: View {
     @State private var linkSession: LinkSession?
     @State private var linking = false
     @State private var syncing = false
+    @State private var syncSummary: String?
     @State private var showingInviteQR = false
     @State private var errorText: String?
     @State private var linkDiagnostics = PlaidLinkDiagnosticsStore.shared
@@ -129,6 +130,9 @@ struct SettingsView: View {
                                   systemImage: "arrow.triangle.2.circlepath")
                         }
                         .disabled(syncing)
+                        if let syncSummary {
+                            Text(syncSummary).font(.caption).foregroundStyle(.secondary)
+                        }
                     }
                     if env.currentUser == nil {
                         Text("Sign in to link a bank.").font(.caption).foregroundStyle(.secondary)
@@ -332,11 +336,23 @@ struct SettingsView: View {
         Task {
             defer { syncing = false }
             do {
-                try await env.plaid(context).sync()
+                let stats = try await env.plaid(context).sync()
+                syncSummary = Self.syncSummary(stats)
                 try await env.refreshAll(context)
                 await loadItems()
             } catch { errorText = errorMessage(error) }
         }
+    }
+
+    /// A one-line recap of a Plaid sync (mirrors the Splitwise import summary), e.g.
+    /// "Synced 2 banks · 423 new, 12 updated." or "Synced 2 banks · already up to date."
+    private static func syncSummary(_ stats: Components.Schemas.SyncResponse) -> String {
+        let banks = "\(stats.items_synced) bank\(stats.items_synced == 1 ? "" : "s")"
+        var parts: [String] = []
+        if stats.added > 0 { parts.append("\(stats.added.formatted()) new") }
+        if stats.modified > 0 { parts.append("\(stats.modified.formatted()) updated") }
+        if stats.removed > 0 { parts.append("\(stats.removed.formatted()) removed") }
+        return "Synced \(banks) · " + (parts.isEmpty ? "already up to date" : parts.joined(separator: ", "))
     }
 
     private func linkBank() {
