@@ -1,4 +1,5 @@
 import XCTest
+import SwiftData
 @testable import SplitBackAPI
 
 final class GoalsAnalyticsTests: XCTestCase {
@@ -611,6 +612,46 @@ final class GoalsAnalyticsTests: XCTestCase {
                                         lookup: [:], me: nil)
         XCTAssertEqual(rows.count, 2)
         XCTAssertEqual(rows.reduce(Decimal(0)) { $0 + $1.amount }, 50)
+    }
+
+    // MARK: Local categories (seed + backup snapshot)
+
+    func testCategorySnapshotRoundTrip() throws {
+        let snap = CategorySnapshot(
+            categories: [.init(name: "Coffee", icon: "cup.and.saucer", position: 5, builtin: false)],
+            maps: [.init(rawCategory: "FOO_BAR", canonicalCategory: "Dining", source: "manual")])
+        let decoded = try JSONDecoder().decode(
+            CategorySnapshot.self, from: try JSONEncoder().encode(snap))
+        XCTAssertEqual(decoded.version, 1)
+        XCTAssertEqual(decoded.categories.map(\.name), ["Coffee"])
+        XCTAssertEqual(decoded.categories.first?.icon, "cup.and.saucer")
+        XCTAssertEqual(decoded.maps.first?.rawCategory, "FOO_BAR")
+        XCTAssertEqual(decoded.maps.first?.canonicalCategory, "Dining")
+    }
+
+    @MainActor
+    func testCategorySeedAndApplyRestoresCustomAndForwardFillsBuiltins() throws {
+        let context = ModelContext(try SplitBackStore.makeModelContainer(inMemory: true))
+
+        // Fresh store → seed inserts all built-ins, marked builtin.
+        CategorySeed.ensureBuiltins(context)
+        let seeded = try context.fetch(FetchDescriptor<SpendCategory>())
+        XCTAssertEqual(Set(seeded.map(\.name)), Set(CanonicalCategory.all))
+        XCTAssertTrue(seeded.allSatisfy(\.builtin))
+
+        // Restore a backup that has a custom category + a map but is missing one built-in ("Pets").
+        let kept = CanonicalCategory.all.filter { $0 != "Pets" }
+        let snap = CategorySnapshot(
+            categories: kept.enumerated().map { .init(name: $1, icon: nil, position: $0, builtin: true) }
+                + [.init(name: "Coffee", icon: "cup.and.saucer", position: 99, builtin: false)],
+            maps: [.init(rawCategory: "FOO_BAR", canonicalCategory: "Dining", source: "manual")])
+        try CategorySync.apply(snap, context)
+
+        let names = Set(try context.fetch(FetchDescriptor<SpendCategory>()).map(\.name))
+        XCTAssertTrue(names.contains("Coffee"))                  // custom restored
+        XCTAssertTrue(names.contains("Pets"))                    // missing built-in forward-filled
+        let maps = try context.fetch(FetchDescriptor<CategoryMap>())
+        XCTAssertEqual(maps.map(\.rawCategory), ["FOO_BAR"])     // map restored, replacing prior rows
     }
 
     // MARK: GoalProgress

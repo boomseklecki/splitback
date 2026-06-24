@@ -141,12 +141,19 @@ public final class AppEnvironment {
     func auth(_ context: ModelContext) -> AuthService { .init(client: client, context: context) }
 
     /// On-launch / pull-to-refresh: reconcile the cacheable collections (handles server-side deletes).
+    /// Categories are local-authoritative now (see `bootstrapCategories`), so they're not reconciled here.
     func refreshAll(_ context: ModelContext) async throws {
         try await groups(context).reconcileAll()
         try await users(context).refresh()
         try await expenses(context).reconcileAll()
         try await goals(context).refresh()
-        try await categoryMaps(context).refresh()
-        try await categories(context).refresh()
+    }
+
+    /// On launch: ensure built-in categories exist, then restore the per-user category config from the
+    /// backend backup blob if it's newer (a new phone gets its categories/maps back). Pull-before-push so a
+    /// freshly-seeded install restores rather than clobbering the backup.
+    func bootstrapCategories(_ context: ModelContext) async {
+        CategorySeed.ensureBuiltins(context)
+        await CategorySync.pull(context, client: client)
     }
 }

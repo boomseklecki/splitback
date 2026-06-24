@@ -20,6 +20,7 @@ from app.routers import (
     health,
     logos,
     plaid,
+    preferences,
     public,
     receipts,
     splitwise,
@@ -73,6 +74,7 @@ app.include_router(splitwise.router, dependencies=_protected)
 app.include_router(categories.router, dependencies=_protected)
 app.include_router(category_map.router, dependencies=_protected)
 app.include_router(goals.router, dependencies=_protected)
+app.include_router(preferences.router, dependencies=_protected)
 app.include_router(backups.router)  # each route self-gates with require_admin
 
 

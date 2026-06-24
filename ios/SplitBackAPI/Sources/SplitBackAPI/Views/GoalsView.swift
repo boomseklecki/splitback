@@ -137,7 +137,6 @@ struct GoalsView: View {
             let since = Calendar.current.date(byAdding: .month, value: -6, to: Date())
             try await env.accounts(context).refreshTransactions(since: since, limit: 500)
             try await env.goals(context).refresh()
-            try await env.categoryMaps(context).refresh()
         } catch {
             errorText = errorMessage(error)
         }

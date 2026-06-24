@@ -102,6 +102,7 @@ private struct MainTabView: View {
             didInitialRefresh = true
             await env.refreshCurrentUser(context)
             await env.refreshSplitwiseStatus()
+            await env.bootstrapCategories(context)
             do { try await env.refreshAll(context) }
             catch { errorMessageText = errorMessage(error) }
         }

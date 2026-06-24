@@ -15,6 +15,7 @@ from app.models.splitwise_token import SplitwiseToken
 from app.models.transaction import Transaction
 from app.models.transaction_item import TransactionItem
 from app.models.user import User
+from app.models.user_preference import UserPreference
 
 __all__ = [
     "Account",
@@ -35,5 +36,6 @@ __all__ = [
     "TransactionItem",
     "TransactionSource",
     "User",
+    "UserPreference",
     "UserSource",
 ]
