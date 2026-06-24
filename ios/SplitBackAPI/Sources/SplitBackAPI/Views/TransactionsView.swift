@@ -62,12 +62,21 @@ struct TransactionsView: View {
                 Section("Pending") {
                     ForEach(pending) { transactionLink($0, lookup: lookup, isPending: true) }
                 }
-                Section("Posted") {
-                    ForEach(posted) { transactionLink($0, lookup: lookup, isPending: false) }
+                // Posted rows get "Month Year" separators, matching the Expenses lists.
+                ForEach(monthGroups(posted, date: \.date), id: \.id) { month in
+                    Section {
+                        ForEach(month.items) { transactionLink($0, lookup: lookup, isPending: false) }
+                    } header: {
+                        Text(month.label).textCase(nil)
+                    }
                 }
             } else {
-                Section {
-                    ForEach(transactions) { transactionLink($0, lookup: lookup, isPending: $0.pending) }
+                ForEach(monthGroups(transactions, date: \.date), id: \.id) { month in
+                    Section {
+                        ForEach(month.items) { transactionLink($0, lookup: lookup, isPending: $0.pending) }
+                    } header: {
+                        Text(month.label).textCase(nil)
+                    }
                 }
             }
         }

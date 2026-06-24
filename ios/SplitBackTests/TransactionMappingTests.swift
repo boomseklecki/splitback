@@ -15,6 +15,20 @@ final class TransactionMappingTests: XCTestCase {
         XCTAssertNil(create.account_id)
     }
 
+    func testMonthGroupsBucketsNewestFirst() {
+        let cal = Calendar.current
+        func day(_ y: Int, _ m: Int, _ d: Int) -> Date {
+            cal.date(from: DateComponents(year: y, month: m, day: d))!
+        }
+        // Two June dates and one May date, fed in mixed order.
+        let dates = [day(2026, 6, 20), day(2026, 5, 2), day(2026, 6, 5)]
+        let groups = monthGroups(dates, date: { $0 })
+        XCTAssertEqual(groups.map(\.id), ["2026-6", "2026-5"])           // newest month first
+        XCTAssertEqual(groups.map(\.label), ["June 2026", "May 2026"])
+        XCTAssertEqual(groups.first?.items.count, 2)                      // both June dates bucketed together
+        XCTAssertEqual(groups.last?.items, [day(2026, 5, 2)])
+    }
+
     func testExpensePrefillFromTransaction() {
         let id = UUID()
         let transaction = Transaction(

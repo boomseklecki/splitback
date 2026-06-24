@@ -1,11 +1,12 @@
 import Foundation
 
-/// Groups date-descending expenses into month buckets with a "June 2026" label, newest month first,
-/// preserving date order within each month. Shared by the group detail and All Expenses lists.
-func expenseMonthGroups(_ expenses: [Expense]) -> [(id: String, label: String, expenses: [Expense])] {
+/// Groups date-descending items into month buckets with a "June 2026" label, newest month first, preserving
+/// order within each month. Generic over any row via a `date` accessor — shared by the Expenses lists and the
+/// Transactions list.
+func monthGroups<T>(_ items: [T], date: (T) -> Date) -> [(id: String, label: String, items: [T])] {
     let calendar = Calendar.current
-    let buckets = Dictionary(grouping: expenses) {
-        calendar.dateComponents([.year, .month], from: $0.date)
+    let buckets = Dictionary(grouping: items) {
+        calendar.dateComponents([.year, .month], from: date($0))
     }
     return buckets.keys
         .sorted { (calendar.date(from: $0) ?? .distantPast) > (calendar.date(from: $1) ?? .distantPast) }
@@ -15,4 +16,9 @@ func expenseMonthGroups(_ expenses: [Expense]) -> [(id: String, label: String, e
                     date.formatted(.dateTime.month(.wide).year()),
                     buckets[key] ?? [])
         }
+}
+
+/// Month buckets for expenses (newest month first). Shared by the group detail and All Expenses lists.
+func expenseMonthGroups(_ expenses: [Expense]) -> [(id: String, label: String, expenses: [Expense])] {
+    monthGroups(expenses, date: \.date).map { ($0.id, $0.label, $0.items) }
 }
