@@ -147,7 +147,7 @@ struct GoalsView: View {
 }
 
 /// A donut of spend by category with the month total in the center. Tapping a slice reports its category.
-private struct SpendingDonut: View {
+struct SpendingDonut: View {
     let slices: [CategorySpend]
     let total: Decimal
     var onSelect: (String) -> Void
