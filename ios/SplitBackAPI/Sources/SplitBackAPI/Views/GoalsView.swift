@@ -20,6 +20,7 @@ struct GoalsView: View {
     @State private var errorText: String?
     @State private var selectedCategory: String?
     @State private var showingReorder = false
+    @State private var horizontalSwiping = false
     @AppStorage("goalsOrder") private var goalsOrderRaw = GoalSection.serialize(GoalSection.allCases)
 
     private var lookup: [String: String] { CategoryMapping.lookup(categoryMaps) }
@@ -50,6 +51,24 @@ struct GoalsView: View {
                     }
                 }
             }
+            // Swipe left/right anywhere on the page to change month (in addition to the chevrons).
+            // `simultaneous` so vertical scrolling + row taps still work; the horizontal-dominance check in
+            // `MonthSwipe.step` keeps vertical scrolls from triggering it.
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 24)
+                    .onChanged { value in
+                        if abs(value.translation.width) > 16,
+                           abs(value.translation.width) > abs(value.translation.height) {
+                            horizontalSwiping = true  // suppress the donut's drill-in for this gesture
+                        }
+                    }
+                    .onEnded { value in
+                        defer { horizontalSwiping = false }
+                        guard let step = MonthSwipe.step(value.translation) else { return }
+                        if step > 0, month >= SpendingAnalytics.monthStart(Date()) { return }  // no future
+                        shift(by: step)
+                    }
+            )
             .navigationTitle("Goals")
             .navigationDestination(for: Goal.self) { GoalDetailView(goal: $0) }
             .navigationDestination(item: $selectedCategory) { category in
@@ -84,8 +103,10 @@ struct GoalsView: View {
         switch section {
         case .spending:
             Section {
-                SpendingDonut(slices: categorySpend, total: monthTotal) { selectedCategory = $0 }
-                    .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8))
+                SpendingDonut(slices: categorySpend, total: monthTotal) {
+                    if !horizontalSwiping { selectedCategory = $0 }  // don't drill in mid-swipe
+                }
+                .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8))
                 if categorySpend.isEmpty {
                     Text("No spending this month yet.").font(.caption).foregroundStyle(.secondary)
                 } else {

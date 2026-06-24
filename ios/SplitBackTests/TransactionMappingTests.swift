@@ -28,6 +28,13 @@ final class TransactionMappingTests: XCTestCase {
         XCTAssertEqual(decoded.order, ["goals", "accounts", "splits"])
     }
 
+    func testMonthSwipeStep() {
+        XCTAssertEqual(MonthSwipe.step(CGSize(width: -90, height: 10)), 1)    // swipe left → next month
+        XCTAssertEqual(MonthSwipe.step(CGSize(width: 90, height: -10)), -1)   // swipe right → previous
+        XCTAssertNil(MonthSwipe.step(CGSize(width: 30, height: 5)))           // too small
+        XCTAssertNil(MonthSwipe.step(CGSize(width: 70, height: 90)))          // too vertical
+    }
+
     func testAppearanceModeColorScheme() {
         XCTAssertNil(AppearanceMode.system.colorScheme)
         XCTAssertEqual(AppearanceMode.light.colorScheme, .light)
