@@ -24,10 +24,15 @@ enum Mapping {
 
     /// `format: date` values arrive as date-only strings ("yyyy-MM-dd"); date-time values are
     /// already decoded to `Date` by the runtime.
+    ///
+    /// Anchored to the device timezone (not UTC): a date-only value is a calendar date, so it must be parsed
+    /// AND displayed in the same zone or it shifts a day. Parsing at UTC midnight while views render in local
+    /// time made dates show one day early in negative-UTC offsets. Local midnight keeps the calendar day, and
+    /// since this same formatter does outbound `dateOnlyString`, inbound/outbound stay consistent.
     static let dateOnlyFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = posix
-        formatter.timeZone = TimeZone(identifier: "UTC")
+        formatter.timeZone = .autoupdatingCurrent
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter
