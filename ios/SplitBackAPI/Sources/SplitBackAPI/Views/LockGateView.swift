@@ -50,18 +50,38 @@ private struct LockScreen: View {
     let authenticating: Bool
     let onUnlock: () -> Void
 
+    /// The brand teal from the app icon's gradient.
+    private let teal = Color(hex: "14B8A6") ?? .teal
+
     var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "lock.fill").font(.system(size: 44)).foregroundStyle(.secondary)
-            Text("SplitBack is locked").font(.headline)
-            Button(action: onUnlock) {
-                Label("Unlock", systemImage: "faceid")
+        ZStack {
+            Color(.systemBackground)
+            LinearGradient(colors: [teal.opacity(0.22), teal.opacity(0.06)],
+                           startPoint: .top, endPoint: .bottom)
+
+            VStack(spacing: 24) {
+                Image("AppLogo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 108, height: 108)
+                    .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                    .shadow(color: .black.opacity(0.2), radius: 12, y: 6)
+
+                VStack(spacing: 6) {
+                    Text("SplitBack").font(.title2.weight(.bold))
+                    Label("Locked", systemImage: "lock.fill")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                }
+
+                Button(action: onUnlock) {
+                    Label("Unlock", systemImage: "faceid")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(teal)
+                .disabled(authenticating)
             }
-            .buttonStyle(.borderedProminent)
-            .disabled(authenticating)
+            .padding()
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(.systemBackground))
         .ignoresSafeArea()
     }
 }
