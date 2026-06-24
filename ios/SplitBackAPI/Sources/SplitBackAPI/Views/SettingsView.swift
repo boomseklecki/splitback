@@ -211,7 +211,9 @@ struct SettingsView: View {
                                 .frame(height: 200)
                                 .padding(.vertical, 8)
                         }
-                        ShareLink(item: joinURL) {
+                        ShareLink(item: joinURL,
+                                  preview: SharePreview(env.serverName ?? "SplitBack",
+                                                        image: Image("AppLogo"))) {
                             Label("Share Join Link", systemImage: "square.and.arrow.up")
                         }
                         Button {
