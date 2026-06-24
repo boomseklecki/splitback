@@ -19,12 +19,18 @@ struct DescriptionDetailView: View {
     @State private var showingCategoryPicker = false
     @State private var applying = false
     @State private var errorText: String?
+    @AppStorage("relatedTransactions.matchStrictness")
+    private var strictnessRaw = RelatedTransactions.MatchStrictness.balanced.rawValue
 
     private var lookup: [String: String] { CategoryMapping.lookup(categoryMaps) }
+    private var strictness: RelatedTransactions.MatchStrictness {
+        RelatedTransactions.MatchStrictness(rawValue: strictnessRaw) ?? .balanced
+    }
 
     var body: some View {
         // Group once per render (not inside the row builders), like SubscriptionsView.
-        let group = RelatedTransactions.group(seedDescription: seedDescription, in: transactions)
+        let group = RelatedTransactions.group(
+            seedDescription: seedDescription, in: transactions, strictness: strictness)
         let name = RelatedTransactions.displayName(for: seedDescription)
         let code = group.first?.currency ?? "USD"
         let total = group.reduce(Decimal(0)) { $0 + $1.amount }
@@ -55,7 +61,7 @@ struct DescriptionDetailView: View {
                 }
             }
 
-            Section("Charges") {
+            Section {
                 ForEach(group) { t in
                     NavigationLink {
                         LazyView(TransactionDetailView(transaction: t))
@@ -75,10 +81,27 @@ struct DescriptionDetailView: View {
                 if group.isEmpty {
                     Text("No related transactions.").foregroundStyle(.secondary)
                 }
+            } header: {
+                Text("Charges")
+            } footer: {
+                Text("Matching: \(strictness.label). Fuzzy groups any shared word; Strict only the same merchant.")
             }
         }
         .navigationTitle(name)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Picker("Match", selection: $strictnessRaw) {
+                        ForEach(RelatedTransactions.MatchStrictness.allCases) {
+                            Text($0.label).tag($0.rawValue)
+                        }
+                    }
+                } label: {
+                    Image(systemName: "slider.horizontal.3")
+                }
+            }
+        }
         .sheet(isPresented: $showingCategoryPicker) {
             CategoryPickerView(current: current, subject: name) { apply($0, to: group) }
         }

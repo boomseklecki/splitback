@@ -59,4 +59,32 @@ final class RelatedTransactionsTests: XCTestCase {
         XCTAssertEqual(RelatedTransactions.displayName(for: "ANTHROPIC CLAUDE SUB"), "Anthropic Claude Sub")
         XCTAssertEqual(RelatedTransactions.displayName(for: "CLAUDE.AI SUBSCRIPTION"), "Claude")
     }
+
+    // MARK: - Strictness tiers
+
+    /// One shared generic word ("joes"/"trader") over-matches under Fuzzy but is cut by Balanced/Strict.
+    func testTiersFilterSingleSharedWord() {
+        let all = [txn("TRADER JOES #123"), txn("JOES CRAB SHACK"), txn("TRADER VICS")]
+        func names(_ s: RelatedTransactions.MatchStrictness) -> Set<String> {
+            Set(RelatedTransactions.group(seedDescription: "TRADER JOES #456", in: all, strictness: s)
+                .map(\.details))
+        }
+        XCTAssertEqual(names(.fuzzy), ["TRADER JOES #123", "JOES CRAB SHACK", "TRADER VICS"])
+        XCTAssertEqual(names(.balanced), ["TRADER JOES #123"])
+        XCTAssertEqual(names(.strict), ["TRADER JOES #123"])
+    }
+
+    /// Two-of-three shared words: Balanced keeps it (0.667 > 0.5), Strict drops it (neither set is a subset).
+    func testBalancedVsStrictDiverge() {
+        let all = [txn("BLUE BOTTLE CAFE")]
+        let seed = "BLUE BOTTLE COFFEE"
+        XCTAssertEqual(RelatedTransactions.group(seedDescription: seed, in: all, strictness: .balanced).count, 1)
+        XCTAssertTrue(RelatedTransactions.group(seedDescription: seed, in: all, strictness: .strict).isEmpty)
+    }
+
+    /// The default strictness is Balanced (a single-word overlap out of 2+ tokens is excluded).
+    func testDefaultStrictnessIsBalanced() {
+        let all = [txn("JOES CRAB SHACK")]
+        XCTAssertTrue(RelatedTransactions.group(seedDescription: "TRADER JOES", in: all).isEmpty)
+    }
 }
