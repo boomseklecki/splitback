@@ -1,3 +1,6 @@
+import asyncio
+import logging
+from decimal import Decimal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -8,9 +11,13 @@ from sqlalchemy.orm import selectinload
 from app.auth import require_auth
 from app.auth.scope import assert_group_member
 from app.db import get_session
+from app.integrations.splitwise import client as sw_client
 from app.models import Expense, Group, GroupMember, Split, User
+from app.models.splitwise_token import SplitwiseToken
 from app.schemas.balance import BalanceEntry, FriendBalance
 from app.services import friend_balances
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["balances"])
 
@@ -64,15 +71,58 @@ async def overall_balances(
     return await _compute(session, None, caller)
 
 
+async def _splitwise_token(session: AsyncSession, caller: str) -> SplitwiseToken | None:
+    """The caller's Splitwise token, falling back to the single stored token (a lone connection still works
+    regardless of its identifier). None when no token is connected."""
+    token = await session.scalar(
+        select(SplitwiseToken).where(SplitwiseToken.user_identifier == caller)
+    )
+    if token is not None:
+        return token
+    tokens = (await session.scalars(select(SplitwiseToken))).all()
+    return tokens[0] if len(tokens) == 1 else None
+
+
+async def _splitwise_friends(
+    session: AsyncSession, token: SplitwiseToken, sw_map: dict[str, str]
+) -> list[FriendBalance]:
+    """Splitwise's authoritative current friend balances (its own ledger nets settle-ups across groups, so it's
+    the source of truth — not a sum of per-expense repayments). Mapped to local identifiers so the app resolves
+    names/avatars from its user directory. Positive net = that person owes the caller."""
+    friends = await asyncio.to_thread(sw_client.fetch_friends, sw_client.make_client(token.access_token))
+    out: list[FriendBalance] = []
+    for f in friends:
+        # Single-currency for now; multi-currency balances are summed (a known v1 simplification).
+        net = sum((Decimal(str(b["amount"])) for b in f["balances"] if b.get("amount")), Decimal(0))
+        identifier = sw_map.get(f["splitwise_id"]) or f"swuser_{f['splitwise_id']}"
+        name = " ".join(p for p in (f.get("first_name"), f.get("last_name")) if p) or None
+        out.append(FriendBalance(identifier=identifier, display_name=name, net=net))
+    return sorted(out, key=lambda fb: (fb.display_name or fb.identifier).lower())
+
+
 @router.get("/friends", response_model=list[FriendBalance])
 async def friends(
     caller: str | None = Depends(require_auth), session: AsyncSession = Depends(get_session)
 ) -> list[FriendBalance]:
-    """The caller's Splitwise-style pairwise balance with each person, across all their (non-archived)
-    groups. Computed server-side from every expense's splits (the on-device cache is incomplete for large
-    groups). Positive net = that person owes the caller."""
+    """The caller's current balance with each person, mirroring Splitwise's Friends tab. Sourced from
+    Splitwise's authoritative `getFriends()` when a token is connected; otherwise computed server-side from the
+    caller's group expenses (self-hosted fallback). Positive net = that person owes the caller."""
     if caller is None:
-        return []  # no "me" to compute pairwise against (open mode)
+        return []  # no "me" (open mode)
+    sw_rows = await session.execute(
+        select(User.splitwise_user_id, User.identifier).where(User.splitwise_user_id.is_not(None))
+    )
+    sw_map = {sw_id: identifier for sw_id, identifier in sw_rows}
+
+    token = await _splitwise_token(session, caller)
+    if token is not None:
+        try:
+            return await _splitwise_friends(session, token, sw_map)
+        except Exception:  # Splitwise unreachable → fall back to the local computation below
+            logger.warning("Splitwise getFriends failed; falling back to local balances", exc_info=True)
+
+    # Fallback: derive from the caller's group expenses (correct for self-hosted; repayments path for
+    # Splitwise-linked groups when the API is unavailable).
     expenses = (
         await session.scalars(
             select(Expense)
@@ -85,10 +135,6 @@ async def friends(
             .options(selectinload(Expense.splits))
         )
     ).all()
-    sw_rows = await session.execute(
-        select(User.splitwise_user_id, User.identifier).where(User.splitwise_user_id.is_not(None))
-    )
-    sw_map = {sw_id: identifier for sw_id, identifier in sw_rows}
     nets = friend_balances.compute(caller, expenses, sw_map)
     if not nets:
         return []

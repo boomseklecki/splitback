@@ -149,6 +149,26 @@ def get_current_user(client: Splitwise) -> dict:
     }
 
 
+def fetch_friends(client: Splitwise) -> list[dict]:
+    """The authenticated user's Splitwise friends with their authoritative current balances. Splitwise keeps
+    its own friend-level ledger (settle-ups, cross-group netting), so this — not a sum of per-expense
+    repayments — is the source of truth for the Friends view. Each balance is per-currency."""
+    out: list[dict] = []
+    for friend in (client.getFriends() or []):
+        out.append({
+            "splitwise_id": str(_method(friend, "getId")),
+            "first_name": _method(friend, "getFirstName") or "",
+            "last_name": _method(friend, "getLastName") or "",
+            "email": _method(friend, "getEmail"),
+            "picture": _picture_url(friend),
+            "balances": [
+                {"currency": _method(b, "getCurrencyCode"), "amount": _method(b, "getAmount")}
+                for b in (_method(friend, "getBalances") or [])
+            ],
+        })
+    return out
+
+
 def _normalize_group(group) -> dict:
     members = [
         {
