@@ -131,12 +131,19 @@ struct AccountsView: View {
                         PlaidLinkSession.shared.finish()
                         Task { await exchange(publicToken) }
                     },
-                    onExit: { linkSession = nil; PlaidLinkSession.shared.finish() }
+                    onExit: {
+                        linkSession = nil
+                        PlaidLinkSession.shared.finish()
+                        env.prewarmPlaidLinkToken(context)  // ready a fresh token for a quick retry
+                    }
                 )
                 .ignoresSafeArea()
             }
             .refreshable { await reload() }
-            .task { await reload() }
+            .task {
+                env.prewarmPlaidLinkToken(context)  // background; + menu's "Link Bank" opens without the wait
+                await reload()
+            }
             .onChange(of: sortModeRaw) { _, new in
                 if new == SortMode.bank.rawValue && items.isEmpty { Task { await loadItems() } }
             }
@@ -204,7 +211,13 @@ struct AccountsView: View {
         Task {
             defer { linking = false }
             do {
-                let token = try await env.plaid(context).linkToken(userIdentifier: me)
+                // Use the pre-warmed token when ready (instant), else fetch on demand.
+                let token: String
+                if let cached = PlaidLinkTokenCache.shared.take(for: me) {
+                    token = cached
+                } else {
+                    token = try await env.plaid(context).linkToken(userIdentifier: me)
+                }
                 PlaidLinkSession.shared.begin(token: token)  // persist so a terminated OAuth can resume
                 linkSession = LinkSession(token: token)
             } catch { errorText = errorMessage(error) }

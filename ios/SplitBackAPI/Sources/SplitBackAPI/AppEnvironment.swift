@@ -125,6 +125,15 @@ public final class AppEnvironment {
     func categoryMaps(_ context: ModelContext) -> CategoryMapRepository { .init(client: client, context: context) }
     func plaid(_ context: ModelContext) -> PlaidRepository { .init(client: client, context: context) }
     func plaidSlow(_ context: ModelContext) -> PlaidRepository { .init(client: slowClient, context: context) }  // exchange auto-syncs the new bank, which can backfill many months
+
+    /// Fire-and-forget: pre-warm a Plaid link token so the next "Link Bank" tap opens Plaid Link without the
+    /// token round-trip. No-op without a signed-in user; best-effort (never blocks, never surfaces errors).
+    func prewarmPlaidLinkToken(_ context: ModelContext) {
+        guard let me = currentUser?.identifier else { return }
+        Task { await PlaidLinkTokenCache.shared.prewarm(for: me) {
+            try await self.plaid(context).linkToken(userIdentifier: me)
+        } }
+    }
     func balances(_ context: ModelContext) -> BalanceRepository { .init(client: client, context: context) }
     func categories(_ context: ModelContext) -> CategoryRepository { .init(client: client, context: context) }
     var splitwise: SplitwiseService { .init(client: slowClient) }  // slow client: the cold-backfill import can run minutes
