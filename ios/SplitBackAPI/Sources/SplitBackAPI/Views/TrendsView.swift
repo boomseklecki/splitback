@@ -84,7 +84,11 @@ private struct MonthBarChart: View {
                         guard let plotFrame = proxy.plotFrame else { return }
                         let x = location.x - geo[plotFrame].origin.x
                         guard let date: Date = proxy.value(atX: x) else { return }
-                        selectedMonth = nearestMonth(to: date)
+                        // Each bar fills the band [M, M+1) drawn to the right of the M tick, so map the whole
+                        // band to its own month (floor) rather than snapping to the nearest tick by time —
+                        // which sent the bar's right half to the next month.
+                        let target = SpendingAnalytics.monthStart(date)
+                        selectedMonth = series.first { $0.month == target }?.month ?? nearestMonth(to: date)
                     }
             }
         }

@@ -18,6 +18,7 @@ struct GoalsView: View {
     @State private var month: Date = SpendingAnalytics.monthStart(Date())
     @State private var showingNew = false
     @State private var errorText: String?
+    @State private var selectedCategory: String?
 
     private var lookup: [String: String] { CategoryMapping.lookup(categoryMaps) }
     private var me: String? { env.currentUser?.identifier }
@@ -37,7 +38,7 @@ struct GoalsView: View {
             List {
                 Section {
                     monthSelector
-                    SpendingDonut(slices: categorySpend, total: monthTotal)
+                    SpendingDonut(slices: categorySpend, total: monthTotal) { selectedCategory = $0 }
                         .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8))
                     if categorySpend.isEmpty {
                         Text("No spending this month yet.").font(.caption).foregroundStyle(.secondary)
@@ -47,14 +48,15 @@ struct GoalsView: View {
                                 SpendContributorsView(title: slice.category, month: month,
                                                       scope: .category(slice.category))
                             } label: {
-                                HStack(spacing: 8) {
-                                    Circle().fill(categoryColor(slice.category)).frame(width: 10, height: 10)
-                                    Text(slice.category)
-                                    Spacer()
-                                    Text(slice.total.formatted(.currency(code: "USD")))
-                                        .foregroundStyle(.secondary).monospacedDigit()
-                                }
-                                .font(.caption)
+                                CategorySpendRow(slice: slice)
+                            }
+                        }
+                        if categorySpend.count > 6 {
+                            NavigationLink {
+                                AllCategoriesView(slices: categorySpend, month: month)
+                            } label: {
+                                Label("All Categories", systemImage: "list.bullet")
+                                    .font(.caption)
                             }
                         }
                     }
@@ -96,6 +98,9 @@ struct GoalsView: View {
             }
             .navigationTitle("Goals")
             .navigationDestination(for: Goal.self) { GoalDetailView(goal: $0) }
+            .navigationDestination(item: $selectedCategory) { category in
+                SpendContributorsView(title: category, month: month, scope: .category(category))
+            }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button { showingNew = true } label: { Image(systemName: "plus") }
@@ -141,10 +146,13 @@ struct GoalsView: View {
     }
 }
 
-/// A donut of spend by category with the month total in the center.
+/// A donut of spend by category with the month total in the center. Tapping a slice reports its category.
 private struct SpendingDonut: View {
     let slices: [CategorySpend]
     let total: Decimal
+    var onSelect: (String) -> Void
+
+    @State private var selectedAngle: Double?
 
     var body: some View {
         Chart(slices) { slice in
@@ -156,6 +164,7 @@ private struct SpendingDonut: View {
             .cornerRadius(3)
             .foregroundStyle(categoryColor(slice.category))
         }
+        .chartAngleSelection(value: $selectedAngle)
         .chartLegend(.hidden)
         .frame(height: 220)
         .overlay {
@@ -163,7 +172,39 @@ private struct SpendingDonut: View {
                 Text("Spent this month").font(.caption2).foregroundStyle(.secondary)
                 Text(total.formatted(.currency(code: "USD"))).font(.title2.bold()).monospacedDigit()
             }
+            .allowsHitTesting(false)  // let taps reach the slices behind the center label
         }
+        .onChange(of: selectedAngle) { _, angle in
+            guard let angle, let category = category(at: angle) else { return }
+            selectedAngle = nil  // reset so re-tapping the same slice fires again
+            onSelect(category)
+        }
+    }
+
+    /// The category whose cumulative spend wedge contains `angle` (plotted in `slices` order).
+    private func category(at angle: Double) -> String? {
+        var cumulative = 0.0
+        for slice in slices {
+            cumulative += NSDecimalNumber(decimal: slice.total).doubleValue
+            if angle <= cumulative { return slice.category }
+        }
+        return slices.last?.category
+    }
+}
+
+/// A category row: color dot, name, and spend total. Shared by the Goals donut list and All Categories.
+struct CategorySpendRow: View {
+    let slice: CategorySpend
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Circle().fill(categoryColor(slice.category)).frame(width: 10, height: 10)
+            Text(slice.category)
+            Spacer()
+            Text(slice.total.formatted(.currency(code: "USD")))
+                .foregroundStyle(.secondary).monospacedDigit()
+        }
+        .font(.caption)
     }
 }
 
