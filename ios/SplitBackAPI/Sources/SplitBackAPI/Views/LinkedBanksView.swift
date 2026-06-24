@@ -53,7 +53,12 @@ struct LinkedBanksView: View {
                         confirmingUnlink = UnlinkTarget(id: item.id, name: item.institution_name ?? "Bank")
                     }
                 } header: {
-                    Text(item.institution_name ?? "Bank").textCase(nil)
+                    HStack(spacing: 8) {
+                        AvatarView(url: InstitutionBrand.logoURL(for: item.institution_name),
+                                   name: item.institution_name ?? "Bank", size: 22,
+                                   systemImage: "building.columns")
+                        Text(item.institution_name ?? "Bank").textCase(nil)
+                    }
                 }
             }
         }
