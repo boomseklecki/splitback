@@ -11,6 +11,7 @@ from app.models.receipt import Receipt
 from app.models.split import Split
 from app.models.splitwise_token import SplitwiseToken
 from app.models.transaction import Transaction
+from app.models.transaction_category_override import TransactionCategoryOverride
 from app.models.transaction_item import TransactionItem
 from app.models.user import User
 from app.models.user_preference import UserPreference
@@ -29,6 +30,7 @@ __all__ = [
     "SplitwiseOAuthState",
     "SplitwiseToken",
     "Transaction",
+    "TransactionCategoryOverride",
     "TransactionItem",
     "TransactionSource",
     "User",

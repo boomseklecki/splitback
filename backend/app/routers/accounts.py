@@ -11,7 +11,7 @@ from app.auth import require_auth
 from app.auth.scope import assert_owner
 from app.config import settings
 from app.db import get_session
-from app.models import Account, Transaction, TransactionItem
+from app.models import Account, Transaction, TransactionCategoryOverride, TransactionItem
 from app.models.enums import TransactionSource
 from app.schemas.account import ACCOUNT_KINDS, AccountCreate, AccountResponse, AccountUpdate
 from app.schemas.transaction import (
@@ -123,19 +123,45 @@ async def list_transactions(
     if updated_since is not None:
         stmt = stmt.where(Transaction.updated_at >= ensure_utc(updated_since))
     stmt = stmt.order_by(Transaction.date.desc(), Transaction.created_at.desc()).limit(limit).offset(offset)
-    rows = await session.scalars(stmt)
-    return list(rows)
+    rows = list(await session.scalars(stmt))
+    await _attach_overrides(session, caller, rows)
+    return rows
 
 
-async def _load_transaction(session: AsyncSession, transaction_id: UUID) -> Transaction | None:
-    """Load a transaction with its items eagerly, so the response can serialize them (async sessions
-    can't lazy-load a relationship after the awaited query)."""
+async def _attach_overrides(
+    session: AsyncSession, caller: str | None, transactions: list[Transaction]
+) -> None:
+    """Populate each transaction's `category_override` from the caller's per-user override row (none in open
+    mode). The column was moved to `transaction_category_overrides`; this sets a transient attribute the
+    response serializes via `from_attributes`."""
+    ids = [t.id for t in transactions]
+    overrides: dict[UUID, str] = {}
+    if caller is not None and ids:
+        rows = await session.execute(
+            select(TransactionCategoryOverride.transaction_id, TransactionCategoryOverride.category).where(
+                TransactionCategoryOverride.owner_identifier == caller,
+                TransactionCategoryOverride.transaction_id.in_(ids),
+            )
+        )
+        overrides = {tid: category for tid, category in rows}
+    for t in transactions:
+        t.category_override = overrides.get(t.id)
+
+
+async def _load_transaction(
+    session: AsyncSession, transaction_id: UUID, caller: str | None = None
+) -> Transaction | None:
+    """Load a transaction with its items eagerly (async sessions can't lazy-load after the awaited query),
+    and attach the caller's category override."""
     stmt = (
         select(Transaction)
         .options(selectinload(Transaction.items))
         .where(Transaction.id == transaction_id)
     )
-    return await session.scalar(stmt)
+    transaction = await session.scalar(stmt)
+    if transaction is not None:
+        await _attach_overrides(session, caller, [transaction])
+    return transaction
 
 
 @router.get("/transactions/{transaction_id}", response_model=TransactionResponse)
@@ -144,7 +170,7 @@ async def get_transaction(
     caller: str | None = Depends(require_auth),
     session: AsyncSession = Depends(get_session),
 ) -> Transaction:
-    transaction = await _load_transaction(session, transaction_id)
+    transaction = await _load_transaction(session, transaction_id, caller)
     if transaction is None:
         raise HTTPException(status_code=404, detail="Transaction not found")
     assert_owner(transaction.owner_identifier, caller)
@@ -158,16 +184,31 @@ async def update_transaction(
     caller: str | None = Depends(require_auth),
     session: AsyncSession = Depends(get_session),
 ) -> Transaction:
-    """Set (or clear, with null) the per-transaction category override. Plaid sync only touches
-    description/amount/currency/date/category/pending, so this survives a re-sync."""
+    """Set (or clear, with null) the caller's per-user category override (in `transaction_category_overrides`,
+    keyed by owner + transaction). Plaid sync only touches description/amount/currency/date/category/pending,
+    so this survives a re-sync."""
     transaction = await session.get(Transaction, transaction_id)
     if transaction is None:
         raise HTTPException(status_code=404, detail="Transaction not found")
     assert_owner(transaction.owner_identifier, caller)
-    # Single-field body: assign directly so an omitted field (the generated client drops nil) clears it.
-    transaction.category_override = body.category_override
-    await session.commit()
-    return await _load_transaction(session, transaction_id)
+    if caller is not None:  # open mode has no per-user override to key on
+        row = await session.scalar(
+            select(TransactionCategoryOverride).where(
+                TransactionCategoryOverride.owner_identifier == caller,
+                TransactionCategoryOverride.transaction_id == transaction_id,
+            )
+        )
+        # An omitted field (the generated client drops nil) clears the override → delete the row.
+        if body.category_override is None:
+            if row is not None:
+                await session.delete(row)
+        elif row is None:
+            session.add(TransactionCategoryOverride(
+                owner_identifier=caller, transaction_id=transaction_id, category=body.category_override))
+        else:
+            row.category = body.category_override
+        await session.commit()
+    return await _load_transaction(session, transaction_id, caller)
 
 
 def _apply_transaction_items(
@@ -207,13 +248,13 @@ async def set_transaction_items(
 ) -> Transaction:
     """Replace a transaction's line items (upsert by id, drop-orphan). A separate endpoint from PATCH so
     it never touches the category-override (whose omitted-clears semantics we must not trip)."""
-    transaction = await _load_transaction(session, transaction_id)
+    transaction = await _load_transaction(session, transaction_id, caller)
     if transaction is None:
         raise HTTPException(status_code=404, detail="Transaction not found")
     assert_owner(transaction.owner_identifier, caller)
     _apply_transaction_items(transaction, body, editor=None)
     await session.commit()
-    return await _load_transaction(session, transaction_id)
+    return await _load_transaction(session, transaction_id, caller)
 
 
 @router.post("/transactions", response_model=TransactionResponse, status_code=201)
@@ -235,7 +276,7 @@ async def create_transaction(
     )
     session.add(transaction)
     await session.commit()
-    return await _load_transaction(session, transaction.id)
+    return await _load_transaction(session, transaction.id, caller)
 
 
 @router.delete("/transactions/{transaction_id}", status_code=204)

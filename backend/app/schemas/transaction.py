@@ -57,7 +57,8 @@ class TransactionResponse(BaseModel):
     currency: str
     date: date_type
     category: str | None
-    category_override: str | None
+    # The caller's per-user override (from `transaction_category_overrides`); the router attaches it.
+    category_override: str | None = None
     pending: bool
     items: list[TransactionItemResponse] = []
     created_at: datetime
