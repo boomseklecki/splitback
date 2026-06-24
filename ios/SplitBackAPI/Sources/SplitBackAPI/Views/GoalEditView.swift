@@ -34,7 +34,7 @@ struct GoalEditView: View {
 
     private var amount: Decimal { Decimal(string: amountString, locale: Locale(identifier: "en_US_POSIX")) ?? 0 }
     private var plaidAccounts: [Account] {
-        accounts.filter { $0.plaidAccountId != nil }.sorted { $0.name < $1.name }
+        accounts.filter { $0.plaidAccountId != nil }.sorted { $0.displayLabel < $1.displayLabel }
     }
     private var selectedAccount: Account? { accountId.flatMap { id in accounts.first { $0.id == id } } }
     private var canSave: Bool {
@@ -72,7 +72,7 @@ struct GoalEditView: View {
                     Section("Savings") {
                         Picker("Account", selection: $accountId) {
                             Text("Choose an account").tag(UUID?.none)
-                            ForEach(plaidAccounts) { Text($0.name).tag(UUID?.some($0.id)) }
+                            ForEach(plaidAccounts) { Text($0.displayLabel).tag(UUID?.some($0.id)) }
                         }
                         Picker("Target", selection: $saveType) {
                             Text("Reach a balance").tag(SaveTargetType.balance)
@@ -117,7 +117,7 @@ struct GoalEditView: View {
     /// The name used when the field is left blank.
     private var defaultName: String {
         if kind == .spend { return category ?? "Budget" }
-        return selectedAccount?.name ?? "Savings goal"
+        return selectedAccount?.displayLabel ?? "Savings goal"
     }
 
     private func save() {
