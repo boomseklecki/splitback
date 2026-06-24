@@ -85,7 +85,11 @@ async def friends(
             .options(selectinload(Expense.splits))
         )
     ).all()
-    nets = friend_balances.compute(caller, expenses)
+    sw_rows = await session.execute(
+        select(User.splitwise_user_id, User.identifier).where(User.splitwise_user_id.is_not(None))
+    )
+    sw_map = {sw_id: identifier for sw_id, identifier in sw_rows}
+    nets = friend_balances.compute(caller, expenses, sw_map)
     if not nets:
         return []
     users = await session.scalars(select(User).where(User.identifier.in_(list(nets))))
