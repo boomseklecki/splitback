@@ -32,9 +32,9 @@ def test_normalizes_friends_with_balances():
     out = sw_client.fetch_friends(client)
     assert out == [
         {"splitwise_id": "200", "first_name": "Nikki", "last_name": "Guy", "email": "n@x.com",
-         "picture": None, "balances": [{"currency": "USD", "amount": "2811.59"}]},
+         "picture": None, "balances": [{"currency": "USD", "amount": "2811.59"}], "groups": []},
         {"splitwise_id": "300", "first_name": "Mac", "last_name": "Whittles", "email": None,
-         "picture": None, "balances": [{"currency": "USD", "amount": "-50.0"}]},
+         "picture": None, "balances": [{"currency": "USD", "amount": "-50.0"}], "groups": []},
     ]
 
 
