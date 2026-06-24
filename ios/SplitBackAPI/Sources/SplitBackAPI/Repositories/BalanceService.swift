@@ -23,6 +23,12 @@ struct BalanceRepository {
         for id in groupIds { try? await refreshGroup(id) }
     }
 
+    /// The caller's Splitwise-style pairwise balance with each person, combined across all groups
+    /// (server-computed — the local expense cache is incomplete for large groups). net > 0 ⇒ they owe you.
+    func friends() async throws -> [Components.Schemas.FriendBalance] {
+        try await client.friends_friends_get().ok.body.json
+    }
+
     private func replace(groupId: UUID, with balances: [Balance]) throws {
         for stale in try context.fetch(
             FetchDescriptor<GroupBalance>(predicate: #Predicate { $0.groupId == groupId })

@@ -9,3 +9,9 @@ class BalanceEntry(BaseModel):
     paid_total: Decimal
     owed_total: Decimal
     net: Decimal  # net > 0 => owed to this person; net < 0 => this person owes
+
+
+class FriendBalance(BaseModel):
+    identifier: str
+    display_name: str | None
+    net: Decimal  # the caller's pairwise net with this person; net > 0 => this person owes the caller

@@ -13,6 +13,12 @@ struct GroupsListView: View {
         case name = "Name"
         var id: String { rawValue }
     }
+    /// Splits page can list groups, or people ("Friends" — your pairwise balance with each person).
+    enum ViewMode: String, CaseIterable, Identifiable {
+        case groups = "Groups"
+        case friends = "Friends"
+        var id: String { rawValue }
+    }
 
     @Environment(AppEnvironment.self) private var env
     @Environment(\.modelContext) private var context
@@ -22,10 +28,15 @@ struct GroupsListView: View {
     private var groups: [ExpenseGroup]
     @Query private var members: [GroupMember]
     @Query private var balanceRows: [GroupBalance]
+    @Query private var users: [User]
     @Query(sort: \SpendCategory.position) private var spendCategories: [SpendCategory]
 
     @AppStorage("expenses.sortMode") private var sortModeRaw = SortMode.activity.rawValue
     @AppStorage("expenses.showSettled") private var showSettled = false
+    @AppStorage("splits.viewMode") private var viewModeRaw = ViewMode.groups.rawValue
+    /// Server-computed pairwise balances for the Friends view (the local expense cache is incomplete for
+    /// large groups, so this can't be aggregated on-device).
+    @State private var friendBalances: [Components.Schemas.FriendBalance] = []
 
     @State private var showingNewGroup = false
     @State private var newGroupName = ""
@@ -39,6 +50,28 @@ struct GroupsListView: View {
     @State private var lastExpense: [UUID: (date: Date, isSettleUp: Bool)] = [:]
 
     private var sortMode: SortMode { SortMode(rawValue: sortModeRaw) ?? .activity }
+    private var viewMode: ViewMode { ViewMode(rawValue: viewModeRaw) ?? .groups }
+
+    private struct FriendRow: Identifiable { let id: String; let name: String; let net: Decimal }
+
+    /// All friend rows (unfiltered), resolved with names from the user directory.
+    private var allFriendRows: [FriendRow] {
+        friendBalances.compactMap { fb in
+            (try? Mapping.decimal(fb.net, field: "FriendBalance.net")).map {
+                FriendRow(id: fb.identifier, name: users.displayName(for: fb.identifier), net: $0)
+            }
+        }
+    }
+
+    /// Friend rows after hiding settled (net 0) and applying the sort (Balance → |net| desc; else by name).
+    private var friendRows: [FriendRow] {
+        let shown = showSettled ? allFriendRows : allFriendRows.filter { $0.net != 0 }
+        return sortMode == .name
+            ? shown.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            : shown.sorted { abs($0.net) > abs($1.net) }
+    }
+
+    private var friendsHiddenCount: Int { allFriendRows.filter { $0.net == 0 }.count }
 
     /// Your net per group, read instantly from the cached `GroupBalance` rows (refreshed in the background).
     private var myNets: [UUID: Decimal] {
@@ -88,6 +121,30 @@ struct GroupsListView: View {
     var body: some View {
         NavigationStack {
             List {
+                if viewMode == .friends {
+                    Section("Friends") {
+                        ForEach(friendRows) { row in
+                            HStack(spacing: 12) {
+                                AvatarView(url: users.avatarURL(for: row.id), name: row.name, size: 36)
+                                Text(row.name)
+                                Spacer()
+                                let phrase = BalancePhrase.mine(row.net)
+                                VStack(alignment: .trailing, spacing: 1) {
+                                    Text(phrase.label).font(.caption2).foregroundStyle(.secondary)
+                                    if let amount = phrase.amount {
+                                        Text(amount).font(.subheadline).fontWeight(.medium)
+                                            .foregroundStyle(phrase.color).monospacedDigit()
+                                    }
+                                }
+                            }
+                        }
+                        if friendRows.isEmpty {
+                            Text(allFriendRows.isEmpty ? "No shared expenses yet. Pull to refresh."
+                                                       : "All settled up.")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                } else {
                 Section("Groups") {
                     ForEach(visibleGroups) { group in
                         NavigationLink(value: group) {
@@ -119,6 +176,7 @@ struct GroupsListView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                }
 
                 Section {
                     NavigationLink("All Expenses") { AllExpensesView() }
@@ -129,12 +187,16 @@ struct GroupsListView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Menu {
+                        Picker("View", selection: $viewModeRaw) {
+                            ForEach(ViewMode.allCases) { Text($0.rawValue).tag($0.rawValue) }
+                        }
                         Picker("Sort by", selection: $sortModeRaw) {
                             ForEach(SortMode.allCases) { Text($0.rawValue).tag($0.rawValue) }
                         }
-                        if hiddenCount > 0 || showSettled {
+                        let settledHidden = viewMode == .friends ? friendsHiddenCount : hiddenCount
+                        if settledHidden > 0 || showSettled {
                             Toggle(isOn: $showSettled) {
-                                Label("Show settled (\(hiddenCount))", systemImage: "eye")
+                                Label("Show settled (\(settledHidden))", systemImage: "eye")
                             }
                         }
                     } label: {
@@ -168,13 +230,18 @@ struct GroupsListView: View {
                 catch { errorText = errorMessage(error) }
                 await loadMyBalances()
                 loadLastExpenses()
+                if viewMode == .friends { await loadFriends() }
             }
             .task(id: balanceKey) {
                 loadLastExpenses()        // renders instantly from the cached balances
                 await loadMyBalances()    // refresh the cache in the background
                 loadLastExpenses()        // recompute settled-hiding with fresh balances
+                if viewMode == .friends { await loadFriends() }
             }
             .onChange(of: showSettled) { _, _ in loadLastExpenses() }
+            .onChange(of: viewModeRaw) { _, _ in
+                if viewMode == .friends { Task { await loadFriends() } }
+            }
             .alert("New Group", isPresented: $showingNewGroup) {
                 TextField("Name", text: $newGroupName)
                 Button("Create", action: createGroup)
@@ -233,6 +300,11 @@ struct GroupsListView: View {
     /// displayed nets as each group's fetch returns.
     private func loadMyBalances() async {
         await env.balances(context).refreshAll(groups.map(\.id))
+    }
+
+    /// Fetch the server-computed pairwise balances for the Friends view (keeps the prior list on failure).
+    private func loadFriends() async {
+        friendBalances = (try? await env.balances(context).friends()) ?? friendBalances
     }
 
     private func loadLastExpenses() {

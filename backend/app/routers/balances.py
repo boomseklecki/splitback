@@ -3,12 +3,14 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.auth import require_auth
 from app.auth.scope import assert_group_member
 from app.db import get_session
 from app.models import Expense, Group, GroupMember, Split, User
-from app.schemas.balance import BalanceEntry
+from app.schemas.balance import BalanceEntry, FriendBalance
+from app.services import friend_balances
 
 router = APIRouter(tags=["balances"])
 
@@ -60,6 +62,38 @@ async def overall_balances(
     caller: str | None = Depends(require_auth), session: AsyncSession = Depends(get_session)
 ) -> list[BalanceEntry]:
     return await _compute(session, None, caller)
+
+
+@router.get("/friends", response_model=list[FriendBalance])
+async def friends(
+    caller: str | None = Depends(require_auth), session: AsyncSession = Depends(get_session)
+) -> list[FriendBalance]:
+    """The caller's Splitwise-style pairwise balance with each person, across all their (non-archived)
+    groups. Computed server-side from every expense's splits (the on-device cache is incomplete for large
+    groups). Positive net = that person owes the caller."""
+    if caller is None:
+        return []  # no "me" to compute pairwise against (open mode)
+    expenses = (
+        await session.scalars(
+            select(Expense)
+            .where(Expense.archived_at.is_(None))
+            .where(
+                Expense.group_id.in_(
+                    select(GroupMember.group_id).where(GroupMember.user_identifier == caller)
+                )
+            )
+            .options(selectinload(Expense.splits))
+        )
+    ).all()
+    nets = friend_balances.compute(caller, expenses)
+    if not nets:
+        return []
+    users = await session.scalars(select(User).where(User.identifier.in_(list(nets))))
+    names = {u.identifier: u.display_name for u in users}
+    return [
+        FriendBalance(identifier=identifier, display_name=names.get(identifier), net=net)
+        for identifier, net in sorted(nets.items(), key=lambda kv: (names.get(kv[0]) or kv[0]).lower())
+    ]
 
 
 @router.get("/groups/{group_id}/balances", response_model=list[BalanceEntry])

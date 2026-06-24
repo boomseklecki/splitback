@@ -3401,6 +3401,36 @@
           }
         ]
       }
+    },
+    "/friends": {
+      "get": {
+        "tags": [
+          "balances"
+        ],
+        "summary": "Friends",
+        "operationId": "friends_friends_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FriendBalance"
+                  },
+                  "type": "array",
+                  "title": "Response Friends Friends Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -5461,6 +5491,29 @@
           "safety_backup"
         ],
         "title": "RestoreResult"
+      },
+      "FriendBalance": {
+        "properties": {
+          "identifier": {
+            "type": "string",
+            "title": "Identifier"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "net": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Net"
+          }
+        },
+        "type": "object",
+        "required": [
+          "identifier",
+          "net"
+        ],
+        "title": "FriendBalance"
       }
     },
     "securitySchemes": {
