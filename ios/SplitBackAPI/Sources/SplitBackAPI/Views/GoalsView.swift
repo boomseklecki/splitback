@@ -19,6 +19,8 @@ struct GoalsView: View {
     @State private var showingNew = false
     @State private var errorText: String?
     @State private var selectedCategory: String?
+    @State private var showingReorder = false
+    @AppStorage("goalsOrder") private var goalsOrderRaw = GoalSection.serialize(GoalSection.allCases)
 
     private var lookup: [String: String] { CategoryMapping.lookup(categoryMaps) }
     private var me: String? { env.currentUser?.identifier }
@@ -36,57 +38,11 @@ struct GoalsView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section {
-                    monthSelector
-                    SpendingDonut(slices: categorySpend, total: monthTotal) { selectedCategory = $0 }
-                        .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8))
-                    if categorySpend.isEmpty {
-                        Text("No spending this month yet.").font(.caption).foregroundStyle(.secondary)
-                    } else {
-                        ForEach(categorySpend.prefix(6)) { slice in
-                            NavigationLink {
-                                SpendContributorsView(title: slice.category, month: month,
-                                                      scope: .category(slice.category))
-                            } label: {
-                                CategorySpendRow(slice: slice)
-                            }
-                        }
-                        NavigationLink {
-                            AllCategoriesView(month: month)
-                        } label: {
-                            Label("All Categories", systemImage: "list.bullet")
-                                .font(.caption)
-                        }
-                    }
+                Section { monthSelector }   // pinned top — controls every section
+                ForEach(GoalSection.parse(goalsOrderRaw)) { section in
+                    goalSection(section)
                 }
-
-                Section("Budgets") {
-                    ForEach(spendGoals) { goal in
-                        NavigationLink(value: goal) {
-                            BudgetRow(goal: goal, spent: GoalProgress.spent(
-                                for: goal.category ?? "", in: month, transactions: transactions,
-                                accounts: accounts, lookup: lookup, expenses: expenses, me: me))
-                        }
-                    }
-                    if spendGoals.isEmpty {
-                        Text("Add a budget to track a category's monthly spend.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-
-                Section("Savings Goals") {
-                    ForEach(saveGoals) { goal in
-                        NavigationLink(value: goal) {
-                            SaveRow(goal: goal, account: goal.accountId.flatMap { accountsById[$0] })
-                        }
-                    }
-                    if saveGoals.isEmpty {
-                        Text("Set a goal to grow an account's balance.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-
-                Section {
+                Section {                   // pinned bottom
                     NavigationLink {
                         TrendsView()
                     } label: {
@@ -100,14 +56,80 @@ struct GoalsView: View {
                 SpendContributorsView(title: category, month: month, scope: .category(category))
             }
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Menu {
+                        Button("Reorder Sections", systemImage: "arrow.up.arrow.down") {
+                            showingReorder = true
+                        }
+                    } label: {
+                        Image(systemName: "line.3.horizontal.decrease.circle")
+                    }
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Button { showingNew = true } label: { Image(systemName: "plus") }
                 }
             }
+            .sheet(isPresented: $showingReorder) { CustomizeGoalsView() }
             .sheet(isPresented: $showingNew) { GoalEditView() }
             .refreshable { await reload() }
             .task { await reload() }
             .errorAlert($errorText)
+        }
+    }
+
+    /// One reorderable Goals section. Order is user-controlled (Reorder Sections); the month selector and
+    /// Trends link stay pinned in `body`.
+    @ViewBuilder
+    private func goalSection(_ section: GoalSection) -> some View {
+        switch section {
+        case .spending:
+            Section {
+                SpendingDonut(slices: categorySpend, total: monthTotal) { selectedCategory = $0 }
+                    .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8))
+                if categorySpend.isEmpty {
+                    Text("No spending this month yet.").font(.caption).foregroundStyle(.secondary)
+                } else {
+                    ForEach(categorySpend.prefix(6)) { slice in
+                        NavigationLink {
+                            SpendContributorsView(title: slice.category, month: month,
+                                                  scope: .category(slice.category))
+                        } label: {
+                            CategorySpendRow(slice: slice)
+                        }
+                    }
+                    NavigationLink {
+                        AllCategoriesView(month: month)
+                    } label: {
+                        Label("All Categories", systemImage: "list.bullet").font(.caption)
+                    }
+                }
+            }
+        case .budgets:
+            Section("Budgets") {
+                ForEach(spendGoals) { goal in
+                    NavigationLink(value: goal) {
+                        BudgetRow(goal: goal, spent: GoalProgress.spent(
+                            for: goal.category ?? "", in: month, transactions: transactions,
+                            accounts: accounts, lookup: lookup, expenses: expenses, me: me))
+                    }
+                }
+                if spendGoals.isEmpty {
+                    Text("Add a budget to track a category's monthly spend.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        case .savings:
+            Section("Savings Goals") {
+                ForEach(saveGoals) { goal in
+                    NavigationLink(value: goal) {
+                        SaveRow(goal: goal, account: goal.accountId.flatMap { accountsById[$0] })
+                    }
+                }
+                if saveGoals.isEmpty {
+                    Text("Set a goal to grow an account's balance.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
         }
     }
 

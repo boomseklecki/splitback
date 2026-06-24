@@ -156,7 +156,8 @@ public final class AppEnvironment {
         CategorySeed.ensureBuiltins(context)
         let rows = await Preferences.fetchAll(client)
         CategorySync.applyIfNewer(from: rows, context: context)
-        TabOrderSync.applyIfNewer(from: rows)
+        OrderPreference.tabs.applyIfNewer(from: rows)
+        OrderPreference.goals.applyIfNewer(from: rows)
     }
 
     /// Manual "Sync now" from Categories settings: restore a newer backup, else back up local.
@@ -166,7 +167,13 @@ public final class AppEnvironment {
 
     /// Persist a new main-tab order locally (the TabView re-renders) and back it up to the preferences blob.
     func setTabOrder(_ order: [MainTab]) async {
-        TabOrderSync.write(order)
-        await TabOrderSync.pushBestEffort(client: client)
+        OrderPreference.tabs.write(order)
+        await OrderPreference.tabs.pushBestEffort(client: client)
+    }
+
+    /// Persist a new Goals-page section order locally and back it up to the preferences blob.
+    func setGoalsOrder(_ order: [GoalSection]) async {
+        OrderPreference.goals.write(order)
+        await OrderPreference.goals.pushBestEffort(client: client)
     }
 }

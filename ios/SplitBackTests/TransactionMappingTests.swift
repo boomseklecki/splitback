@@ -15,10 +15,15 @@ final class TransactionMappingTests: XCTestCase {
                        [.splits, .goals, .accounts])
     }
 
-    func testTabOrderSnapshotRoundTrip() throws {
-        let snap = TabOrderSnapshot(order: ["goals", "accounts", "splits"])
-        let decoded = try JSONDecoder().decode(
-            TabOrderSnapshot.self, from: try JSONEncoder().encode(snap))
+    func testGoalSectionParseIsRobust() {
+        XCTAssertEqual(GoalSection.parse("budgets,savings,spending"), [.budgets, .savings, .spending])
+        XCTAssertEqual(GoalSection.parse("budgets,bogus,budgets"), [.budgets, .spending, .savings])
+        XCTAssertEqual(GoalSection.parse(""), GoalSection.allCases)
+    }
+
+    func testOrderSnapshotRoundTrip() throws {
+        let snap = OrderSnapshot(order: ["goals", "accounts", "splits"])
+        let decoded = try JSONDecoder().decode(OrderSnapshot.self, from: try JSONEncoder().encode(snap))
         XCTAssertEqual(decoded.version, 1)
         XCTAssertEqual(decoded.order, ["goals", "accounts", "splits"])
     }
