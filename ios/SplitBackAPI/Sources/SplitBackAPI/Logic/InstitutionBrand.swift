@@ -63,34 +63,55 @@ enum InstitutionBrand {
 
     /// Logo URL preferring the backend-resolved `domain` (authoritative, any bank — both the favicon and
     /// Plaid's full logo are seeded into the proxy), falling back to the on-device catalog by name for items
-    /// not yet re-synced. Honors the per-bank Icon/Logo preference: a `domain` set to `.logo` requests Plaid's
-    /// full logo (`?variant=plaid`); everything else (and the catalog fallback) requests the favicon.
-    static func logoURL(domain: String?, name: String?) -> String? {
+    /// not yet re-synced. Honors the per-bank Icon/Logo preference: a bank set to `.logo` requests Plaid's full
+    /// logo (`?variant=plaid`, which the proxy serves when seeded and otherwise falls back to the favicon);
+    /// otherwise the favicon. The preference is keyed on the resolved domain so account rows (whose own
+    /// `institutionDomain` may be nil and resolve via the catalog) match the Linked Banks choice.
+    @MainActor static func logoURL(domain: String?, name: String?) -> String? {
         let backendDomain = domain.flatMap { $0.isEmpty ? nil : $0 }
         guard let resolved = backendDomain ?? self.domain(for: name) else { return nil }
         var url = APIConfig.baseURL.appendingPathComponent("logos/\(resolved)").absoluteString
-        // Only the backend-resolved domain has a seeded Plaid logo; the catalog fallback stays favicon-only.
-        if let backendDomain, style(forDomain: backendDomain) == .logo {
+        if BankLogoPreferences.shared.style(forDomain: resolved) == .logo {
             url += "?variant=plaid"
         }
         return url
     }
+}
 
-    // MARK: - Per-bank Icon/Logo preference
+/// Which image a bank's avatar shows: its square favicon (`.icon`, the default) or Plaid's full logo
+/// (`.logo`). The choice is per-domain and persisted in `UserDefaults`.
+enum BankLogoStyle: String { case icon, logo }
 
-    /// Which image a bank's avatar shows: its square favicon (`.icon`, the default) or Plaid's full logo
-    /// (`.logo`). Stored per-domain in `UserDefaults` so the choice persists and applies wherever the bank's
-    /// avatar appears.
-    enum BankLogoStyle: String { case icon, logo }
+/// Shared, observable store for the per-bank Icon/Logo choice. Backed by `UserDefaults` (so it persists) but
+/// `@Observable` so reading `style(forDomain:)` during a SwiftUI body registers a dependency — every bank
+/// avatar across the app re-renders the moment the choice changes, not just the screen that changed it.
+@MainActor
+@Observable
+final class BankLogoPreferences {
+    static let shared = BankLogoPreferences()
 
-    private static func styleKey(_ domain: String) -> String { "bankLogoStyle.\(domain)" }
+    private var styles: [String: BankLogoStyle]
 
-    static func style(forDomain domain: String) -> BankLogoStyle {
-        UserDefaults.standard.string(forKey: styleKey(domain)).flatMap(BankLogoStyle.init) ?? .icon
+    private static func key(_ domain: String) -> String { "bankLogoStyle.\(domain)" }
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        var loaded: [String: BankLogoStyle] = [:]
+        for (k, v) in defaults.dictionaryRepresentation() where k.hasPrefix("bankLogoStyle.") {
+            if let raw = v as? String, let style = BankLogoStyle(rawValue: raw) {
+                loaded[String(k.dropFirst("bankLogoStyle.".count))] = style
+            }
+        }
+        self.styles = loaded
     }
 
-    static func setStyle(_ style: BankLogoStyle, forDomain domain: String) {
-        UserDefaults.standard.set(style.rawValue, forKey: styleKey(domain))
+    private let defaults: UserDefaults
+
+    func style(forDomain domain: String) -> BankLogoStyle { styles[domain] ?? .icon }
+
+    func setStyle(_ style: BankLogoStyle, forDomain domain: String) {
+        styles[domain] = style
+        defaults.set(style.rawValue, forKey: Self.key(domain))
     }
 }
 

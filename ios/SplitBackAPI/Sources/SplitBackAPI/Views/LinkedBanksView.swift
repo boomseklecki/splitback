@@ -13,7 +13,6 @@ struct LinkedBanksView: View {
 
     @State private var confirmingUnlink: UnlinkTarget?
     @State private var errorText: String?
-    @State private var styleVersion = 0  // bumped on Icon/Logo change to re-render header avatars
 
     struct UnlinkTarget: Identifiable { let id: String; let name: String }
 
@@ -85,15 +84,13 @@ struct LinkedBanksView: View {
                                 name: item.institution_name ?? "Bank", size: 22,
                                 systemImage: "building.columns", logo: true)
         if let domain = item.institution_domain, !domain.isEmpty {
-            let _ = styleVersion  // re-evaluate the URL after a style change
-            let current = InstitutionBrand.style(forDomain: domain)
             Menu {
                 Picker("Avatar", selection: Binding(
-                    get: { current },
-                    set: { InstitutionBrand.setStyle($0, forDomain: domain); styleVersion += 1 }
+                    get: { BankLogoPreferences.shared.style(forDomain: domain) },
+                    set: { BankLogoPreferences.shared.setStyle($0, forDomain: domain) }
                 )) {
-                    Label("Icon", systemImage: "app.dashed").tag(InstitutionBrand.BankLogoStyle.icon)
-                    Label("Logo", systemImage: "building.columns").tag(InstitutionBrand.BankLogoStyle.logo)
+                    Label("Icon", systemImage: "app.dashed").tag(BankLogoStyle.icon)
+                    Label("Logo", systemImage: "building.columns").tag(BankLogoStyle.logo)
                 }
             } label: {
                 avatar
