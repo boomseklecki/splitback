@@ -5,7 +5,7 @@ Moves the per-transaction category override off the single `transactions.categor
 per-user — independent under a future shared transaction. Backfills existing overrides (keyed by the
 transaction's current owner), then drops the column.
 
-Revision ID: 0027_transaction_category_overrides
+Revision ID: 0027_txn_category_overrides
 Revises: 0026_drop_category_tables
 Create Date: 2026-06-24
 
@@ -16,7 +16,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects.postgresql import UUID
 
-revision: str = "0027_transaction_category_overrides"
+# Note: revision id kept <= 32 chars to fit Alembic's alembic_version.version_num (varchar(32)).
+revision: str = "0027_txn_category_overrides"
 down_revision: str | None = "0026_drop_category_tables"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None

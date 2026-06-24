@@ -9,6 +9,13 @@ to Linux). Per the workspace CLAUDE.md convention, this refers to **Matt** (the 
 The full approved plan also lives at `/Users/matt/.claude/plans/inherited-wobbling-aurora.md` (Mac);
 this file reproduces what matters so the Linux instance needs nothing else.
 
+## Migration convention (read before writing a migration)
+Alembic's `alembic_version.version_num` is `VARCHAR(32)` (recreated at that width on every fresh DB), so a
+migration **`revision` id must be <= 32 characters** or `alembic upgrade` fails at the version-stamp with
+`StringDataRightTruncationError` and rolls back. Keep ids short, e.g. `0028_txn_notes` not
+`0028_transaction_notes_and_tags`. The latest applied head is **`0027_txn_category_overrides`** — the next
+migration's `down_revision` must be that exact (shortened) id.
+
 ---
 
 ## NEW WORK — Splitwise token resolved by the authenticated caller (2026-06-22)
