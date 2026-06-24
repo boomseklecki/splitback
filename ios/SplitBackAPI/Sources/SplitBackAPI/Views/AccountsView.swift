@@ -44,10 +44,10 @@ struct AccountsView: View {
     /// Accounts grouped by their Plaid institution for the Bank sort: one `(bank, accounts)` group per
     /// item (alphabetical, balance-desc within), plus a trailing "Other" group for accounts not covered
     /// by any item (manual, or before `items` has loaded). Empty groups are dropped.
-    private var bankGroups: [(title: String, accounts: [Account])] {
+    private var bankGroups: [(title: String, domain: String?, accounts: [Account])] {
         let byId = Dictionary(accounts.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         var covered = Set<UUID>()
-        var groups: [(title: String, accounts: [Account])] = []
+        var groups: [(title: String, domain: String?, accounts: [Account])] = []
         let sortedItems = items.sorted {
             ($0.institution_name ?? "Bank").localizedCaseInsensitiveCompare($1.institution_name ?? "Bank")
                 == .orderedAscending
@@ -56,11 +56,11 @@ struct AccountsView: View {
             let linked = (item.accounts ?? []).compactMap { UUID(uuidString: $0.id).flatMap { byId[$0] } }
             linked.forEach { covered.insert($0.id) }
             if !linked.isEmpty {
-                groups.append((item.institution_name ?? "Bank", byBalance(linked)))
+                groups.append((item.institution_name ?? "Bank", item.institution_domain, byBalance(linked)))
             }
         }
         let other = accounts.filter { !covered.contains($0.id) }
-        if !other.isEmpty { groups.append(("Other", byBalance(other))) }
+        if !other.isEmpty { groups.append(("Other", nil, byBalance(other))) }
         return groups
     }
     private func byLastTransaction(_ list: [Account]) -> [Account] {
@@ -85,8 +85,15 @@ struct AccountsView: View {
                     }
                 } else if sortMode == .bank {
                     ForEach(bankGroups, id: \.title) { group in
-                        Section(group.title) {
-                            ForEach(group.accounts) { accountRow($0) }
+                        Section {
+                            ForEach(group.accounts) { accountRow($0, inBank: true) }
+                        } header: {
+                            HStack(spacing: 8) {
+                                AvatarView(url: InstitutionBrand.logoURL(domain: group.domain, name: group.title),
+                                           name: group.title, size: 22,
+                                           systemImage: "building.columns", logo: true)
+                                Text(group.title).textCase(nil)
+                            }
                         }
                     }
                 } else {
@@ -152,17 +159,21 @@ struct AccountsView: View {
     }
 
     @ViewBuilder
-    private func accountRow(_ account: Account) -> some View {
+    private func accountRow(_ account: Account, inBank: Bool = false) -> some View {
         NavigationLink {
             TransactionsView(account: account)
         } label: {
             HStack(spacing: 12) {
-                AvatarView(url: account.institutionLogoURL,
-                           name: account.institutionName ?? account.displayLabel, size: 32,
-                           systemImage: "building.columns", logo: true)
+                if !inBank {
+                    AvatarView(url: account.institutionLogoURL,
+                               name: account.institutionName ?? account.displayLabel, size: 32,
+                               systemImage: "building.columns", logo: true)
+                }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(account.displayLabel)
-                    Text([account.institutionName, account.kind.label].compactMap { $0 }.joined(separator: " · "))
+                    Text(inBank
+                         ? account.kind.label + (account.maskLabel.map { " · \($0)" } ?? "")
+                         : [account.institutionName, account.kind.label].compactMap { $0 }.joined(separator: " · "))
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()

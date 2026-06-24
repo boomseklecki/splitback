@@ -33,7 +33,7 @@ struct AccountEditView: View {
                 Section("Institution") {
                     HStack(spacing: 12) {
                         AvatarView(url: account.institutionLogoURL,
-                                   name: account.institutionName ?? account.name, size: 40,
+                                   name: account.institutionName ?? account.name, size: 56,
                                    systemImage: "building.columns", logo: true)
                         Text(account.institutionName ?? "Bank").fontWeight(.medium)
                         Spacer()
