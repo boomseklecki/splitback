@@ -27,7 +27,6 @@ struct SettingsView: View {
     @State private var linking = false
     @State private var syncing = false
     @State private var syncSummary: String?
-    @State private var showingInviteQR = false
     @State private var invitesOpenToMembers = false
     @State private var errorText: String?
     @State private var linkDiagnostics = PlaidLinkDiagnosticsStore.shared
@@ -211,36 +210,26 @@ struct SettingsView: View {
                     }
                 }
 
-                if let joinURL = JoinLink.url(apiBaseURL: env.baseURLString, name: env.serverName) {
+                if let serverURL = JoinLink.url(apiBaseURL: env.baseURLString, name: env.serverName) {
                     Section {
-                        // Collapsed by default: the QR is only needed when inviting someone, and
-                        // generating it eagerly hitches the Settings page on appear.
-                        Button(showingInviteQR ? "Hide QR Code" : "Show QR Code", systemImage: "qrcode") {
-                            showingInviteQR.toggle()
-                        }
-                        if showingInviteQR {
-                            QRCodeView(string: joinURL.absoluteString)
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 200)
-                                .padding(.vertical, 8)
-                        }
-                        ShareLink(item: joinURL,
+                        ShareLink(item: serverURL,
                                   preview: SharePreview(env.serverName ?? "SplitBack",
                                                         image: Image("AppLogo"))) {
-                            Label("Share Join Link", systemImage: "square.and.arrow.up")
+                            Label("Share Server Link", systemImage: "square.and.arrow.up")
                         }
                         Button {
-                            UIPasteboard.general.url = joinURL
+                            UIPasteboard.general.url = serverURL
                         } label: {
-                            Label("Copy Join Link", systemImage: "doc.on.doc")
+                            Label("Copy Server Link", systemImage: "doc.on.doc")
                         }
-                        Text(joinURL.absoluteString)
+                        Text(serverURL.absoluteString)
                             .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                     } header: {
-                        Text("Invite")
+                        Text("Add a Device")
                     } footer: {
                         Text(JoinLink.isPubliclyReachable(env.baseURLString)
-                             ? "Share to set up SplitBack on another device against this backend."
+                             ? "Add SplitBack on another of your own devices, then sign in with the same account. "
+                               + "(To bring in a new person, use Invite a Person above.)"
                              : "This backend address only works on your local network. Set a public (tunnel/HTTPS) Base URL above before sharing.")
                     }
                 }

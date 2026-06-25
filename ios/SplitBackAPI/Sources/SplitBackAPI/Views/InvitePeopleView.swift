@@ -11,6 +11,8 @@ struct InvitePeopleView: View {
     @State private var loaded = false
     @State private var errorText: String?
 
+    private var reachable: Bool { JoinLink.isPubliclyReachable(env.baseURLString) }
+
     var body: some View {
         Form {
             Section {
@@ -27,29 +29,23 @@ struct InvitePeopleView: View {
 
             if let url = newInviteURL {
                 Section("Share This Invite") {
-                    QRCodeView(string: url.absoluteString)
-                        .frame(maxWidth: .infinity).frame(height: 200).padding(.vertical, 8)
-                    ShareLink(item: url,
-                              preview: SharePreview(env.serverName ?? "SplitBack", image: Image("AppLogo"))) {
-                        Label("Share Invite Link", systemImage: "square.and.arrow.up")
-                    }
-                    Button { UIPasteboard.general.url = url } label: {
-                        Label("Copy Invite Link", systemImage: "doc.on.doc")
-                    }
-                    Text(url.absoluteString)
-                        .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                    InviteShareView(url: url, serverName: env.serverName, reachable: reachable)
                 }
             }
 
             if !invites.isEmpty {
                 Section("Invites") {
                     ForEach(invites, id: \.id) { invite in
-                        InviteRow(invite: invite)
-                            .swipeActions {
-                                if invite.status == "active" {
-                                    Button("Revoke", role: .destructive) { revoke(invite) }
-                                }
+                        if invite.status == "active", let url = link(for: invite) {
+                            NavigationLink {
+                                InviteDetailView(invite: invite, url: url, serverName: env.serverName,
+                                                 reachable: reachable, onRevoke: { revoke(invite) })
+                            } label: {
+                                InviteRow(invite: invite)
                             }
+                        } else {
+                            InviteRow(invite: invite)
+                        }
                     }
                 }
             }
@@ -58,6 +54,10 @@ struct InvitePeopleView: View {
         .navigationBarTitleDisplayMode(.inline)
         .errorAlert($errorText)
         .task { if !loaded { loaded = true; await load() } }
+    }
+
+    private func link(for invite: Components.Schemas.InviteResponse) -> URL? {
+        JoinLink.url(apiBaseURL: env.baseURLString, name: env.serverName, invite: invite.code)
     }
 
     private func load() async {
@@ -70,8 +70,7 @@ struct InvitePeopleView: View {
             defer { creating = false }
             do {
                 let invite = try await env.invites.create(label: nil)
-                newInviteURL = JoinLink.url(apiBaseURL: env.baseURLString, name: env.serverName,
-                                            invite: invite.code)
+                newInviteURL = link(for: invite)
                 await load()
             } catch { errorText = errorMessage(error) }
         }
@@ -80,9 +79,69 @@ struct InvitePeopleView: View {
     private func revoke(_ invite: Components.Schemas.InviteResponse) {
         guard let id = UUID(uuidString: invite.id) else { return }
         Task {
-            do { try await env.invites.revoke(id: id); await load() }
-            catch { errorText = errorMessage(error) }
+            do {
+                try await env.invites.revoke(id: id)
+                if newInviteURL == link(for: invite) { newInviteURL = nil }
+                await load()
+            } catch { errorText = errorMessage(error) }
         }
+    }
+}
+
+/// The QR + Share + Copy block for an invite (or server) link. Reused by the just-created invite, the invite
+/// detail, and anywhere a link is shared.
+struct InviteShareView: View {
+    let url: URL
+    let serverName: String?
+    let reachable: Bool
+
+    var body: some View {
+        SwiftUI.Group {
+            QRCodeView(string: url.absoluteString)
+                .frame(maxWidth: .infinity).frame(height: 200).padding(.vertical, 8)
+            ShareLink(item: url,
+                      preview: SharePreview(serverName ?? "SplitBack", image: Image("AppLogo"))) {
+                Label("Share Link", systemImage: "square.and.arrow.up")
+            }
+            Button { UIPasteboard.general.url = url } label: {
+                Label("Copy Link", systemImage: "doc.on.doc")
+            }
+            Text(url.absoluteString)
+                .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+            if !reachable {
+                Label("This backend address only works on your local network. Set a public (tunnel/HTTPS) "
+                      + "Base URL before sharing.", systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption).foregroundStyle(.orange)
+            }
+        }
+    }
+}
+
+/// Re-viewable detail for an outstanding active invite: its QR/Share/Copy again, plus Revoke.
+private struct InviteDetailView: View {
+    let invite: Components.Schemas.InviteResponse
+    let url: URL
+    let serverName: String?
+    let reachable: Bool
+    let onRevoke: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        Form {
+            Section { InviteShareView(url: url, serverName: serverName, reachable: reachable) }
+            Section {
+                if let exp = invite.expires_at {
+                    LabeledContent("Expires", value: exp.formatted(.relative(presentation: .named)))
+                }
+                Button("Revoke Invite", role: .destructive) {
+                    onRevoke()
+                    dismiss()
+                }
+            }
+        }
+        .navigationTitle(invite.label ?? "Invite")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
