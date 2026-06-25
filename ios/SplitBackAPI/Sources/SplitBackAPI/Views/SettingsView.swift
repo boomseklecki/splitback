@@ -202,6 +202,18 @@ struct SettingsView: View {
                     }
                 }
 
+                Section {
+                    NavigationLink {
+                        PeopleView()
+                    } label: {
+                        HStack {
+                            Label("People", systemImage: "person.2")
+                            Spacer()
+                            Text("\(users.count)").foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
                 Section("Spending") {
                     NavigationLink {
                         ManageCategoriesView()
@@ -215,17 +227,6 @@ struct SettingsView: View {
                     }
                 }
 
-                Section {
-                    NavigationLink {
-                        PeopleView()
-                    } label: {
-                        HStack {
-                            Label("People", systemImage: "person.2")
-                            Spacer()
-                            Text("\(users.count)").foregroundStyle(.secondary)
-                        }
-                    }
-                }
             }
             .navigationTitle("Settings")
             .task {
