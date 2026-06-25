@@ -11,12 +11,10 @@ struct SettingsView: View {
 
     @AppStorage(AppLock.enabledKey) private var lockEnabled = false
     @AppStorage("appearance") private var appearanceRaw = AppearanceMode.system.rawValue
-    /// Remembered backend presets so switching dev↔prod is one tap (set once, then quick-fill the field).
-    @AppStorage("backend.devURL") private var devURL = ""
-    @AppStorage("backend.prodURL") private var prodURL = ""
     @State private var token = ""
     @State private var baseURL = ""
-    @State private var confirmingWipe = false
+    @State private var pendingBaseURL = ""
+    @State private var confirmingSwitch = false
     @State private var confirmingDelete = false
     @State private var importing = false
     @State private var importSummary: String?
@@ -100,28 +98,52 @@ struct SettingsView: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .keyboardType(.URL)
-                    if !devURL.isEmpty || !prodURL.isEmpty {
-                        HStack {
-                            Button("Use Dev") { baseURL = devURL }.disabled(devURL.isEmpty)
-                            Spacer()
-                            Button("Use Prod") { baseURL = prodURL }.disabled(prodURL.isEmpty)
-                        }
-                        .buttonStyle(.bordered).font(.callout)
+                    if let name = env.serverName, !name.isEmpty {
+                        Text(name).font(.caption).foregroundStyle(.secondary)
                     }
-                    Button("Save Base URL") {
-                        env.setBaseURL(baseURL)
-                        Task { await reloadAfterConfigChange() }
-                    }
-                    DisclosureGroup("Presets") {
-                        urlField("Dev URL", text: $devURL)
-                        urlField("Prod URL", text: $prodURL)
-                    }
-                    Button("Clear Local Data…", role: .destructive) { confirmingWipe = true }
+                    Button("Save") { saveBaseURL() }
+                        .disabled(baseURL.trimmingCharacters(in: .whitespaces) == env.baseURLString)
                 } header: {
-                    Text("Backend")
+                    Text("Server")
                 } footer: {
-                    Text("Set Dev/Prod presets once, then switch with a tap. After switching backends, "
-                         + "Clear Local Data so cached prod and dev records don't mix.")
+                    Text("The SplitBack server this app uses. Switching servers signs you out and clears "
+                         + "cached data so servers don't mix.")
+                }
+
+                if env.currentUser?.isAdmin == true || invitesOpenToMembers {
+                    Section {
+                        NavigationLink {
+                            InvitePeopleView()
+                        } label: {
+                            Label("Invite a Person", systemImage: "person.badge.plus")
+                        }
+                    } footer: {
+                        Text("Create a single-use link that lets one new person sign in and join this server.")
+                    }
+                }
+
+                if let serverURL = JoinLink.url(apiBaseURL: env.baseURLString, name: env.serverName) {
+                    Section {
+                        ShareLink(item: serverURL,
+                                  preview: SharePreview(env.serverName ?? "SplitBack",
+                                                        image: Image("AppLogo"))) {
+                            Label("Share Server Link", systemImage: "square.and.arrow.up")
+                        }
+                        Button {
+                            UIPasteboard.general.url = serverURL
+                        } label: {
+                            Label("Copy Server Link", systemImage: "doc.on.doc")
+                        }
+                        Text(serverURL.absoluteString)
+                            .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                    } header: {
+                        Text("Add a Device")
+                    } footer: {
+                        Text(JoinLink.isPubliclyReachable(env.baseURLString)
+                             ? "Add SplitBack on another of your own devices, then sign in with the same account. "
+                               + "(To bring in a new person, use Invite a Person above.)"
+                             : "This backend address only works on your local network. Set a public (tunnel/HTTPS) Base URL above before sharing.")
+                    }
                 }
 
                 Section("Plaid") {
@@ -198,42 +220,6 @@ struct SettingsView: View {
                     }
                 }
 
-                if env.currentUser?.isAdmin == true || invitesOpenToMembers {
-                    Section {
-                        NavigationLink {
-                            InvitePeopleView()
-                        } label: {
-                            Label("Invite a Person", systemImage: "person.badge.plus")
-                        }
-                    } footer: {
-                        Text("Create a single-use link that lets one new person sign in and join this server.")
-                    }
-                }
-
-                if let serverURL = JoinLink.url(apiBaseURL: env.baseURLString, name: env.serverName) {
-                    Section {
-                        ShareLink(item: serverURL,
-                                  preview: SharePreview(env.serverName ?? "SplitBack",
-                                                        image: Image("AppLogo"))) {
-                            Label("Share Server Link", systemImage: "square.and.arrow.up")
-                        }
-                        Button {
-                            UIPasteboard.general.url = serverURL
-                        } label: {
-                            Label("Copy Server Link", systemImage: "doc.on.doc")
-                        }
-                        Text(serverURL.absoluteString)
-                            .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-                    } header: {
-                        Text("Add a Device")
-                    } footer: {
-                        Text(JoinLink.isPubliclyReachable(env.baseURLString)
-                             ? "Add SplitBack on another of your own devices, then sign in with the same account. "
-                               + "(To bring in a new person, use Invite a Person above.)"
-                             : "This backend address only works on your local network. Set a public (tunnel/HTTPS) Base URL above before sharing.")
-                    }
-                }
-
                 // Operator-only: server settings + backups + static bearer-token entry. Admins only.
                 if env.currentUser?.isAdmin == true {
                     Section {
@@ -293,15 +279,16 @@ struct SettingsView: View {
                 .ignoresSafeArea()
             }
             .errorAlert($errorText)
-            .confirmationDialog("Clear all locally cached data?", isPresented: $confirmingWipe,
+            .confirmationDialog("Switch to this server?", isPresented: $confirmingSwitch,
                                 titleVisibility: .visible) {
-                Button("Clear Local Data", role: .destructive) {
-                    env.wipeLocalData(context)
+                Button("Switch & Clear Data", role: .destructive) {
+                    env.setBaseURL(pendingBaseURL)
+                    env.wipeLocalData(context)  // erase the cache + sign out so servers don't mix
                     Task { await reloadAfterConfigChange() }
                 }
             } message: {
-                Text("Removes cached accounts, transactions, groups, and expenses on this device and signs "
-                     + "you out. Your data stays on the backend and re-syncs after you sign in.")
+                Text("Connects to the new server, signs you out, and clears locally cached accounts, "
+                     + "transactions, groups, and expenses so prod and dev records don't mix.")
             }
             .confirmationDialog("Delete your account?", isPresented: $confirmingDelete,
                                 titleVisibility: .visible) {
@@ -324,12 +311,13 @@ struct SettingsView: View {
         }
     }
 
-    @ViewBuilder
-    private func urlField(_ title: String, text: Binding<String>) -> some View {
-        TextField(title, text: text)
-            .textInputAutocapitalization(.never)
-            .autocorrectionDisabled()
-            .keyboardType(.URL)
+    /// Saves the Base URL. When it names a *different* server, confirm first — switching clears the local
+    /// cache + signs out (mirrors `AppEnvironment.adoptJoinLink`). The button is disabled when unchanged.
+    private func saveBaseURL() {
+        let trimmed = baseURL.trimmingCharacters(in: .whitespaces)
+        guard trimmed != env.baseURLString else { return }
+        pendingBaseURL = trimmed
+        confirmingSwitch = true
     }
 
     private func loadItems() async {
