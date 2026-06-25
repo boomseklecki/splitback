@@ -98,16 +98,32 @@ struct SettingsView: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .keyboardType(.URL)
-                    if let name = env.serverName, !name.isEmpty {
-                        Text(name).font(.caption).foregroundStyle(.secondary)
+                    HStack {
+                        Button("Save") { saveBaseURL() }
+                            .disabled(baseURL.trimmingCharacters(in: .whitespaces) == env.baseURLString)
+                        Spacer()
+                        if let serverURL = JoinLink.url(apiBaseURL: env.baseURLString, name: env.serverName) {
+                            Button { UIPasteboard.general.url = serverURL } label: {
+                                Image(systemName: "doc.on.doc")
+                            }
+                            .accessibilityLabel("Copy server link")
+                            ShareLink(item: serverURL,
+                                      preview: SharePreview(env.serverName ?? "SplitBack",
+                                                            image: Image("AppLogo"))) {
+                                Image(systemName: "square.and.arrow.up")
+                            }
+                            .accessibilityLabel("Share server link")
+                        }
                     }
-                    Button("Save") { saveBaseURL() }
-                        .disabled(baseURL.trimmingCharacters(in: .whitespaces) == env.baseURLString)
+                    .buttonStyle(.borderless)  // individually tappable in the Form row
                 } header: {
                     Text("Server")
                 } footer: {
-                    Text("The SplitBack server this app uses. Switching servers signs you out and clears "
-                         + "cached data so servers don't mix.")
+                    Text(JoinLink.isPubliclyReachable(env.baseURLString)
+                         ? "The SplitBack server this app is connected to. Use the copy/share icons to set it "
+                           + "up on another of your devices."
+                         : "The SplitBack server this app is connected to. This address only works on your "
+                           + "local network — set a public (tunnel/HTTPS) Base URL before sharing.")
                 }
 
                 if env.currentUser?.isAdmin == true || invitesOpenToMembers {
@@ -119,30 +135,6 @@ struct SettingsView: View {
                         }
                     } footer: {
                         Text("Create a single-use link that lets one new person sign in and join this server.")
-                    }
-                }
-
-                if let serverURL = JoinLink.url(apiBaseURL: env.baseURLString, name: env.serverName) {
-                    Section {
-                        ShareLink(item: serverURL,
-                                  preview: SharePreview(env.serverName ?? "SplitBack",
-                                                        image: Image("AppLogo"))) {
-                            Label("Share Server Link", systemImage: "square.and.arrow.up")
-                        }
-                        Button {
-                            UIPasteboard.general.url = serverURL
-                        } label: {
-                            Label("Copy Server Link", systemImage: "doc.on.doc")
-                        }
-                        Text(serverURL.absoluteString)
-                            .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-                    } header: {
-                        Text("Add a Device")
-                    } footer: {
-                        Text(JoinLink.isPubliclyReachable(env.baseURLString)
-                             ? "Add SplitBack on another of your own devices, then sign in with the same account. "
-                               + "(To bring in a new person, use Invite a Person above.)"
-                             : "This backend address only works on your local network. Set a public (tunnel/HTTPS) Base URL above before sharing.")
                     }
                 }
 
