@@ -1,12 +1,14 @@
 """server_settings registry: typed get/set round-trip + coercion; PATCH is admin-only and a reader reflects
 the change. DB-backed."""
+from datetime import datetime, timezone
+
 from fastapi import HTTPException
 from sqlalchemy import delete
 
 from app import server_settings
 from app.auth import require_admin
 from app.db import async_session
-from app.models import User
+from app.models import ServerSetting, User
 from app.models.enums import UserSource
 from app.routers.server_settings import update_server_settings
 from app.schemas.server_settings import ServerSettingsUpdate
@@ -71,6 +73,23 @@ async def test_patch_admin_gate_and_subset_update():
             await server_settings.set_value(s, "groups_hard_delete_enabled", original)
             await s.commit()
         await _purge()
+
+
+async def test_internal_timestamp_marker():
+    key = f"{PREFIX}-marker"
+    when = datetime(2025, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
+    try:
+        async with async_session() as s:
+            await server_settings.set_timestamp(s, key, when)
+            await s.commit()
+        async with async_session() as s:
+            assert await server_settings.get_timestamp(s, key) == when  # round-trips
+            assert await server_settings.get_timestamp(s, f"{PREFIX}-absent") is None
+            assert key not in await server_settings.get_all(s)  # internal markers stay out of the API dict
+    finally:
+        async with async_session() as s:
+            await s.execute(delete(ServerSetting).where(ServerSetting.key == key))
+            await s.commit()
 
 
 if __name__ == "__main__":

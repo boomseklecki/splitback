@@ -7,6 +7,7 @@ is absent, so the store is safe before migration 0030 seeds it. Reads happen on 
 deletes, scheduler poll), so no caching is needed.
 """
 import json
+from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -66,6 +67,31 @@ async def set_value(session: AsyncSession, key: str, value: object) -> None:
     if key not in REGISTRY:
         raise KeyError(key)
     payload = json.dumps(_coerce(key, value))
+    await session.execute(
+        pg_insert(ServerSetting)
+        .values(key=key, value=payload)
+        .on_conflict_do_update(index_elements=[ServerSetting.key], set_={"value": payload})
+    )
+
+
+# --- Internal markers ---------------------------------------------------------------------------------
+# Timestamps the schedulers persist (e.g. last sync/backup run) so a redeploy doesn't reset their interval.
+# These keys are NOT in REGISTRY, so they never surface in get_all() / the /server-settings API.
+
+async def get_timestamp(session: AsyncSession, key: str) -> datetime | None:
+    """The stored timestamp for an internal marker `key`, or None when absent/unparseable."""
+    row = await session.get(ServerSetting, key)
+    if row is None:
+        return None
+    try:
+        return datetime.fromisoformat(json.loads(row.value))
+    except (ValueError, TypeError):
+        return None
+
+
+async def set_timestamp(session: AsyncSession, key: str, value: datetime) -> None:
+    """Upsert an internal timestamp marker (ISO-8601). Caller commits."""
+    payload = json.dumps(value.isoformat())
     await session.execute(
         pg_insert(ServerSetting)
         .values(key=key, value=payload)

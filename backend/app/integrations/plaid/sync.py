@@ -6,7 +6,7 @@ it can be tested with a fake; `apply_sync` does the DB upserts/deletes.
 import asyncio
 from uuid import UUID
 
-from sqlalchemy import delete
+from sqlalchemy import delete, func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -47,6 +47,9 @@ async def _upsert_account(
         for k in ("name", "type", "mask", "balance", "currency", "plaid_item_id", "owner_identifier",
                   *_INSTITUTION_FIELDS)
     }
+    # on_conflict_do_update bypasses SQLAlchemy's onupdate, so bump updated_at explicitly — this is what the
+    # app's "Updated … ago" reads, so it should track the last sync.
+    update_cols["updated_at"] = func.now()
     stmt = (
         pg_insert(Account)
         .values(**values)
