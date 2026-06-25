@@ -1,24 +1,38 @@
-# Two stacks share one MinIO (separate buckets): DEVELOPMENT (db-dev/api-dev, :8001, sandbox Plaid) is the
-# default; PRODUCTION (db-prod/api-prod, :8000, real Plaid) runs under `--profile prod`. Cloudflare routes
-# splitback.app -> api-prod and dev.splitback.app -> api-dev (internal names; the iOS app uses the public
-# https hostnames, never these). The host ports (:8000/:8001) are only for direct LAN access.
+# The DEFAULT stack (no profile) is the real, single self-hosted instance: `db`/`api` on :8000 reading `.env`.
+# `docker compose up -d` is all a self-hoster needs. Optional side stacks are opt-in profiles that share the
+# one MinIO via separate buckets: `--profile dev` (sandbox Plaid + synthetic data, :8001), `--profile demo`
+# (public TestFlight demo, :8002), `--profile test` (ephemeral CI DB). Cloudflare routes splitback.app -> api,
+# dev.splitback.app -> api-dev (internal names; the iOS app uses the public https hostnames, never these).
 services:
-  db-dev:
+  db:
     image: postgres:16
     pull_policy: never
     environment:
       POSTGRES_USER: splitback
       POSTGRES_PASSWORD: splitback
       POSTGRES_DB: splitback
-    ports:
-      - "5432:5432"
     volumes:
-      - db_data:/var/lib/postgresql/data   # existing dev data (volume name unchanged)
+      - main_db:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U splitback"]
       interval: 5s
       timeout: 5s
       retries: 5
+
+  api:
+    build: ./backend
+    env_file:
+      - .env            # the real instance config (production Plaid). Copy from .env.example.
+    environment:
+      # Pin the DB target regardless of the .env DATABASE_URL placeholder (which still says @db).
+      DATABASE_URL: postgresql+asyncpg://splitback:splitback@db:5432/splitback
+    depends_on:
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    ports:
+      - "8000:8000"     # LAN: uplink.local:8000 ; public: https://splitback.app
 
   minio:
     image: minio/minio:latest
@@ -38,13 +52,31 @@ services:
       timeout: 5s
       retries: 5
 
+  # --- Dev sandbox stack (profile: dev) ---
+  # Optional side-by-side sandbox: PLAID_ENV=sandbox + synthetic seed data, so you can develop without
+  # touching the real instance. `docker compose --profile dev up -d`. Reads .env.dev.
+  db-dev:
+    image: postgres:16
+    pull_policy: never
+    profiles: ["dev"]
+    environment:
+      POSTGRES_USER: splitback
+      POSTGRES_PASSWORD: splitback
+      POSTGRES_DB: splitback
+    volumes:
+      - dev_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U splitback"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   api-dev:
     build: ./backend
+    profiles: ["dev"]
     env_file:
-      - .env            # development config (PLAID_ENV=sandbox)
+      - .env.dev        # sandbox config (PLAID_ENV=sandbox)
     environment:
-      # Pin the dev DB to the renamed service (matches api-test/api-prod); the .env DATABASE_URL
-      # placeholder still says @db.
       DATABASE_URL: postgresql+asyncpg://splitback:splitback@db-dev:5432/splitback
     depends_on:
       db-dev:
@@ -56,7 +88,7 @@ services:
 
   # --- Isolated test stack (profile: test) ---
   # An ephemeral Postgres + a second API pointed at it, so the integration suite always runs
-  # against a clean DB regardless of the real data in `db-dev`. Started only with `--profile test`.
+  # against a clean DB regardless of real data. Started only with `--profile test`.
   db-test:
     image: postgres:16
     pull_policy: never
@@ -78,11 +110,11 @@ services:
     pull_policy: never
     profiles: ["test"]
     env_file:
-      - .env
+      - .env.dev
     environment:
       # Override the DB target + force open auth so the integration suite (which calls endpoints
-      # without a token) isn't affected by a production AUTH_REQUIRED=true in .env. Auth enforcement
-      # itself is covered by tests that monkeypatch settings. Everything else reused from .env.
+      # without a token) isn't affected by AUTH_REQUIRED=true in .env.dev. Auth enforcement itself is
+      # covered by tests that monkeypatch settings. Everything else reused from .env.dev.
       DATABASE_URL: postgresql+asyncpg://splitback:splitback@db-test:5432/splitback
       AUTH_REQUIRED: "false"
       API_TOKENS: "{}"
@@ -91,49 +123,6 @@ services:
         condition: service_healthy
       minio:
         condition: service_started
-
-  # --- Production stack (profile: prod) ---
-  # A second, isolated stack for REAL Plaid data, run side-by-side with the default (development) stack:
-  #   docker compose --profile prod up -d        # brings up dev (:8001) AND prod (:8000)
-  #   docker compose exec api-prod alembic upgrade head
-  # It has its own Postgres volume and (via the shared minio) a separate bucket, so prod and dev never
-  # share data. Reads .env.prod (gitignored; copy from .env.prod.example).
-  db-prod:
-    image: postgres:16
-    pull_policy: never
-    profiles: ["prod"]
-    environment:
-      POSTGRES_USER: splitback
-      POSTGRES_PASSWORD: splitback
-      POSTGRES_DB: splitback
-    volumes:
-      - db_data_prod:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U splitback"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  api-prod:
-    build: ./backend
-    pull_policy: never
-    profiles: ["prod"]
-    env_file:
-      - .env.prod
-    environment:
-      # Pin the prod DB + a distinct bucket regardless of what .env.prod sets, so a copy-pasted dev
-      # value can't cross the streams.
-      DATABASE_URL: postgresql+asyncpg://splitback:splitback@db-prod:5432/splitback
-      MINIO_BUCKET: receipts-prod
-      BACKUPS_BUCKET: backups-prod
-      # Scheduler cadence (backup/sync intervals) is now an admin-editable server_settings row, not env.
-    depends_on:
-      db-prod:
-        condition: service_healthy
-      minio:
-        condition: service_started
-    ports:
-      - "8000:8000"     # LAN: uplink.local:8000 ; public: https://splitback.app
 
   # --- Demo stack (profile: demo) ---
   # Public, disposable demo for TestFlight: guest login (DEMO_MODE) auto-seeds each tester an isolated
@@ -175,12 +164,11 @@ services:
   # --- Cloudflare tunnel connector (profile: tunnel) ---
   # Exposes the stacks publicly over HTTPS via a *remotely-managed* tunnel. Add public hostnames in the
   # Cloudflare dashboard (DNS is auto-created), each an internal target on the container's own :8000:
-  #   splitback.app       -> http://api-prod:8000   (production)
-  #   dev.splitback.app   -> http://api-dev:8000    (development)
-  #   demo.splitback.app  -> http://api-demo:8000   (demo)
+  #   splitback.app       -> http://api:8000        (the default/real instance)
+  #   dev.splitback.app   -> http://api-dev:8000    (--profile dev sandbox)
+  #   demo.splitback.app  -> http://api-demo:8000   (--profile demo)
   # The connector is environment-agnostic; the dashboard routes decide what's public. Reads
-  # CLOUDFLARE_TUNNEL_TOKEN from .env. Start with `--profile tunnel` (combine with prod:
-  # `docker compose --profile prod --profile tunnel up -d`).
+  # CLOUDFLARE_TUNNEL_TOKEN via Compose substitution from the auto-loaded .env. Start with `--profile tunnel`.
   cloudflared:
     image: cloudflare/cloudflared:latest
     # default pull_policy (missing) — pull the connector image if it isn't present yet
@@ -189,7 +177,12 @@ services:
     command: tunnel run --token ${CLOUDFLARE_TUNNEL_TOKEN}
 
 volumes:
-  db_data:
+  # The main + dev DB volume names are interpolated so a fresh self-hoster gets clean names (db_data/
+  # db_data_dev) while an existing operator can bind their current volumes via MAIN_DB_VOLUME/DEV_DB_VOLUME
+  # in .env (e.g. db_data_prod), with no data migration.
+  main_db:
+    name: ${MAIN_DB_VOLUME:-db_data}
+  dev_db:
+    name: ${DEV_DB_VOLUME:-db_data_dev}
   minio_data:
-  db_data_prod:
   db_data_demo:

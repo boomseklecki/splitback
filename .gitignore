@@ -1,5 +1,6 @@
-# Secrets
+# Secrets (real configs; the *.example templates are committed)
 .env
+.env.dev
 .env.prod
 .env.demo
 .env.*.local

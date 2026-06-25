@@ -9,6 +9,36 @@ to Linux). Per the workspace CLAUDE.md convention, this refers to **Matt** (the 
 The full approved plan also lives at `/Users/matt/.claude/plans/inherited-wobbling-aurora.md` (Mac);
 this file reproduces what matters so the Linux instance needs nothing else.
 
+## NEW WORK — default stack = the real instance; dev/demo/test are profiles (2026-06-25)
+
+**Why:** `docker compose up` (no profile) used to launch the *dev sandbox* and the real instance was
+`--profile prod` — backwards for self-hosting. Now the **default** stack (`api`/`db`/`minio`, :8000, `.env`)
+is the real instance; `--profile dev` (`api-dev`, :8001, `.env.dev`) is the optional sandbox, plus
+`--profile demo` / `--profile test`. Env templates swapped: `.env.example` is now the real-instance template
+(was `.env.prod.example`), `.env.dev.example` is the sandbox (was `.env.example`). DB volume names are
+interpolated (`${MAIN_DB_VOLUME:-db_data}` / `${DEV_DB_VOLUME:-db_data_dev}`) so fresh installs get clean
+names while an existing operator binds current volumes with **no data migration**. `.env` is the auto-loaded
+Compose file, so the Cloudflare `${CLOUDFLARE_TUNNEL_TOKEN}` substitution still works.
+
+**Uplink migration (no data moves — existing volumes/buckets reused in place). Back up prod first.**
+The current real data lives in volume **`splitback_db_data_prod`** and buckets **`receipts-prod`/`backups-prod`**;
+the dev sandbox in **`splitback_db_data`**. Use the FULL (project-prefixed) volume names:
+1. `cd` to the compose dir; `mv .env .env.dev` then `mv .env.prod .env` (swap roles).
+2. In the new `.env` add **`MAIN_DB_VOLUME=splitback_db_data_prod`**, **`DEV_DB_VOLUME=splitback_db_data`**, and
+   **confirm `MINIO_BUCKET=receipts-prod` + `BACKUPS_BUCKET=backups-prod`** are present (these were previously
+   set by the compose `environment:` override and are now `.env`-driven — without them the app points at the
+   empty `receipts` bucket and receipts 404). In `.env.dev`, sandbox values are fine as-is.
+3. `git pull`; `docker compose down` (removes old `api-prod`/`db-prod` containers — volumes persist);
+   `docker compose up -d` → default `api`/`db` on :8000 binding `splitback_db_data_prod`; `docker compose
+   exec api alembic upgrade head` (no-op if already at head); `docker compose --profile dev up -d` for the
+   sandbox; demo/tunnel via their profiles.
+4. **Cloudflare dashboard:** repoint `splitback.app → http://api:8000` (was `api-prod:8000`); `dev.` and `demo.`
+   unchanged.
+5. Verify the default stack shows the real accounts/transactions and receipts load. Rollback = restore the
+   old compose/`.env` names + Cloudflare route (nothing was deleted).
+
+---
+
 ## Migration convention (read before writing a migration)
 Alembic's `alembic_version.version_num` is `VARCHAR(32)` (recreated at that width on every fresh DB), so a
 migration **`revision` id must be <= 32 characters** or `alembic upgrade` fails at the version-stamp with

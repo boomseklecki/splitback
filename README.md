@@ -23,8 +23,10 @@ Live Splitwise/Plaid calls need real credentials + outbound network (set in `.en
 ## Layout
 
 ```
-docker-compose.yml      # postgres + minio + api
-.env.example            # config keys (copy to .env)
+docker-compose.yml      # postgres + minio + api (default), plus opt-in dev/demo/test profiles
+.env.example            # config for the real instance (copy to .env)
+.env.dev.example        # optional sandbox stack (copy to .env.dev; --profile dev)
+.env.demo.example       # optional demo stack    (copy to .env.demo; --profile demo)
 backend/
   app/
     main.py             # FastAPI app + /health
@@ -38,36 +40,33 @@ backend/
 
 ## Run the stack
 
-The default stack is **development** (`api-dev` on :8001, `db-dev`, `PLAID_ENV=sandbox` in `.env`):
+The **default stack is the real instance** — one `api` + `db` + `minio` on :8000, reading `.env`. That's all a
+self-hoster needs:
 
 ```bash
-cp .env.example .env          # adjust if needed
-docker compose up --build     # db-dev + minio + api-dev
+cp .env.example .env          # fill: Plaid creds, a FRESH AUTH_JWT_SECRET, ENCRYPTION_KEYS, etc.
+docker compose up -d --build  # db + minio + api on :8000
+docker compose exec api alembic upgrade head
 ```
 
-- Dev API: http://localhost:8001 (docs at `/docs`)
+- API: http://localhost:8000 (docs at `/docs`)
 - MinIO console: http://localhost:9001 (user `splitback`)
 
-### Development + production side by side
+### Optional dev sandbox (side by side)
 
-Run a **production** stack (`api-prod` on :8000, real Plaid, its own DB volume + `receipts-prod` bucket)
-alongside dev with the `prod` profile:
-
-```bash
-cp .env.prod.example .env.prod     # fill: production Plaid secret + redirect, a FRESH AUTH_JWT_SECRET, prod Splitwise
-docker compose --profile prod up -d            # dev (:8001) + prod (:8000)
-docker compose exec api-prod alembic upgrade head
-```
-
-The two stacks share nothing (separate Postgres volume + MinIO bucket). Expose both via one Cloudflare tunnel
-with two public hostnames — `splitback.app → http://api-prod:8000` and `dev.splitback.app → http://api-dev:8000`
-(those `api-*:8000` names are internal compose targets; the iOS app uses the public `https://` hostnames, set
-once as the Settings Dev/Prod presets). To load safe synthetic sample data into **dev** (replacing any real
-Splitwise import; bank data untouched):
+Run a **sandbox** stack (`api-dev` on :8001, `PLAID_ENV=sandbox`, synthetic seed data) alongside the real
+instance with the `dev` profile — handy for development without touching real data:
 
 ```bash
-docker compose exec api-dev python -m app.cli.seed_dev --as <your-identifier> --wipe
+cp .env.dev.example .env.dev
+docker compose --profile dev up -d                    # adds db-dev + api-dev (:8001)
+docker compose exec api-dev alembic upgrade head
+docker compose exec api-dev python -m app.cli.seed_dev --as <your-identifier> --wipe  # synthetic data
 ```
+
+Expose stacks via one Cloudflare tunnel (each an internal compose target on its own :8000):
+`splitback.app → http://api:8000` and `dev.splitback.app → http://api-dev:8000` (the iOS app uses the public
+`https://` hostnames, never these internal names).
 
 ### Demo stack (TestFlight)
 
@@ -83,7 +82,7 @@ docker compose --profile demo up -d
 docker compose exec api-demo alembic upgrade head
 ```
 
-Guest rows accumulate; prune old ones on a cron to bound growth:
+Demo guests are auto-pruned hourly (24h retention) when `DEMO_MODE` is on; you can also prune manually:
 
 ```bash
 docker compose exec api-demo python -m app.cli.prune_demo --days 7
@@ -91,10 +90,11 @@ docker compose exec api-demo python -m app.cli.prune_demo --days 7
 
 ## Apply migrations
 
-Once a stack is up, run Alembic inside its api container (`api-dev` for dev, `api-prod` for prod):
+Once a stack is up, run Alembic inside its api container (`api` for the default instance, `api-dev` for the
+sandbox, `api-demo` for demo):
 
 ```bash
-docker compose exec api-dev alembic upgrade head
+docker compose exec api alembic upgrade head
 ```
 
 Health checks:
@@ -163,10 +163,10 @@ tunnel. Use a **remotely-managed** tunnel so everything stays manageable from th
 2. On the tunnel, add a **public hostname** for each stack (Cloudflare auto-creates the DNS records).
    The service is the compose service name on its own container port `:8000` — the connector shares the
    stacks' network:
-   - `splitback.app` → `http://api-prod:8000` (production)
-   - `dev.splitback.app` → `http://api-dev:8000` (development)
-   - `demo.splitback.app` → `http://api-demo:8000` (demo)
-3. Put the token in `.env`: `CLOUDFLARE_TUNNEL_TOKEN=<token>`.
+   - `splitback.app` → `http://api:8000` (the default/real instance)
+   - `dev.splitback.app` → `http://api-dev:8000` (`--profile dev` sandbox)
+   - `demo.splitback.app` → `http://api-demo:8000` (`--profile demo`)
+3. Put the token in `.env`: `CLOUDFLARE_TUNNEL_TOKEN=<token>` (read via Compose substitution from `.env`).
 4. Start the connector: `docker compose --profile tunnel up -d cloudflared`.
 
 Manage/disable the tunnel and its routes on the Cloudflare website thereafter. The API never sees the
@@ -216,17 +216,18 @@ each `tests/test_*.py` is runnable standalone via `python -m tests.<name>`.
 
 ## Background jobs
 
-Use the target stack's api container (`api-prod` for production, `api-dev` for development):
+Use the target stack's api container (`api` for the default instance, `api-dev` for the sandbox). These also
+run automatically via the in-process scheduler (admin-set cadence in Settings → Server Settings):
 
 ```bash
 # One-time Splitwise backfill (after authorizing via /auth/splitwise/login)
-docker compose exec api-prod python -m app.cli.import_splitwise --dry-run
+docker compose exec api python -m app.cli.import_splitwise --dry-run
 
 # Incremental Splitwise expense sync for all tokens (delta-only; suitable for a gentle cron)
-docker compose exec api-prod python -m app.cli.splitwise_sync
+docker compose exec api python -m app.cli.splitwise_sync
 
 # Plaid transaction sync for all linked items (suitable for cron)
-docker compose exec api-prod python -m app.cli.plaid_sync
+docker compose exec api python -m app.cli.plaid_sync
 ```
 
 ## Local dev (without Docker)
