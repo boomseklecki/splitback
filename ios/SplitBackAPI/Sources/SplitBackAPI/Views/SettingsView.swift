@@ -11,7 +11,6 @@ struct SettingsView: View {
 
     @AppStorage(AppLock.enabledKey) private var lockEnabled = false
     @AppStorage("appearance") private var appearanceRaw = AppearanceMode.system.rawValue
-    @State private var token = ""
     @State private var baseURL = ""
     @State private var pendingBaseURL = ""
     @State private var confirmingSwitch = false
@@ -138,6 +137,22 @@ struct SettingsView: View {
                     }
                 }
 
+                // Operator-only: server settings + backups. Admins only.
+                if env.currentUser?.isAdmin == true {
+                    Section {
+                        NavigationLink {
+                            ServerSettingsView()
+                        } label: {
+                            Label("Server Settings", systemImage: "slider.horizontal.3")
+                        }
+                        NavigationLink {
+                            BackupsView()
+                        } label: {
+                            Label("Backups", systemImage: "externaldrive")
+                        }
+                    }
+                }
+
                 Section("Plaid") {
                     NavigationLink {
                         LinkedBanksView(items: $items)
@@ -208,33 +223,6 @@ struct SettingsView: View {
                             Label("People", systemImage: "person.2")
                             Spacer()
                             Text("\(users.count)").foregroundStyle(.secondary)
-                        }
-                    }
-                }
-
-                // Operator-only: server settings + backups + static bearer-token entry. Admins only.
-                if env.currentUser?.isAdmin == true {
-                    Section {
-                        NavigationLink {
-                            ServerSettingsView()
-                        } label: {
-                            Label("Server Settings", systemImage: "slider.horizontal.3")
-                        }
-                        NavigationLink {
-                            BackupsView()
-                        } label: {
-                            Label("Backups", systemImage: "externaldrive")
-                        }
-                    }
-
-                    Section("API Token") {
-                        SecureField("Bearer token (optional)", text: $token)
-                        Button("Save Token") {
-                            env.setToken(token.isEmpty ? nil : token)
-                            token = ""
-                        }
-                        if env.hasToken {
-                            Text("A token is stored.").font(.caption).foregroundStyle(.secondary)
                         }
                     }
                 }
