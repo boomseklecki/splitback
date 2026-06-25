@@ -37,11 +37,16 @@ public struct RootView: View {
                 checking = false
             }
         }
-        // Plaid OAuth redirect (Universal Link). In-process flows resume their live handler; a flow
-        // interrupted by app termination re-presents Link from the persisted token to finish.
-        .onOpenURL { PlaidLinkSession.shared.handleOAuthRedirect($0) }
+        // Inbound links: a join link (adopt backend + capture invite) takes priority; otherwise a Plaid
+        // OAuth redirect (Universal Link) resumes its live handler, re-presenting Link if needed.
+        .onOpenURL { url in
+            if env.adoptJoinLink(url, context: context) { return }
+            PlaidLinkSession.shared.handleOAuthRedirect(url)
+        }
         .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
-            if let url = activity.webpageURL { PlaidLinkSession.shared.handleOAuthRedirect(url) }
+            guard let url = activity.webpageURL else { return }
+            if env.adoptJoinLink(url, context: context) { return }
+            PlaidLinkSession.shared.handleOAuthRedirect(url)
         }
         .fullScreenCover(item: $plaidSession.resume) { resume in
             PlaidLinkView(

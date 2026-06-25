@@ -37,6 +37,11 @@ public final class AppEnvironment {
     /// Whether the configured backend is a public DEMO instance (guest login + sample data). Drives the
     /// gate's "Start Demo" path and the persistent "sample data" banner.
     public private(set) var serverIsDemo = false
+    /// A single-use enrollment invite captured from a join link, applied to the next sign-in (then cleared).
+    /// Persisted so it survives the install→open hop; drives the gate's "you have an invite" hint.
+    public private(set) var pendingInvite: String?
+
+    private static let pendingInviteKey = "pending_invite"
 
     public init() {
         let store = KeychainTokenStore()
@@ -45,6 +50,32 @@ public final class AppEnvironment {
         self.slowClient = APIClientFactory.makeClient(tokenStore: store, requestTimeout: 300)
         self.hasToken = (store.load()?.isEmpty == false)
         self.baseURLString = APIConfig.baseURL.absoluteString
+        self.pendingInvite = UserDefaults.standard.string(forKey: Self.pendingInviteKey)
+    }
+
+    /// Stores (or clears) the pending enrollment invite, persisted across launches.
+    func setPendingInvite(_ code: String?) {
+        pendingInvite = (code?.isEmpty == false) ? code : nil
+        if let pendingInvite {
+            UserDefaults.standard.set(pendingInvite, forKey: Self.pendingInviteKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: Self.pendingInviteKey)
+        }
+    }
+
+    /// Handles an inbound join link: adopts its backend URL and captures any single-use invite for the next
+    /// sign-in. Switching to a different backend wipes the local cache + signs out (prod/dev don't intermingle).
+    /// Returns true if the URL was a join link (so the caller stops other handlers).
+    @discardableResult
+    func adoptJoinLink(_ url: URL, context: ModelContext) -> Bool {
+        guard let parsed = JoinLink.parse(url) else { return false }
+        if parsed.api != baseURLString {
+            wipeLocalData(context)
+            setBaseURL(parsed.api)
+        }
+        setPendingInvite(parsed.invite)
+        Task { await loadServerInfo() }
+        return true
     }
 
     func setToken(_ token: String?) {
@@ -138,6 +169,8 @@ public final class AppEnvironment {
     func categories(_ context: ModelContext) -> CategoryRepository { .init(client: client, context: context) }
     var splitwise: SplitwiseService { .init(client: slowClient) }  // slow client: the cold-backfill import can run minutes
     var backups: BackupsRepository { .init(client: slowClient) }   // slow client: pg_dump/restore + receipts can run minutes
+    var invites: InviteRepository { .init(client: client) }
+    var serverSettings: ServerSettingsRepository { .init(client: client) }
     func auth(_ context: ModelContext) -> AuthService { .init(client: client, context: context) }
 
     /// On-launch / pull-to-refresh: reconcile the cacheable collections (handles server-side deletes).

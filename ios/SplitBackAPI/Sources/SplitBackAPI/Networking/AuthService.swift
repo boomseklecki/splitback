@@ -31,10 +31,10 @@ struct AuthService {
 
     // MARK: Backend exchanges
 
-    /// Apple identity token → backend session JWT.
-    func exchangeApple(identityToken: String, fullName: String?) async throws -> String {
+    /// Apple identity token → backend session JWT. `invite` enrolls a new user on a claimed server.
+    func exchangeApple(identityToken: String, fullName: String?, invite: String? = nil) async throws -> String {
         let output = try await client.auth_apple_auth_apple_post(
-            body: .json(.init(identity_token: identityToken, full_name: fullName))
+            body: .json(.init(identity_token: identityToken, full_name: fullName, invite: invite))
         )
         switch output {
         case let .ok(ok): return try ok.body.json.token
@@ -57,9 +57,10 @@ struct AuthService {
         }
     }
 
-    /// Google ID token → backend session JWT.
-    func exchangeGoogle(idToken: String) async throws -> String {
-        let output = try await client.auth_google_auth_google_post(body: .json(.init(id_token: idToken)))
+    /// Google ID token → backend session JWT. `invite` enrolls a new user on a claimed server.
+    func exchangeGoogle(idToken: String, invite: String? = nil) async throws -> String {
+        let output = try await client.auth_google_auth_google_post(
+            body: .json(.init(id_token: idToken, invite: invite)))
         switch output {
         case let .ok(ok): return try ok.body.json.token
         case .unprocessableContent: throw AuthError.rejected
@@ -70,7 +71,7 @@ struct AuthService {
     // MARK: Capture + exchange
 
     /// Google Sign-In SDK → ID token → backend JWT. Needs `GIDClientID` in the Info.plist.
-    func signInWithGoogle() async throws -> String {
+    func signInWithGoogle(invite: String? = nil) async throws -> String {
         guard let clientID = Bundle.main.object(forInfoDictionaryKey: "GIDClientID") as? String,
               !clientID.isEmpty else {
             throw AuthError.notConfigured("Google sign-in isn't configured yet (missing GIDClientID).")
@@ -79,13 +80,13 @@ struct AuthService {
         guard let presenter = AppPresentation.topViewController() else { throw AuthError.invalidResponse }
         let result = try await GIDSignIn.sharedInstance.signIn(withPresenting: presenter)
         guard let idToken = result.user.idToken?.tokenString else { throw AuthError.invalidResponse }
-        return try await exchangeGoogle(idToken: idToken)
+        return try await exchangeGoogle(idToken: idToken, invite: invite)
     }
 
     /// Splitwise web OAuth via `ASWebAuthenticationSession`; the backend callback returns
-    /// `splitback://auth?token=<jwt>`.
-    func signInWithSplitwise() async throws -> String {
-        guard let url = splitwiseLoginURL() else { throw AuthError.invalidResponse }
+    /// `splitback://auth?token=<jwt>`. `invite` rides the OAuth state for a first-time Splitwise sign-in.
+    func signInWithSplitwise(invite: String? = nil) async throws -> String {
+        guard let url = splitwiseLoginURL(invite: invite) else { throw AuthError.invalidResponse }
         let callback = try await WebAuth.start(url: url, callbackScheme: "splitback")
         guard let token = URLComponents(url: callback, resolvingAgainstBaseURL: false)?
             .queryItems?.first(where: { $0.name == "token" })?.value, !token.isEmpty else {
@@ -94,8 +95,12 @@ struct AuthService {
         return token
     }
 
-    func splitwiseLoginURL() -> URL? {
-        APIConfig.baseURL.appendingPathComponent("auth/splitwise/login")
+    func splitwiseLoginURL(invite: String? = nil) -> URL? {
+        var comps = URLComponents(
+            url: APIConfig.baseURL.appendingPathComponent("auth/splitwise/login"),
+            resolvingAgainstBaseURL: false)
+        if let invite, !invite.isEmpty { comps?.queryItems = [URLQueryItem(name: "invite", value: invite)] }
+        return comps?.url
     }
 
     private static func error(_ statusCode: Int) -> AuthError {

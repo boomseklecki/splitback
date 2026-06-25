@@ -28,6 +28,7 @@ struct SettingsView: View {
     @State private var syncing = false
     @State private var syncSummary: String?
     @State private var showingInviteQR = false
+    @State private var invitesOpenToMembers = false
     @State private var errorText: String?
     @State private var linkDiagnostics = PlaidLinkDiagnosticsStore.shared
 
@@ -198,6 +199,18 @@ struct SettingsView: View {
                     }
                 }
 
+                if env.currentUser?.isAdmin == true || invitesOpenToMembers {
+                    Section {
+                        NavigationLink {
+                            InvitePeopleView()
+                        } label: {
+                            Label("Invite a Person", systemImage: "person.badge.plus")
+                        }
+                    } footer: {
+                        Text("Create a single-use link that lets one new person sign in and join this server.")
+                    }
+                }
+
                 if let joinURL = JoinLink.url(apiBaseURL: env.baseURLString, name: env.serverName) {
                     Section {
                         // Collapsed by default: the QR is only needed when inviting someone, and
@@ -232,9 +245,14 @@ struct SettingsView: View {
                     }
                 }
 
-                // Operator-only: backups + static bearer-token entry. Admins only.
+                // Operator-only: server settings + backups + static bearer-token entry. Admins only.
                 if env.currentUser?.isAdmin == true {
                     Section {
+                        NavigationLink {
+                            ServerSettingsView()
+                        } label: {
+                            Label("Server Settings", systemImage: "slider.horizontal.3")
+                        }
                         NavigationLink {
                             BackupsView()
                         } label: {
@@ -258,6 +276,10 @@ struct SettingsView: View {
             .task {
                 env.prewarmPlaidLinkToken(context)  // background; never blocks this screen's load
                 baseURL = env.baseURLString
+                // Whether non-admins may invite (admins always can) — best-effort.
+                if env.currentUser?.isAdmin != true {
+                    invitesOpenToMembers = (try? await env.serverSettings.get().invites_open_to_members) ?? false
+                }
                 await env.refreshSplitwiseStatus()
                 await loadItems()
             }

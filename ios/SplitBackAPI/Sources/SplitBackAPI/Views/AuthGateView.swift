@@ -69,7 +69,7 @@ public struct AuthGateView: View {
                 }
 
                 if !env.serverIsDemo {
-                  Section("Sign In") {
+                  Section {
                     if offers("apple") {
                         SignInWithAppleButton(.signIn,
                             onRequest: { $0.requestedScopes = [.fullName, .email] },
@@ -79,14 +79,21 @@ public struct AuthGateView: View {
                             .listRowInsets(EdgeInsets())
                     }
                     if offers("google") {
-                        Button { run { try await env.auth(context).signInWithGoogle() } } label: {
+                        Button { run { try await env.auth(context).signInWithGoogle(invite: env.pendingInvite) } } label: {
                             Label("Continue with Google", systemImage: "g.circle.fill")
                         }
                     }
                     if offers("splitwise") {
-                        Button { run { try await env.auth(context).signInWithSplitwise() } } label: {
+                        Button { run { try await env.auth(context).signInWithSplitwise(invite: env.pendingInvite) } } label: {
                             Label("Continue with Splitwise", systemImage: "arrow.triangle.2.circlepath")
                         }
+                    }
+                  } header: {
+                    Text("Sign In")
+                  } footer: {
+                    if env.pendingInvite != nil {
+                        Label("You have an invite — sign in to join this server.", systemImage: "ticket")
+                            .foregroundStyle(.tint)
                     }
                   }
                   .disabled(busy)
@@ -147,6 +154,7 @@ public struct AuthGateView: View {
             do {
                 let token = try await work()
                 await env.applySession(token: token, context: context)
+                env.setPendingInvite(nil)  // redeemed (or unused) — don't carry it to a later sign-in
                 if !isLaunchGate { dismiss() }
             } catch {
                 if (error as? ASWebAuthenticationSessionError)?.code == .canceledLogin { return }
@@ -167,7 +175,8 @@ public struct AuthGateView: View {
             let name = [credential.fullName?.givenName, credential.fullName?.familyName]
                 .compactMap { $0 }.joined(separator: " ")
             run { try await env.auth(context).exchangeApple(identityToken: identityToken,
-                                                            fullName: name.isEmpty ? nil : name) }
+                                                            fullName: name.isEmpty ? nil : name,
+                                                            invite: env.pendingInvite) }
         case let .failure(error):
             if (error as? ASAuthorizationError)?.code == .canceled { return }
             errorText = errorMessage(error)
