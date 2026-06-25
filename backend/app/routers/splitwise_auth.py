@@ -21,11 +21,13 @@ router = APIRouter(prefix="/auth/splitwise", tags=["splitwise-auth"])
 
 
 @router.get("/login")
-async def login(user: str = "matt", session: AsyncSession = Depends(get_session)):
+async def login(
+    user: str = "matt", invite: str | None = None, session: AsyncSession = Depends(get_session)
+):
     verifier = generate_code_verifier()
     state = generate_state()
     session.add(
-        SplitwiseOAuthState(state=state, code_verifier=verifier, user_identifier=user)
+        SplitwiseOAuthState(state=state, code_verifier=verifier, user_identifier=user, invite=invite)
     )
     await session.commit()
     return RedirectResponse(build_authorize_url(state, code_challenge_s256(verifier)))
@@ -39,6 +41,7 @@ async def callback(code: str, state: str, session: AsyncSession = Depends(get_se
 
     user_identifier = pending.user_identifier
     code_verifier = pending.code_verifier
+    invite = pending.invite
     token_data = await asyncio.to_thread(exchange_code, code, code_verifier)
     access_token = token_data.get("access_token")
     if not access_token:
@@ -73,5 +76,6 @@ async def callback(code: str, state: str, session: AsyncSession = Depends(get_se
         email=sw_user.get("email"),
         name=full_name or None,
         avatar=sw_user.get("picture"),
+        invite_code=invite,
     )
     return RedirectResponse(f"splitback://auth?token={tokens.issue(user)}")

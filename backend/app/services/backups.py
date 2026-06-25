@@ -21,7 +21,9 @@ import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
+from app import server_settings
 from app.config import settings
+from app.db import async_session
 from app.integrations.storage import minio_client
 
 KIND_MANUAL = "manual"
@@ -182,8 +184,11 @@ async def delete(name: str) -> None:
 # --- Prune (retention) --------------------------------------------------------------------------------
 
 async def prune(now: datetime | None = None) -> list[str]:
-    doomed = select_prunable(await list_backups(), settings.backups_retention_days,
-                             settings.backups_retention_min_keep, now or datetime.now(timezone.utc))
+    async with async_session() as session:
+        retention_days = await server_settings.get(session, "backups_retention_days")
+        min_keep = await server_settings.get(session, "backups_retention_min_keep")
+    doomed = select_prunable(await list_backups(), retention_days, min_keep,
+                             now or datetime.now(timezone.utc))
     for name in doomed:
         await asyncio.to_thread(minio_client.remove_named, settings.backups_bucket, name)
     return doomed

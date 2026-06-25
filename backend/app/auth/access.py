@@ -1,32 +1,35 @@
-"""Sign-in allowlist (email-only). Shared by `identity.resolve_user` (at sign-in) and `require_auth`
-(every request) so an off-list account can neither obtain nor keep a session."""
+"""DB-backed access control. A user may authenticate iff their `User.enrolled` flag is set (replaces the
+former `.env` email allowlist); enrollment is granted at sign-in by redeeming an invite or by claiming a
+fresh server. `is_admin` unions the DB `is_admin` flag with the legacy `ADMIN_USERS` config (operator-pinned
+admins keep working)."""
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.config import settings
 from app.models import User
 
 
-def allowed_set() -> set[str]:
-    """The configured allowlist, lower-cased/stripped. Empty = no restriction."""
-    return {e.strip().lower() for e in settings.auth_allowed_users if e and e.strip()}
+def _config_admins() -> set[str]:
+    return {a.strip().lower() for a in settings.admin_users if a and a.strip()}
 
 
-def is_admin(caller: str | None) -> bool:
-    """Whether the caller's identifier is configured as an admin (sees all people; reserved for gating
-    settings/features). Empty ADMIN_USERS = nobody is admin."""
+def is_enrolled(user: User | None) -> bool:
+    """Whether this user may hold a session. Enrolled = on the DB allowlist."""
+    return user is not None and bool(user.enrolled)
+
+
+def is_admin(caller: str | None, user: User | None = None) -> bool:
+    """Admin via the DB `is_admin` flag (first-user claim / promoted) OR the `ADMIN_USERS` config."""
+    if user is not None and user.is_admin:
+        return True
     if caller is None:
         return False
-    return caller.strip().lower() in {a.strip().lower() for a in settings.admin_users if a and a.strip()}
+    return caller.strip().lower() in _config_admins()
 
 
-def is_allowed(*, email: str | None, user: User | None) -> bool:
-    """Whether this identity may authenticate. True when the allowlist is empty; otherwise the verified
-    token `email` OR the existing user's stored email must be on the list (case-insensitive). Checking the
-    stored email too means an Apple sign-in that omits the email claim still passes for a listed member."""
-    allowed = allowed_set()
-    if not allowed:
-        return True
-    candidates = set()
-    if email:
-        candidates.add(email.strip().lower())
-    if user is not None and user.email:
-        candidates.add(user.email.strip().lower())
-    return bool(candidates & allowed)
+async def is_admin_caller(session: AsyncSession, caller: str | None) -> bool:
+    """Load the caller's user and resolve admin status (DB flag ∪ config)."""
+    if caller is None:
+        return False
+    user = await session.scalar(select(User).where(User.identifier == caller))
+    return is_admin(caller, user)

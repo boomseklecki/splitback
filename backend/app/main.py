@@ -16,11 +16,13 @@ from app.routers import (
     goals,
     groups,
     health,
+    invites,
     logos,
     plaid,
     preferences,
     public,
     receipts,
+    server_settings,
     splitwise,
     splitwise_auth,
     users,
@@ -38,7 +40,8 @@ async def lifespan(app: FastAPI):
             break
         except Exception:
             await asyncio.sleep(1)
-    # Background loops (each a no-op unless its interval is > 0): scheduled backups + periodic data sync.
+    # Background loops: scheduled backups + periodic data sync. Each polls and re-reads its interval from
+    # the server settings every tick (paused while its interval is <= 0).
     tasks = [asyncio.create_task(run_backup_scheduler()), asyncio.create_task(run_sync_scheduler())]
     try:
         yield
@@ -72,6 +75,8 @@ app.include_router(splitwise.router, dependencies=_protected)
 app.include_router(goals.router, dependencies=_protected)
 app.include_router(preferences.router, dependencies=_protected)
 app.include_router(backups.router)  # each route self-gates with require_admin
+app.include_router(invites.router)  # self-gates: require_can_invite (admin, or any member when allowed)
+app.include_router(server_settings.router)  # self-gates: GET require_auth, PATCH require_admin
 
 
 @app.get("/")

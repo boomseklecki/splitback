@@ -31,7 +31,9 @@ async def auth_demo(
     if not settings.demo_mode:
         raise HTTPException(status_code=404, detail="Not found")
     name = (body.display_name or "").strip() or "Guest"
-    user = User(identifier=f"demo-{secrets.token_hex(4)}", display_name=name, source=UserSource.app)
+    # Ephemeral guest is enrolled outright (no invite/claim) so its session survives the per-request check.
+    user = User(identifier=f"demo-{secrets.token_hex(4)}", display_name=name, source=UserSource.app,
+                enrolled=True)
     session.add(user)
     await session.flush()
     await seed_identity(session, user.identifier)
@@ -55,6 +57,7 @@ async def auth_apple(
         email=claims.get("email"),
         name=body.full_name,
         avatar=None,
+        invite_code=body.invite,
     )
     return AuthResponse(token=tokens.issue(user), user=UserResponse.model_validate(user))
 
@@ -74,5 +77,6 @@ async def auth_google(
         email=claims.get("email"),
         name=claims.get("name"),
         avatar=claims.get("picture"),
+        invite_code=body.invite,
     )
     return AuthResponse(token=tokens.issue(user), user=UserResponse.model_validate(user))

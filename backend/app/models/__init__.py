@@ -7,9 +7,11 @@ from app.models.goal import Goal
 from app.models.group import Group
 from app.models.group_member import GroupMember
 from app.models.group_override import GroupOverride
+from app.models.invite import Invite
 from app.models.oauth_state import SplitwiseOAuthState
 from app.models.plaid_item import PlaidItem
 from app.models.receipt import Receipt
+from app.models.server_setting import ServerSetting
 from app.models.split import Split
 from app.models.splitwise_token import SplitwiseToken
 from app.models.transaction import Transaction
@@ -28,8 +30,10 @@ __all__ = [
     "Group",
     "GroupMember",
     "GroupOverride",
+    "Invite",
     "PlaidItem",
     "Receipt",
+    "ServerSetting",
     "Split",
     "SplitwiseOAuthState",
     "SplitwiseToken",

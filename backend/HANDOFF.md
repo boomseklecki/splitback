@@ -182,6 +182,46 @@ CORS/headers + CI (nice-to-have). Prod data still needs `owner_identifier` recon
 
 ---
 
+## NEW WORK — DB-backed enrollment via invites + in-app server settings (2026-06-24)
+
+**Why:** the enroll allowlist was an `.env` list of emails (`AUTH_ALLOWED_USERS` + `CLOSED_REGISTRATION`) — a
+poor OSS pattern (edit + redeploy to add anyone). Now enrollment is **DB-backed**: `users.enrolled` is the
+allowlist; a fresh server is **claimed by the first person to sign in** (enrolled + `is_admin`), and everyone
+after needs a **single-use invite**. Invites are minted in-app (Settings → Invite) and ride the join link;
+redemption happens at sign-in. Also moved the runtime *policy* settings out of `.env` into an admin-editable
+`server_settings` table.
+
+**Files (committed from the Mac; py_compile + `app.main` import + OpenAPI export clean; DB tests run here):**
+- Models: `invite.py`, `server_setting.py` (new); `users.enrolled`/`users.is_admin`;
+  `splitwise_oauth_states.invite`. Registry + accessors in `app/server_settings.py` (keys:
+  `invites_open_to_members`, `public_hostname`, `groups`/`expenses_hard_delete_enabled`,
+  `splitwise_receipt_download_enabled`, `sync_interval_hours`, `backup_interval_hours`,
+  `backups_retention_days`/`_min_keep`).
+- Auth: `access.py` (`is_enrolled`, `is_admin` ∪ config, `is_admin_caller`); `identity.resolve_user`
+  (invite redemption + first-user claim, single-use via `UPDATE … WHERE redeemed_at IS NULL RETURNING`);
+  `require_auth` re-checks `is_enrolled` every request; `require_admin` reads the DB flag. `invite` field on
+  Apple/Google auth + carried through Splitwise OAuth state. `/auth/demo` guest is auto-enrolled.
+- Routers: `invites.py` (create/list/revoke, `require_can_invite` = admin or `invites_open_to_members`),
+  `server_settings.py` (GET enrolled / PATCH admin). Readers (server-info name, group/expense hard-delete,
+  Splitwise receipt-download, both schedulers, `backups.prune`) read `server_settings`. Schedulers now run
+  unconditionally and re-read their interval each 60s tick (0 = paused). `config.py` lost the 10 vars.
+- Migration **`0030_invites_and_enrollment`**: tables + columns; backfills `enrolled=true` for provider-linked
+  / `source='app'` users; **seeds `server_settings` from the current env** (stdlib `os`, no app import).
+- Tests: `tests/test_invites.py`, `tests/test_server_settings.py`, rewritten `tests/test_auth_access.py`,
+  `tests/test_server_info.py`. Contract regenerated (new `/invites`, `/server-settings`; `invite` on auth).
+
+**Linux steps:**
+1. `docker compose exec api-prod alembic upgrade head` (applies `0030`; seeds settings from current `.env.prod`,
+   backfills enrolled — your operator account is provider-linked so it's grandfathered; admin stays via
+   `ADMIN_USERS` or set `users.is_admin`).
+2. Run `tests/test_invites.py` + `tests/test_server_settings.py` + `tests/test_auth_access.py` (test stack).
+3. **After** a clean upgrade, delete the now-dead vars from `.env.prod`: `AUTH_ALLOWED_USERS`,
+   `CLOSED_REGISTRATION`, `PUBLIC_HOSTNAME`, `GROUPS_/EXPENSES_HARD_DELETE_ENABLED`,
+   `SPLITWISE_RECEIPT_DOWNLOAD_ENABLED`, `SYNC_INTERVAL_HOURS`, `BACKUP_INTERVAL_HOURS`,
+   `BACKUPS_RETENTION_DAYS`/`_MIN_KEEP`. Manage them in-app (Settings → Server Settings).
+
+---
+
 ## NEW WORK — auth allowlist + closed registration + per-caller data scoping (2026-06-21)
 
 **Why:** the backend let any verified identity sign in and returned ALL data to every caller. Now: (1) an

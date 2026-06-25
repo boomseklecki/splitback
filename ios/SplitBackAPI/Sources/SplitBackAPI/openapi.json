@@ -77,6 +77,48 @@
         }
       }
     },
+    "/auth/demo": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Auth Demo",
+        "description": "Guest login for the DEMO backend only: mints an ephemeral user (a name, no OAuth/email) and seeds it\na populated, isolated sample app. 404 elsewhere so prod/dev never expose it.",
+        "operationId": "auth_demo_auth_demo_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DemoAuthRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/auth/apple": {
       "post": {
         "tags": [
@@ -176,6 +218,15 @@
               "default": "matt",
               "title": "User"
             }
+          },
+          {
+            "name": "invite",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "title": "Invite"
+            }
           }
         ],
         "responses": {
@@ -224,6 +275,55 @@
             "schema": {
               "type": "string",
               "title": "State"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/logos/{domain}": {
+      "get": {
+        "tags": [
+          "logos"
+        ],
+        "summary": "Brand Logo",
+        "operationId": "brand_logo_logos__domain__get",
+        "parameters": [
+          {
+            "name": "domain",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Domain"
+            }
+          },
+          {
+            "name": "variant",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "title": "Variant"
             }
           }
         ],
@@ -986,6 +1086,65 @@
         }
       }
     },
+    "/expenses/{expense_id}/transaction-link": {
+      "put": {
+        "tags": [
+          "expenses"
+        ],
+        "summary": "Link Expense Transaction",
+        "description": "Link (or unlink, with null) this expense to a bank/manual transaction. A local-only field assigned\ndirectly \u2014 a separate endpoint from PATCH so it never triggers a Splitwise push or touches splits, and\nso null can clear the link (PATCH's transaction_id can only set).",
+        "operationId": "link_expense_transaction_expenses__expense_id__transaction_link_put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "expense_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Expense Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExpenseTransactionLink"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExpenseResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/expenses/{expense_id}/receipts": {
       "post": {
         "tags": [
@@ -1496,7 +1655,7 @@
           "accounts"
         ],
         "summary": "Update Account",
-        "description": "Set the Goals-analytics inclusion overrides. Plaid sync only touches name/type/balance/\ncurrency, so these survive a re-sync.",
+        "description": "Set the caller's per-user account overrides (display name, kind, Goals-analytics inclusion flags) in\n`account_overrides`, keyed by owner + account. Plaid sync only touches name/type/balance/currency/mask, so\nthese survive a re-sync.",
         "operationId": "update_account_accounts__account_id__patch",
         "security": [
           {
@@ -1789,7 +1948,7 @@
           "accounts"
         ],
         "summary": "Update Transaction",
-        "description": "Set (or clear, with null) the per-transaction category override. Plaid sync only touches\ndescription/amount/currency/date/category/pending, so this survives a re-sync.",
+        "description": "Set (or clear, with null) the caller's per-user category override (in `transaction_category_overrides`,\nkeyed by owner + transaction). Plaid sync only touches description/amount/currency/date/category/pending,\nso this survives a re-sync.",
         "operationId": "update_transaction_transactions__transaction_id__patch",
         "security": [
           {
@@ -2237,6 +2396,37 @@
                   },
                   "type": "array",
                   "title": "Response Overall Balances Balances Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/friends": {
+      "get": {
+        "tags": [
+          "balances"
+        ],
+        "summary": "Friends",
+        "description": "The caller's current balance with each person, mirroring Splitwise's Friends tab. Sourced from\nSplitwise's authoritative `getFriends()` when a token is connected; otherwise computed server-side from the\ncaller's group expenses (self-hosted fallback). Positive net = that person owes the caller.",
+        "operationId": "friends_friends_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FriendBalance"
+                  },
+                  "type": "array",
+                  "title": "Response Friends Friends Get"
                 }
               }
             }
@@ -2872,77 +3062,45 @@
         }
       }
     },
-    "/": {
+    "/preferences": {
       "get": {
-        "summary": "Root",
-        "operationId": "root__get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "type": "object",
-                  "title": "Response Root  Get"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/auth/demo": {
-      "post": {
         "tags": [
-          "auth"
+          "preferences"
         ],
-        "summary": "Auth Demo",
-        "operationId": "auth_demo_auth_demo_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DemoAuthRequest"
-              }
-            }
-          },
-          "required": true
-        },
+        "summary": "List Preferences",
+        "description": "Every preference blob belonging to the caller (empty in open mode). Each is an opaque JSON string\nthe client decodes itself \u2014 e.g. the per-user category config under key `categories.v1`.",
+        "operationId": "list_preferences_preferences_get",
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AuthResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "items": {
+                    "$ref": "#/components/schemas/PreferenceResponse"
+                  },
+                  "type": "array",
+                  "title": "Response List Preferences Preferences Get"
                 }
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
-    "/expenses/{expense_id}/transaction-link": {
+    "/preferences/{key}": {
       "put": {
         "tags": [
-          "expenses"
+          "preferences"
         ],
-        "summary": "Link Expense Transaction",
-        "description": "Link (or unlink, with null) this expense to a bank/manual transaction. A local-only field assigned directly \u2014 a separate endpoint from PATCH so it never triggers a Splitwise push or touches splits.",
-        "operationId": "link_expense_transaction_expenses__expense_id__transaction_link_put",
+        "summary": "Upsert Preference",
+        "description": "Store (create or replace) the caller's preference blob under `key`. Scoped to `owner_identifier`,\nso users sharing a backend keep independent preferences.",
+        "operationId": "upsert_preference_preferences__key__put",
         "security": [
           {
             "HTTPBearer": []
@@ -2950,13 +3108,12 @@
         ],
         "parameters": [
           {
-            "name": "expense_id",
+            "name": "key",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid",
-              "title": "Expense Id"
+              "title": "Key"
             }
           }
         ],
@@ -2965,7 +3122,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ExpenseTransactionLink"
+                "$ref": "#/components/schemas/PreferenceUpsert"
               }
             }
           }
@@ -2976,7 +3133,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ExpenseResponse"
+                  "$ref": "#/components/schemas/PreferenceResponse"
                 }
               }
             }
@@ -3030,14 +3187,14 @@
         "summary": "Create Backup",
         "operationId": "create_backup_backups_post",
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/BackupCreate"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "201": {
@@ -3075,6 +3232,11 @@
         ],
         "summary": "Restore Backup",
         "operationId": "restore_backup_backups__name__restore_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "name",
@@ -3107,12 +3269,7 @@
               }
             }
           }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
+        }
       }
     },
     "/backups/{name}": {
@@ -3122,6 +3279,11 @@
         ],
         "summary": "Delete Backup",
         "operationId": "delete_backup_backups__name__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "name",
@@ -3147,21 +3309,16 @@
               }
             }
           }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
+        }
       }
     },
-    "/friends": {
+    "/invites": {
       "get": {
         "tags": [
-          "balances"
+          "invites"
         ],
-        "summary": "Friends",
-        "operationId": "friends_friends_get",
+        "summary": "List Invites",
+        "operationId": "list_invites_invites_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -3169,10 +3326,10 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/FriendBalance"
+                    "$ref": "#/components/schemas/InviteResponse"
                   },
                   "type": "array",
-                  "title": "Response Friends Friends Get"
+                  "title": "Response List Invites Invites Get"
                 }
               }
             }
@@ -3183,73 +3340,30 @@
             "HTTPBearer": []
           }
         ]
-      }
-    },
-    "/preferences": {
-      "get": {
+      },
+      "post": {
         "tags": [
-          "preferences"
+          "invites"
         ],
-        "summary": "List Preferences",
-        "operationId": "list_preferences_preferences_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/PreferenceResponse"
-                  },
-                  "type": "array",
-                  "title": "Response List Preferences Preferences Get"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
-    },
-    "/preferences/{key}": {
-      "put": {
-        "tags": [
-          "preferences"
-        ],
-        "summary": "Upsert Preference",
-        "operationId": "upsert_preference_preferences__key__put",
-        "parameters": [
-          {
-            "name": "key",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Key"
-            }
-          }
-        ],
+        "summary": "Create Invite",
+        "operationId": "create_invite_invites_post",
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/PreferenceUpsert"
+                "$ref": "#/components/schemas/InviteCreate"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
-          "200": {
+          "201": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PreferenceResponse"
+                  "$ref": "#/components/schemas/InviteResponse"
                 }
               }
             }
@@ -3270,6 +3384,139 @@
             "HTTPBearer": []
           }
         ]
+      }
+    },
+    "/invites/{invite_id}": {
+      "delete": {
+        "tags": [
+          "invites"
+        ],
+        "summary": "Revoke Invite",
+        "operationId": "revoke_invite_invites__invite_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "invite_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Invite Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/server-settings": {
+      "get": {
+        "tags": [
+          "server-settings"
+        ],
+        "summary": "Get Server Settings",
+        "operationId": "get_server_settings_server_settings_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerSettingsResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "server-settings"
+        ],
+        "summary": "Update Server Settings",
+        "operationId": "update_server_settings_server_settings_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServerSettingsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerSettingsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/": {
+      "get": {
+        "summary": "Root",
+        "operationId": "root__get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Root  Get"
+                }
+              }
+            }
+          }
+        }
       }
     }
   },
@@ -3325,6 +3572,10 @@
             "type": "string",
             "title": "Kind"
           },
+          "mask": {
+            "type": "string",
+            "title": "Mask"
+          },
           "plaid_account_id": {
             "type": "string",
             "title": "Plaid Account Id"
@@ -3346,20 +3597,6 @@
             "type": "boolean",
             "title": "Include In Cash Flow"
           },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Updated At"
-          },
-          "mask": {
-            "type": "string",
-            "title": "Mask"
-          },
           "institution_name": {
             "type": "string",
             "title": "Institution Name"
@@ -3375,6 +3612,16 @@
           "institution_status": {
             "type": "string",
             "title": "Institution Status"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
           }
         },
         "type": "object",
@@ -3419,6 +3666,10 @@
           "full_name": {
             "type": "string",
             "title": "Full Name"
+          },
+          "invite": {
+            "type": "string",
+            "title": "Invite"
           }
         },
         "type": "object",
@@ -3451,6 +3702,49 @@
           "splitwise"
         ],
         "title": "BackendType"
+      },
+      "BackupCreate": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "title": "BackupCreate"
+      },
+      "BackupResponse": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "title": "Size Bytes"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "size_bytes",
+          "created_at",
+          "kind"
+        ],
+        "title": "BackupResponse"
       },
       "BalanceEntry": {
         "properties": {
@@ -3486,6 +3780,16 @@
           "net"
         ],
         "title": "BalanceEntry"
+      },
+      "DemoAuthRequest": {
+        "properties": {
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          }
+        },
+        "type": "object",
+        "title": "DemoAuthRequest"
       },
       "ExchangeRequest": {
         "properties": {
@@ -3747,6 +4051,17 @@
         ],
         "title": "ExpenseResponse"
       },
+      "ExpenseTransactionLink": {
+        "properties": {
+          "transaction_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Transaction Id"
+          }
+        },
+        "type": "object",
+        "title": "ExpenseTransactionLink"
+      },
       "ExpenseUpdate": {
         "properties": {
           "group_id": {
@@ -3806,6 +4121,60 @@
         },
         "type": "object",
         "title": "ExpenseUpdate"
+      },
+      "FriendBalance": {
+        "properties": {
+          "identifier": {
+            "type": "string",
+            "title": "Identifier"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "net": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Net"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/FriendGroupBalance"
+            },
+            "type": "array",
+            "title": "Groups",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "identifier",
+          "net"
+        ],
+        "title": "FriendBalance"
+      },
+      "FriendGroupBalance": {
+        "properties": {
+          "splitwise_group_id": {
+            "type": "string",
+            "title": "Splitwise Group Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "net": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Net"
+          }
+        },
+        "type": "object",
+        "required": [
+          "splitwise_group_id",
+          "net"
+        ],
+        "title": "FriendGroupBalance"
       },
       "GoalCreate": {
         "properties": {
@@ -3994,6 +4363,10 @@
           "id_token": {
             "type": "string",
             "title": "Id Token"
+          },
+          "invite": {
+            "type": "string",
+            "title": "Invite"
           }
         },
         "type": "object",
@@ -4146,6 +4519,74 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "InviteCreate": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "ttl_days": {
+            "type": "integer",
+            "title": "Ttl Days",
+            "default": 14
+          }
+        },
+        "type": "object",
+        "title": "InviteCreate"
+      },
+      "InviteResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          },
+          "redeemed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Redeemed At"
+          },
+          "redeemed_by": {
+            "type": "string",
+            "title": "Redeemed By"
+          },
+          "revoked_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Revoked At"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "code",
+          "status",
+          "created_at"
+        ],
+        "title": "InviteResponse"
       },
       "ItemInput": {
         "properties": {
@@ -4340,6 +4781,18 @@
             "type": "string",
             "title": "Institution Name"
           },
+          "institution_domain": {
+            "type": "string",
+            "title": "Institution Domain"
+          },
+          "institution_color": {
+            "type": "string",
+            "title": "Institution Color"
+          },
+          "institution_status": {
+            "type": "string",
+            "title": "Institution Status"
+          },
           "user_identifier": {
             "type": "string",
             "title": "User Identifier"
@@ -4361,18 +4814,6 @@
             "type": "string",
             "format": "date-time",
             "title": "Updated At"
-          },
-          "institution_domain": {
-            "type": "string",
-            "title": "Institution Domain"
-          },
-          "institution_color": {
-            "type": "string",
-            "title": "Institution Color"
-          },
-          "institution_status": {
-            "type": "string",
-            "title": "Institution Status"
           }
         },
         "type": "object",
@@ -4383,6 +4824,43 @@
           "updated_at"
         ],
         "title": "PlaidItemResponse"
+      },
+      "PreferenceResponse": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "value",
+          "updated_at"
+        ],
+        "title": "PreferenceResponse"
+      },
+      "PreferenceUpsert": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "title": "Value"
+          }
+        },
+        "type": "object",
+        "required": [
+          "value"
+        ],
+        "title": "PreferenceUpsert"
       },
       "ReceiptDownloadResult": {
         "properties": {
@@ -4447,6 +4925,24 @@
         ],
         "title": "ReceiptResponse"
       },
+      "RestoreResult": {
+        "properties": {
+          "restored": {
+            "type": "string",
+            "title": "Restored"
+          },
+          "safety_backup": {
+            "type": "string",
+            "title": "Safety Backup"
+          }
+        },
+        "type": "object",
+        "required": [
+          "restored",
+          "safety_backup"
+        ],
+        "title": "RestoreResult"
+      },
       "ServerInfo": {
         "properties": {
           "app": {
@@ -4487,6 +4983,103 @@
           "auth_providers"
         ],
         "title": "ServerInfo"
+      },
+      "ServerSettingsResponse": {
+        "properties": {
+          "invites_open_to_members": {
+            "type": "boolean",
+            "title": "Invites Open To Members"
+          },
+          "public_hostname": {
+            "type": "string",
+            "title": "Public Hostname"
+          },
+          "groups_hard_delete_enabled": {
+            "type": "boolean",
+            "title": "Groups Hard Delete Enabled"
+          },
+          "expenses_hard_delete_enabled": {
+            "type": "boolean",
+            "title": "Expenses Hard Delete Enabled"
+          },
+          "splitwise_receipt_download_enabled": {
+            "type": "boolean",
+            "title": "Splitwise Receipt Download Enabled"
+          },
+          "sync_interval_hours": {
+            "type": "integer",
+            "title": "Sync Interval Hours"
+          },
+          "backup_interval_hours": {
+            "type": "integer",
+            "title": "Backup Interval Hours"
+          },
+          "backups_retention_days": {
+            "type": "integer",
+            "title": "Backups Retention Days"
+          },
+          "backups_retention_min_keep": {
+            "type": "integer",
+            "title": "Backups Retention Min Keep"
+          }
+        },
+        "type": "object",
+        "required": [
+          "invites_open_to_members",
+          "public_hostname",
+          "groups_hard_delete_enabled",
+          "expenses_hard_delete_enabled",
+          "splitwise_receipt_download_enabled",
+          "sync_interval_hours",
+          "backup_interval_hours",
+          "backups_retention_days",
+          "backups_retention_min_keep"
+        ],
+        "title": "ServerSettingsResponse",
+        "description": "The full server-settings registry resolved to current values."
+      },
+      "ServerSettingsUpdate": {
+        "properties": {
+          "invites_open_to_members": {
+            "type": "boolean",
+            "title": "Invites Open To Members"
+          },
+          "public_hostname": {
+            "type": "string",
+            "title": "Public Hostname"
+          },
+          "groups_hard_delete_enabled": {
+            "type": "boolean",
+            "title": "Groups Hard Delete Enabled"
+          },
+          "expenses_hard_delete_enabled": {
+            "type": "boolean",
+            "title": "Expenses Hard Delete Enabled"
+          },
+          "splitwise_receipt_download_enabled": {
+            "type": "boolean",
+            "title": "Splitwise Receipt Download Enabled"
+          },
+          "sync_interval_hours": {
+            "type": "integer",
+            "title": "Sync Interval Hours"
+          },
+          "backup_interval_hours": {
+            "type": "integer",
+            "title": "Backup Interval Hours"
+          },
+          "backups_retention_days": {
+            "type": "integer",
+            "title": "Backups Retention Days"
+          },
+          "backups_retention_min_keep": {
+            "type": "integer",
+            "title": "Backups Retention Min Keep"
+          }
+        },
+        "type": "object",
+        "title": "ServerSettingsUpdate",
+        "description": "Any subset of the registry; only provided keys change (PATCH semantics)."
       },
       "SplitInput": {
         "properties": {
@@ -5121,178 +5714,6 @@
         },
         "type": "object",
         "title": "SyncRequest"
-      },
-      "DemoAuthRequest": {
-        "properties": {
-          "display_name": {
-            "type": "string",
-            "title": "Display Name"
-          }
-        },
-        "type": "object",
-        "title": "DemoAuthRequest"
-      },
-      "ExpenseTransactionLink": {
-        "properties": {
-          "transaction_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Transaction Id"
-          }
-        },
-        "type": "object",
-        "title": "ExpenseTransactionLink"
-      },
-      "BackupResponse": {
-        "properties": {
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "size_bytes": {
-            "type": "integer",
-            "title": "Size Bytes"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          },
-          "label": {
-            "type": "string",
-            "title": "Label"
-          },
-          "kind": {
-            "type": "string",
-            "title": "Kind"
-          }
-        },
-        "type": "object",
-        "required": [
-          "name",
-          "size_bytes",
-          "created_at",
-          "kind"
-        ],
-        "title": "BackupResponse"
-      },
-      "BackupCreate": {
-        "properties": {
-          "label": {
-            "type": "string",
-            "title": "Label"
-          }
-        },
-        "type": "object",
-        "title": "BackupCreate"
-      },
-      "RestoreResult": {
-        "properties": {
-          "restored": {
-            "type": "string",
-            "title": "Restored"
-          },
-          "safety_backup": {
-            "type": "string",
-            "title": "Safety Backup"
-          }
-        },
-        "type": "object",
-        "required": [
-          "restored",
-          "safety_backup"
-        ],
-        "title": "RestoreResult"
-      },
-      "FriendBalance": {
-        "properties": {
-          "identifier": {
-            "type": "string",
-            "title": "Identifier"
-          },
-          "display_name": {
-            "type": "string",
-            "title": "Display Name"
-          },
-          "net": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Net"
-          },
-          "groups": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/FriendGroupBalance"
-            },
-            "title": "Groups"
-          }
-        },
-        "type": "object",
-        "required": [
-          "identifier",
-          "net"
-        ],
-        "title": "FriendBalance"
-      },
-      "FriendGroupBalance": {
-        "properties": {
-          "splitwise_group_id": {
-            "type": "string",
-            "title": "Splitwise Group Id"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "net": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Net"
-          }
-        },
-        "type": "object",
-        "required": [
-          "splitwise_group_id",
-          "net"
-        ],
-        "title": "FriendGroupBalance"
-      },
-      "PreferenceUpsert": {
-        "properties": {
-          "value": {
-            "type": "string",
-            "title": "Value"
-          }
-        },
-        "type": "object",
-        "required": [
-          "value"
-        ],
-        "title": "PreferenceUpsert"
-      },
-      "PreferenceResponse": {
-        "properties": {
-          "key": {
-            "type": "string",
-            "title": "Key"
-          },
-          "value": {
-            "type": "string",
-            "title": "Value"
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Updated At"
-          }
-        },
-        "type": "object",
-        "required": [
-          "key",
-          "value",
-          "updated_at"
-        ],
-        "title": "PreferenceResponse"
       }
     },
     "securitySchemes": {

@@ -15,6 +15,8 @@ class SplitwiseOAuthState(Base):
     code_verifier: Mapped[str] = mapped_column(String(128), nullable=False)
     # Local identifier initiating the flow
     user_identifier: Mapped[str] = mapped_column(String(128), nullable=False)
+    # Single-use enrollment invite carried through the OAuth round-trip (a first-time Splitwise sign-in).
+    invite: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

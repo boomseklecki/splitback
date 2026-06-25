@@ -8,15 +8,8 @@ class Settings(BaseSettings):
     # Core
     app_name: str = "SplitBack"
     default_currency: str = "USD"
-    # Friendly label for this backend on the iOS join/confirm screen (e.g. "Matt's Household").
-    # Surfaced by the unguarded GET /server-info; defaults to app_name when blank.
-    public_hostname: str = ""
-    # When true, DELETE /groups/{id} hard-deletes (cascade + MinIO cleanup) instead of archiving.
-    groups_hard_delete_enabled: bool = False
-    # Governs local-only (non-Splitwise) expenses: when true, DELETE /expenses/{id} hard-deletes
-    # (MinIO cleanup) instead of archiving. Splitwise-linked expenses follow group state /
-    # the ?propagate= override instead of this flag.
-    expenses_hard_delete_enabled: bool = False
+    # NOTE: runtime policy (public_hostname, hard-delete toggles, scheduler intervals) moved to the
+    # admin-editable `server_settings` table (see app/server_settings.py); they are no longer .env vars.
     # Maps bearer token -> local identifier, e.g. {"tok-matt": "matt", "tok-nikki": "nikki"}.
     # Empty = auth disabled (open mode); populated = bearer token required on app endpoints.
     api_tokens: dict[str, str] = {}
@@ -25,12 +18,9 @@ class Settings(BaseSettings):
     # its own stateless JWT. `auth_required` default false keeps dev/tests/open mode working.
     auth_jwt_secret: str = ""  # HS256 signing secret; generate a long random value (openssl rand -hex 32)
     auth_required: bool = False  # when true, guarded endpoints reject requests without a valid token
-    # Sign-in allowlist (emails, JSON list e.g. ["a@x.com","b@y.com"]). Empty = anyone verified may sign in.
-    # When set, only these emails may authenticate — enforced at sign-in AND on every request.
-    auth_allowed_users: list[str] = []
-    # When true, never create a NEW user at sign-in — only identities that already resolve to an existing
-    # user (by provider sub/email) may sign in. Linking a second provider to an existing user still works.
-    closed_registration: bool = False
+    # Enrollment is now DB-backed (the `users.enrolled` flag, granted by redeeming an invite or claiming a
+    # fresh server) — see app/auth/identity.py. The former AUTH_ALLOWED_USERS / CLOSED_REGISTRATION env vars
+    # are gone.
     google_client_id: str = ""  # Google iOS OAuth client id — the id-token audience
     apple_audience: str = ""  # the iOS app bundle id (e.g. com.splitback.app) — the identity-token audience
     # Apple Developer Team ID — used to serve the App Site Association (GET /.well-known/apple-app-site-association)
@@ -48,22 +38,13 @@ class Settings(BaseSettings):
     minio_secure: bool = False
 
     # Backups (admin-only): full DB dump + receipt objects, stored as one tar.gz per backup in this MinIO
-    # bucket (parallel to the receipts bucket; set per stack, e.g. backups-prod). The in-process scheduler
-    # runs every `backup_interval_hours` (0 = off; enable on prod only) and then prunes: scheduled backups
-    # older than `backups_retention_days` are deleted, but the newest `backups_retention_min_keep` are always
-    # kept, and manual backups are never auto-deleted.
+    # bucket (parallel to the receipts bucket; set per stack, e.g. backups-prod). The scheduler cadence +
+    # retention (backup_interval_hours / backups_retention_days / backups_retention_min_keep) are now
+    # admin-editable server settings (see app/server_settings.py), not env vars. Manual backups are never
+    # auto-deleted.
     backups_bucket: str = "backups"
-    backup_interval_hours: int = 0
-    backups_retention_days: int = 30
-    backups_retention_min_keep: int = 7
 
-    # Periodic data sync: the in-process scheduler runs Plaid (cursor-incremental) + Splitwise (incremental,
-    # per stored token) every `sync_interval_hours` (0 = off; enable on prod, e.g. 12). Pull-to-refresh in the
-    # app still only reconciles local data — this keeps the backend fresh without user action.
-    sync_interval_hours: int = 0
-    # When true, downloading original Splitwise receipt images into MinIO is enabled (convert-to-local
-    # auto-downloads them, and the /download-receipts flow works). Off by default (bandwidth/storage).
-    splitwise_receipt_download_enabled: bool = False
+    # Periodic data sync cadence (sync_interval_hours) is also an admin-editable server setting now.
 
     # Subscription brand logos: the upstream a logo is fetched from (cached in MinIO, served by /logos).
     # `{domain}` is substituted. Default is a free, token-less favicon service; logo.dev gives nicer logos

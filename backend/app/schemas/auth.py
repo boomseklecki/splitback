@@ -7,10 +7,13 @@ class AppleAuthRequest(BaseModel):
     identity_token: str
     # Apple only sends the name on first consent; the client forwards it here when present.
     full_name: str | None = None
+    # Single-use enrollment invite captured from a join link; required for a NEW user on a claimed server.
+    invite: str | None = None
 
 
 class GoogleAuthRequest(BaseModel):
     id_token: str
+    invite: str | None = None  # single-use enrollment invite (see AppleAuthRequest.invite)
 
 
 class DemoAuthRequest(BaseModel):

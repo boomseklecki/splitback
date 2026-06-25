@@ -1,32 +1,45 @@
-"""GET /server-info: identity shape + requires_auth/auth_providers reflect settings;
-GET /.well-known/apple-app-site-association: 404 until APPLE_TEAM_ID set, else the appID."""
+"""GET /server-info: identity shape + requires_auth/auth_providers reflect config (name now comes from the
+server_settings `public_hostname`); GET /.well-known/apple-app-site-association: 404 until APPLE_TEAM_ID set."""
 import json
 
 from fastapi import HTTPException
 
 from app.config import settings
+from app.db import async_session
 from app.routers.public import apple_app_site_association, server_info
 
 
 async def test_server_info_shape():
-    info = await server_info()
+    async with async_session() as s:
+        info = await server_info(session=s)
     assert info.app == settings.app_name
     assert info.version
-    assert info.name  # public_hostname or app_name
+    assert info.name  # public_hostname (server setting) or app_name
     assert isinstance(info.auth_providers, list)
 
 
-async def test_requires_auth_reflects_settings():
-    orig_req, orig_tok = settings.auth_required, settings.api_tokens
+async def test_requires_auth_reflects_config():
+    orig = (settings.auth_required, settings.api_tokens,
+            settings.apple_audience, settings.google_client_id, settings.splitwise_consumer_key)
     try:
+        # No providers, no auth_required, no tokens -> open.
+        settings.apple_audience = settings.google_client_id = settings.splitwise_consumer_key = ""
         settings.auth_required, settings.api_tokens = False, {}
-        assert (await server_info()).requires_auth is False
+        async with async_session() as s:
+            assert (await server_info(session=s)).requires_auth is False
+        # Any of auth_required / api_tokens / a configured provider flips the gate on.
         settings.auth_required = True
-        assert (await server_info()).requires_auth is True
+        async with async_session() as s:
+            assert (await server_info(session=s)).requires_auth is True
         settings.auth_required, settings.api_tokens = False, {"tok": "matt"}
-        assert (await server_info()).requires_auth is True
+        async with async_session() as s:
+            assert (await server_info(session=s)).requires_auth is True
+        settings.api_tokens, settings.google_client_id = {}, "gid"
+        async with async_session() as s:
+            assert (await server_info(session=s)).requires_auth is True
     finally:
-        settings.auth_required, settings.api_tokens = orig_req, orig_tok
+        (settings.auth_required, settings.api_tokens,
+         settings.apple_audience, settings.google_client_id, settings.splitwise_consumer_key) = orig
 
 
 async def test_auth_providers_reflect_config():
@@ -35,7 +48,8 @@ async def test_auth_providers_reflect_config():
         settings.apple_audience = "com.splitback.app"
         settings.google_client_id = ""
         settings.splitwise_consumer_key = "key"
-        providers = (await server_info()).auth_providers
+        async with async_session() as s:
+            providers = (await server_info(session=s)).auth_providers
         assert "apple" in providers
         assert "splitwise" in providers
         assert "google" not in providers

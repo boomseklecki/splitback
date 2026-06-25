@@ -6,9 +6,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import server_settings
 from app.auth import require_auth
 from app.auth.scope import assert_group_member
-from app.config import settings
 from app.db import get_session
 from app.integrations.storage import minio_client
 from app.models import BackendType, Expense, Group, GroupMember, GroupOverride, Receipt
@@ -164,7 +164,7 @@ async def delete_group(
         raise HTTPException(
             status_code=409, detail="Only self-hosted groups can be archived or deleted"
         )
-    if settings.groups_hard_delete_enabled:
+    if await server_settings.get(session, "groups_hard_delete_enabled"):
         await _hard_delete_group(session, group)
     else:
         group.archived_at = datetime.now(timezone.utc)

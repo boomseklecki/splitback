@@ -1,4 +1,4 @@
-from sqlalchemy import Enum, String
+from sqlalchemy import Boolean, Enum, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -21,3 +21,7 @@ class User(UUIDMixin, TimestampMixin, Base):
     apple_sub: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
     google_sub: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # DB-backed access: enrolled users may authenticate (replaces the .env allowlist). Set at sign-in by
+    # redeeming an invite, or by claiming a fresh (no-enrolled-users) server. is_admin gates operator actions.
+    enrolled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

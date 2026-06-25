@@ -1,27 +1,39 @@
 """In-process scheduled-backup loop.
 
-Started from the FastAPI lifespan when `BACKUP_INTERVAL_HOURS > 0` (enable on prod only). Every interval it
-creates a `scheduled` backup and prunes per the retention policy. Failures are logged, never raised — a bad
-backup must not take the API down. Cancelled cleanly on shutdown.
+Started unconditionally from the FastAPI lifespan; it polls a fixed tick and re-reads `backup_interval_hours`
+from the server settings each cycle, so an admin turning it on/off or changing cadence takes effect within a
+tick — no restart. `<= 0` = paused. Every interval it creates a `scheduled` backup and prunes per the
+retention policy (also read from server settings). Failures are logged, never raised. Cancelled cleanly on
+shutdown.
 """
 import asyncio
 import logging
+import time
 
-from app.config import settings
+from app import server_settings
+from app.db import async_session
 from app.services import backups
 
 log = logging.getLogger(__name__)
 
+_POLL_SECONDS = 60
+
 
 async def run_scheduler() -> None:
-    interval = settings.backup_interval_hours
-    if interval <= 0:
-        return
-    log.info("Backup scheduler on: every %sh (retain %sd, keep >=%s).",
-             interval, settings.backups_retention_days, settings.backups_retention_min_keep)
+    last_run = time.monotonic()  # don't fire immediately on boot
     while True:
-        # Sleep first so a redeploy doesn't trigger a backup on every restart.
-        await asyncio.sleep(interval * 3600)
+        await asyncio.sleep(_POLL_SECONDS)
+        try:
+            async with async_session() as session:
+                interval = await server_settings.get(session, "backup_interval_hours")
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("Backup scheduler: couldn't read interval; will retry.")
+            continue
+        if interval <= 0 or time.monotonic() - last_run < interval * 3600:
+            continue
+        last_run = time.monotonic()
         try:
             info = await backups.create(label="scheduled", kind=backups.KIND_SCHEDULED)
             deleted = await backups.prune()

@@ -11,7 +11,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import tokens
-from app.auth.access import is_admin, is_allowed
+from app.auth.access import is_admin_caller, is_enrolled
 from app.config import settings
 from app.db import get_session
 from app.models import User
@@ -30,9 +30,9 @@ async def require_auth(
         if user_id is not None:
             user = await session.get(User, user_id)
             if user is not None:
-                # Re-check the allowlist every request so removing someone takes effect immediately
-                # (their existing JWT stops working), not only at sign-in.
-                if not is_allowed(email=None, user=user):
+                # Re-check enrollment every request so revoking someone (enrolled=False) takes effect
+                # immediately — their existing JWT stops working, not only at next sign-in.
+                if not is_enrolled(user):
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail="This account isn't permitted on this server.",
@@ -51,10 +51,13 @@ async def require_auth(
     return None
 
 
-async def require_admin(caller: str | None = Depends(require_auth)) -> str:
-    """Gate for operator-only endpoints (e.g. backups): the caller must resolve to a configured admin
-    (`ADMIN_USERS`). 403 otherwise. In open mode (no caller) this still forbids — admin actions always
-    require an identified admin."""
-    if not is_admin(caller):
+async def require_admin(
+    caller: str | None = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
+) -> str:
+    """Gate for operator-only endpoints (e.g. backups): the caller must be an admin — the DB `is_admin`
+    flag (first-user claim) or the `ADMIN_USERS` config. 403 otherwise. In open mode (no caller) this still
+    forbids — admin actions always require an identified admin."""
+    if not await is_admin_caller(session, caller):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin only")
-    return caller  # type: ignore[return-value]  # is_admin(None) is False, so caller is non-None here
+    return caller  # type: ignore[return-value]  # is_admin_caller(None) is False, so caller is non-None here

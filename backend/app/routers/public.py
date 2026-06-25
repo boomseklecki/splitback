@@ -2,10 +2,13 @@
 plus the browser/Apple-facing join site (this backend serves it directly — no separate static host)."""
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import server_settings
 from app.config import settings
+from app.db import get_session
 from app.schemas.public import ServerInfo
 
 router = APIRouter(tags=["public"])
@@ -15,7 +18,7 @@ _JOIN_HTML = Path(__file__).resolve().parent.parent / "static" / "join.html"
 
 
 @router.get("/server-info", response_model=ServerInfo)
-async def server_info() -> ServerInfo:
+async def server_info(session: AsyncSession = Depends(get_session)) -> ServerInfo:
     """Identity the iOS app pings to verify a URL is really a SplitBack backend before adopting it
     (the join-link confirm screen). Reveals nothing sensitive."""
     providers: list[str] = []
@@ -25,11 +28,13 @@ async def server_info() -> ServerInfo:
         providers.append("google")
     if settings.splitwise_consumer_key:
         providers.append("splitwise")
+    public_hostname = await server_settings.get(session, "public_hostname")
     return ServerInfo(
         app=settings.app_name,
         version=_VERSION,
-        name=settings.public_hostname or settings.app_name,
-        requires_auth=bool(settings.auth_required or settings.api_tokens),
+        name=public_hostname or settings.app_name,
+        # A server that can sign people in always shows the gate (incl. a fresh, unclaimed one).
+        requires_auth=bool(providers or settings.auth_required or settings.api_tokens),
         auth_providers=providers,
         demo=settings.demo_mode,
     )

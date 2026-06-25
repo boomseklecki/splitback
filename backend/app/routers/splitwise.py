@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.auth import require_auth
+from app import server_settings
 from app.config import settings
 from app.db import get_session
 from app.integrations.splitwise import client as sw_client
@@ -195,7 +196,7 @@ async def import_group_local(
         await session.scalars(select(GroupMember).where(GroupMember.group_id == source.id))
     ).all()
 
-    download_receipts = settings.splitwise_receipt_download_enabled
+    download_receipts = await server_settings.get(session, "splitwise_receipt_download_enabled")
     token = await _select_token(session, None) if download_receipts else None
 
     new_group = Group(name=body.name or source.name, backend_type=BackendType.self_hosted)
@@ -262,7 +263,7 @@ async def download_group_receipts(
     """Standalone flow: download original Splitwise receipt images for a group's expenses into MinIO as
     native Receipt rows. Gated by SPLITWISE_RECEIPT_DOWNLOAD_ENABLED; skips expenses that already have
     a receipt (idempotent)."""
-    if not settings.splitwise_receipt_download_enabled:
+    if not await server_settings.get(session, "splitwise_receipt_download_enabled"):
         return ReceiptDownloadResult(downloaded=0, skipped=0, enabled=False)
     if await session.get(Group, group_id) is None:
         raise HTTPException(status_code=404, detail="Group not found")

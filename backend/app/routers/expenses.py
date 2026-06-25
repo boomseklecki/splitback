@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app import server_settings
 from app.auth import require_auth
 from app.auth.scope import assert_group_member
 from app.config import settings
@@ -326,7 +327,7 @@ async def delete_expense(
 
     # Local-only expense: SplitBack owns the ledger -> archive (or hard-delete if enabled).
     if expense.splitwise_expense_id is None:
-        if settings.expenses_hard_delete_enabled:
+        if await server_settings.get(session, "expenses_hard_delete_enabled"):
             await _hard_delete(session, expense)
         else:
             await _archive(session, expense)

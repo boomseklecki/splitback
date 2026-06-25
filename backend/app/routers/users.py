@@ -7,7 +7,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import require_auth
-from app.auth.access import is_admin
+from app.auth.access import is_admin, is_admin_caller
 from app.auth.scope import caller_co_members
 from app.db import get_session
 from app.integrations.plaid import client as plaid_client
@@ -48,7 +48,7 @@ async def me(
     if identifier is not None:
         user = await session.scalar(select(User).where(User.identifier == identifier))
     return MeResponse(identifier=identifier, authenticated=identifier is not None,
-                      is_admin=is_admin(identifier), user=user)
+                      is_admin=is_admin(identifier, user), user=user)
 
 
 def _public(user: User, caller: str | None, admin: bool, co_members: set[str]) -> UserResponse:
@@ -74,7 +74,7 @@ async def list_users(
     if updated_since is not None:
         stmt = stmt.where(User.updated_at >= ensure_utc(updated_since))
     rows = list(await session.scalars(stmt.order_by(User.display_name)))
-    admin = is_admin(caller)
+    admin = await is_admin_caller(session, caller)
     co_members: set[str] = set()
     if caller is not None and not admin:
         co_members = await caller_co_members(session, caller)
@@ -110,7 +110,7 @@ async def get_user(
     user = await session.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
-    admin = is_admin(caller)
+    admin = await is_admin_caller(session, caller)
     co_members: set[str] = set()
     if caller is not None and not admin:
         co_members = await caller_co_members(session, caller)
