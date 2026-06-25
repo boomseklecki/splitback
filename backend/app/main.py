@@ -28,6 +28,7 @@ from app.routers import (
     users,
 )
 from app.services.backup_scheduler import run_scheduler as run_backup_scheduler
+from app.services.demo_prune_scheduler import run_scheduler as run_demo_prune_scheduler
 from app.services.sync_scheduler import run_scheduler as run_sync_scheduler
 
 
@@ -40,9 +41,13 @@ async def lifespan(app: FastAPI):
             break
         except Exception:
             await asyncio.sleep(1)
-    # Background loops: scheduled backups + periodic data sync. Each polls and re-reads its interval from
-    # the server settings every tick (paused while its interval is <= 0).
-    tasks = [asyncio.create_task(run_backup_scheduler()), asyncio.create_task(run_sync_scheduler())]
+    # Background loops: scheduled backups + periodic data sync (each polls and re-reads its interval from the
+    # server settings every tick, paused while <= 0), plus the demo-guest pruner (no-op unless DEMO_MODE).
+    tasks = [
+        asyncio.create_task(run_backup_scheduler()),
+        asyncio.create_task(run_sync_scheduler()),
+        asyncio.create_task(run_demo_prune_scheduler()),
+    ]
     try:
         yield
     finally:

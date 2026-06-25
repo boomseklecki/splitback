@@ -17,7 +17,7 @@ struct SettingsView: View {
     @State private var confirmingDelete = false
     @State private var importing = false
     @State private var importSummary: String?
-    @State private var showingSplitwiseLogin = false
+    @State private var splitwiseConnectURL: IdentifiableURL?
     @State private var showingSignIn = false
     @State private var items: [Components.Schemas.PlaidItemResponse] = []
     @State private var linkSession: LinkSession?
@@ -29,16 +29,7 @@ struct SettingsView: View {
     @State private var linkDiagnostics = PlaidLinkDiagnosticsStore.shared
 
     struct LinkSession: Identifiable { let id = UUID(); let token: String }
-
-    /// Connect Splitwise to *your* account. Requires a signed-in user (nil disables the button) so the
-    /// Splitwise token is linked to the real identity from `/me`, not a hardcoded name.
-    private var splitwiseLoginURL: URL? {
-        guard let me = env.currentUser?.identifier else { return nil }
-        var components = URLComponents(url: APIConfig.baseURL.appendingPathComponent("auth/splitwise/login"),
-                                       resolvingAgainstBaseURL: false)
-        components?.queryItems = [URLQueryItem(name: "user", value: me)]
-        return components?.url
-    }
+    struct IdentifiableURL: Identifiable { let id = UUID(); let url: URL }
 
     var body: some View {
         NavigationStack {
@@ -194,8 +185,8 @@ struct SettingsView: View {
                     Label(env.splitwiseConnected ? "Connected" : "Not connected",
                           systemImage: env.splitwiseConnected ? "checkmark.circle.fill" : "xmark.circle")
                         .foregroundStyle(env.splitwiseConnected ? .green : .secondary)
-                    Button("Connect Splitwise", systemImage: "link") { showingSplitwiseLogin = true }
-                        .disabled(splitwiseLoginURL == nil)
+                    Button("Connect Splitwise", systemImage: "link") { connectSplitwise() }
+                        .disabled(env.currentUser == nil)
                     Button("Run Import", action: runImport).disabled(importing)
                     if let importSummary {
                         Text(importSummary).font(.caption).foregroundStyle(.secondary)
@@ -239,8 +230,8 @@ struct SettingsView: View {
                 await env.refreshSplitwiseStatus()
                 await loadItems()
             }
-            .sheet(isPresented: $showingSplitwiseLogin, onDismiss: { Task { await env.refreshSplitwiseStatus() } }) {
-                if let url = splitwiseLoginURL { SafariView(url: url) }
+            .sheet(item: $splitwiseConnectURL, onDismiss: { Task { await env.refreshSplitwiseStatus() } }) { item in
+                SafariView(url: item.url)
             }
             .sheet(isPresented: $showingSignIn) { AuthGateView() }
             .fullScreenCover(item: $linkSession) { session in
@@ -313,6 +304,15 @@ struct SettingsView: View {
         catch { errorText = errorMessage(error) }
         await env.refreshSplitwiseStatus()
         await loadItems()
+    }
+
+    /// Starts the Splitwise connect flow: asks the backend (authenticated) for the authorize URL bound to the
+    /// signed-in caller, then opens it. The bearer this request carries is how the token gets bound to you.
+    private func connectSplitwise() {
+        Task {
+            do { splitwiseConnectURL = IdentifiableURL(url: try await env.splitwise.startConnect()) }
+            catch { errorText = errorMessage(error) }
+        }
     }
 
     private func runImport() {

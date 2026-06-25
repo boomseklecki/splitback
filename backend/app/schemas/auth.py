@@ -23,3 +23,8 @@ class DemoAuthRequest(BaseModel):
 class AuthResponse(BaseModel):
     token: str
     user: UserResponse
+
+
+class SplitwiseAuthStart(BaseModel):
+    # The Splitwise authorize URL to open; the OAuth state is bound to the authenticated caller server-side.
+    authorize_url: str

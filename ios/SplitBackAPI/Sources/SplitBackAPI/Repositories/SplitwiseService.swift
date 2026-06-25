@@ -11,6 +11,22 @@ struct SplitwiseService {
         return (response.connected, response.users)
     }
 
+    /// Begins connecting Splitwise to the *signed-in* user. The backend binds the OAuth state to the verified
+    /// caller (the bearer this request carries), so the resulting token can only attach to that user; returns
+    /// the Splitwise authorize URL to open in the browser.
+    func startConnect() async throws -> URL {
+        let output = try await client.start_auth_splitwise_start_post()
+        switch output {
+        case let .ok(ok):
+            guard let url = URL(string: try ok.body.json.authorize_url) else {
+                throw BackendError.fromUndocumented(502)
+            }
+            return url
+        case let .undocumented(statusCode, _):
+            throw BackendError.fromUndocumented(statusCode)
+        }
+    }
+
     /// Runs the cold-backfill import with the stored token; returns the number of expenses imported.
     @discardableResult
     func runImport() async throws -> Int {

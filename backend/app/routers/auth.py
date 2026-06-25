@@ -16,13 +16,14 @@ from app.integrations.auth import ProviderVerificationError, apple, google
 from app.integrations.dev_seed.seeder import seed_identity
 from app.models import User
 from app.models.enums import UserSource
+from app.ratelimit import rate_limit
 from app.schemas.auth import AppleAuthRequest, AuthResponse, DemoAuthRequest, GoogleAuthRequest
 from app.schemas.user import UserResponse
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-@router.post("/demo", response_model=AuthResponse)
+@router.post("/demo", response_model=AuthResponse, dependencies=[Depends(rate_limit(5, 3600))])
 async def auth_demo(
     body: DemoAuthRequest, session: AsyncSession = Depends(get_session)
 ) -> AuthResponse:
@@ -42,7 +43,7 @@ async def auth_demo(
     return AuthResponse(token=tokens.issue(user), user=UserResponse.model_validate(user))
 
 
-@router.post("/apple", response_model=AuthResponse)
+@router.post("/apple", response_model=AuthResponse, dependencies=[Depends(rate_limit(60, 3600))])
 async def auth_apple(
     body: AppleAuthRequest, session: AsyncSession = Depends(get_session)
 ) -> AuthResponse:
@@ -62,7 +63,7 @@ async def auth_apple(
     return AuthResponse(token=tokens.issue(user), user=UserResponse.model_validate(user))
 
 
-@router.post("/google", response_model=AuthResponse)
+@router.post("/google", response_model=AuthResponse, dependencies=[Depends(rate_limit(60, 3600))])
 async def auth_google(
     body: GoogleAuthRequest, session: AsyncSession = Depends(get_session)
 ) -> AuthResponse:

@@ -201,24 +201,42 @@
         }
       }
     },
+    "/auth/splitwise/start": {
+      "post": {
+        "tags": [
+          "splitwise-auth"
+        ],
+        "summary": "Start",
+        "description": "Begin connecting Splitwise to the *signed-in* user. The OAuth state is bound to the verified caller\nserver-side (no client-supplied identifier), so the resulting token can only attach to the caller.",
+        "operationId": "start_auth_splitwise_start_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SplitwiseAuthStart"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/auth/splitwise/login": {
       "get": {
         "tags": [
           "splitwise-auth"
         ],
         "summary": "Login",
+        "description": "Anonymous *sign in with Splitwise* (first-time). The token binds to the user resolved from the Splitwise\nidentity at callback; `invite` enrolls a new user on a claimed server. No caller-supplied identifier.",
         "operationId": "login_auth_splitwise_login_get",
         "parameters": [
-          {
-            "name": "user",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "default": "matt",
-              "title": "User"
-            }
-          },
           {
             "name": "invite",
             "in": "query",
@@ -5136,6 +5154,19 @@
           "owed_share"
         ],
         "title": "SplitResponse"
+      },
+      "SplitwiseAuthStart": {
+        "properties": {
+          "authorize_url": {
+            "type": "string",
+            "title": "Authorize Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "authorize_url"
+        ],
+        "title": "SplitwiseAuthStart"
       },
       "SplitwiseImportRequest": {
         "properties": {
