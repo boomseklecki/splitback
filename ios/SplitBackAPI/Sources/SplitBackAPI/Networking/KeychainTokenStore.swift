@@ -1,8 +1,10 @@
 import Foundation
 import Security
 
-/// Stores the optional bearer token in the Keychain. The backend is default-open (no token needed)
-/// until `API_TOKENS` is configured; once it is, every guarded request must carry the token.
+/// Stores the optional bearer token in the Keychain, **keyed per server** (the `account` embeds the base
+/// URL), so each backend keeps its own session — switching dev↔prod doesn't force a re-auth, and a token is
+/// only ever sent to the server that minted it. The backend is default-open (no token needed) until auth is
+/// enabled; once it is, every guarded request must carry the token.
 struct KeychainTokenStore {
     let service: String
     let account: String
@@ -10,6 +12,28 @@ struct KeychainTokenStore {
     init(service: String = "com.splitback.app", account: String = "api-bearer-token") {
         self.service = service
         self.account = account
+    }
+
+    /// A stable per-server account key from the base URL (scheme+host+port; trailing slash stripped).
+    static func serverKey(_ url: URL) -> String {
+        var s = url.absoluteString.lowercased()
+        if s.hasSuffix("/") { s.removeLast() }
+        return s
+    }
+
+    /// The token store for a specific backend.
+    static func forServer(_ url: URL) -> KeychainTokenStore {
+        KeychainTokenStore(account: "api-bearer-token::\(serverKey(url))")
+    }
+
+    /// One-time migration: move a token from the old single global slot into a per-server `store` (the first
+    /// time we run keyed). Idempotent — a no-op once the legacy slot is empty.
+    static func migrateLegacyTokenIfNeeded(into store: KeychainTokenStore) {
+        let legacy = KeychainTokenStore()  // old global account: "api-bearer-token"
+        guard legacy.account != store.account,
+              store.load() == nil, let token = legacy.load(), !token.isEmpty else { return }
+        store.save(token)
+        legacy.delete()
     }
 
     private var baseQuery: [String: Any] {

@@ -12,7 +12,7 @@ public final class AppEnvironment {
     /// A long-timeout client for slow operations (the Splitwise cold-backfill import + syncs), which can
     /// run for minutes and otherwise hit NSURLErrorTimedOut on the default 60s request timeout.
     @ObservationIgnored private(set) var slowClient: Client
-    @ObservationIgnored private let tokenStore: KeychainTokenStore
+    @ObservationIgnored private var tokenStore: KeychainTokenStore
 
     /// Whether a bearer token is stored (drives Settings UI). The backend is default-open without one.
     public private(set) var hasToken: Bool
@@ -44,7 +44,8 @@ public final class AppEnvironment {
     private static let pendingInviteKey = "pending_invite"
 
     public init() {
-        let store = KeychainTokenStore()
+        let store = KeychainTokenStore.forServer(APIConfig.baseURL)
+        KeychainTokenStore.migrateLegacyTokenIfNeeded(into: store)  // carry an existing session over once
         self.tokenStore = store
         self.client = APIClientFactory.makeClient(tokenStore: store)
         self.slowClient = APIClientFactory.makeClient(tokenStore: store, requestTimeout: 300)
@@ -70,7 +71,7 @@ public final class AppEnvironment {
     func adoptJoinLink(_ url: URL, context: ModelContext) -> Bool {
         guard let parsed = JoinLink.parse(url) else { return false }
         if parsed.api != baseURLString {
-            wipeLocalData(context)
+            eraseLocalCache(context)   // drop the old server's data; setBaseURL swaps to the new server's token
             setBaseURL(parsed.api)
         }
         setPendingInvite(parsed.invite)
@@ -130,17 +131,28 @@ public final class AppEnvironment {
         currentUser = nil
     }
 
-    /// Changes the backend base URL (persisted) and rebuilds the client.
+    /// Changes the backend base URL (persisted) and rebuilds the clients against that server's own token
+    /// store — so switching loads the new backend's session (re-auth only the first time per server), and a
+    /// token is never sent to a server that didn't mint it.
     func setBaseURL(_ string: String?) {
         APIConfig.setOverride(string)
         baseURLString = APIConfig.baseURL.absoluteString
+        tokenStore = KeychainTokenStore.forServer(APIConfig.baseURL)
         client = APIClientFactory.makeClient(baseURL: APIConfig.baseURL, tokenStore: tokenStore)
         slowClient = APIClientFactory.makeClient(baseURL: APIConfig.baseURL, tokenStore: tokenStore,
                                                  requestTimeout: 300)
+        hasToken = (tokenStore.load()?.isEmpty == false)
     }
 
-    /// Wipes the local SwiftData cache and signs out — used when switching backends so prod/dev data don't
-    /// intermingle. The cache re-syncs from the (now-current) backend on the next refresh.
+    /// Drops the local SwiftData cache WITHOUT signing out — used when switching backends so prod/dev data
+    /// don't intermingle while each server keeps its own (per-server) token. The cache re-syncs from the
+    /// now-current backend on the next refresh.
+    func eraseLocalCache(_ context: ModelContext) {
+        try? SplitBackStore.eraseAll(context)
+    }
+
+    /// Wipes the local SwiftData cache and signs out (clears the current server's token) — used on account
+    /// deletion.
     func wipeLocalData(_ context: ModelContext) {
         try? SplitBackStore.eraseAll(context)
         signOut()

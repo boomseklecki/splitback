@@ -281,14 +281,15 @@ struct SettingsView: View {
             .errorAlert($errorText)
             .confirmationDialog("Switch to this server?", isPresented: $confirmingSwitch,
                                 titleVisibility: .visible) {
-                Button("Switch & Clear Data", role: .destructive) {
-                    env.setBaseURL(pendingBaseURL)
-                    env.wipeLocalData(context)  // erase the cache + sign out so servers don't mix
+                Button("Switch", role: .destructive) {
+                    env.setBaseURL(pendingBaseURL)   // load the new server's own token (if any)
+                    env.eraseLocalCache(context)     // drop the old server's cached data so they don't mix
                     Task { await reloadAfterConfigChange() }
                 }
             } message: {
-                Text("Connects to the new server, signs you out, and clears locally cached accounts, "
-                     + "transactions, groups, and expenses so prod and dev records don't mix.")
+                Text("Connects to the new server and clears locally cached accounts, transactions, groups, "
+                     + "and expenses so prod and dev records don't mix. You stay signed in if you've used "
+                     + "this server before — otherwise sign in again.")
             }
             .confirmationDialog("Delete your account?", isPresented: $confirmingDelete,
                                 titleVisibility: .visible) {
@@ -326,6 +327,7 @@ struct SettingsView: View {
 
     private func reloadAfterConfigChange() async {
         await env.loadServerInfo()  // refresh the server name/reachability for the join link
+        await env.refreshCurrentUser(context)  // reflect the new server's stored session (signed in or not)
         do { try await env.refreshAll(context) }
         catch { errorText = errorMessage(error) }
         await env.refreshSplitwiseStatus()
