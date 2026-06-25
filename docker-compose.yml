@@ -126,8 +126,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://splitback:splitback@db-prod:5432/splitback
       MINIO_BUCKET: receipts-prod
       BACKUPS_BUCKET: backups-prod
-      BACKUP_INTERVAL_HOURS: "24"   # nightly scheduled backups (prod only)
-      SYNC_INTERVAL_HOURS: "12"     # periodic Plaid + Splitwise sync (prod only)
+      # Scheduler cadence (backup/sync intervals) is now an admin-editable server_settings row, not env.
     depends_on:
       db-prod:
         condition: service_healthy
