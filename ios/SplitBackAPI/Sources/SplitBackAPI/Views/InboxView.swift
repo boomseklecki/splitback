@@ -16,6 +16,8 @@ struct InboxView: View {
     @State private var suggestions: [Suggestion] = []
     @State private var activity: [Components.Schemas.NotificationResponse] = []
     @State private var loaded = false
+    @State private var refreshing = false
+    @State private var lastPartners: Set<String> = []
     @State private var errorText: String?
     @State private var budgetPrefill: BudgetPrefill?
     @State private var linkConfirm: Suggestion?
@@ -47,6 +49,11 @@ struct InboxView: View {
                 }
             }
             .navigationTitle("Inbox")
+            .toolbar {
+                if refreshing {
+                    ToolbarItem(placement: .topBarTrailing) { ProgressView() }
+                }
+            }
             .navigationDestination(for: FriendRow.self) { FriendDetailView(friend: $0) }
             .navigationDestination(for: Goal.self) { GoalDetailView(goal: $0) }
             .sheet(item: $budgetPrefill) { p in
@@ -136,15 +143,52 @@ struct InboxView: View {
         .onTapGesture { markRead(n) }
     }
 
+    /// Progressive load: paint cached cards instantly, then stream in the activity feed, AI-derived cards, and
+    /// partner/friend nudges as their background work completes — instead of blocking the whole UI behind the
+    /// slow on-device AI pass. Each recompute reads the store fresh, so the stages converge regardless of order
+    /// and the current list stays visible during a refresh.
     private func reload() async {
         let service = env.suggestions(context)
+
+        // 1) Instant first paint from the warm cache (no network, no AI).
+        if let cached = try? service.current(partners: lastPartners) {
+            withAnimation { suggestions = cached }
+        }
+
+        refreshing = true
+        defer { refreshing = false }
+
+        // 2) Activity streams in independently — assigned the moment it's fetched, not gated behind the AI
+        //    pass or the suggestion pipeline.
+        let activityTask = Task {
+            let rows = await loadActivity()
+            withAnimation { activity = rows }
+            updateBadge()
+        }
+
+        // 3) AI opinions → categorize / recurring-split cards appear.
         try? service.learnTemplates()
         await service.refreshAI()
-        _ = try? await env.splitwise.syncNotifications()
-        try? await env.balances(context).refreshFriends()  // settle-up nudges read the cached Friend balances
-        suggestions = (try? await service.current()) ?? []
-        activity = (try? await env.notifications.list()) ?? []
+        if let refined = try? service.current(partners: lastPartners) {
+            withAnimation { suggestions = refined }
+        }
+
+        // 4) Friend balances + partner connections → settle-up / shared-budget nudges refresh.
+        try? await env.balances(context).refreshFriends()
+        lastPartners = await service.fetchPartners()
+        if let withNudges = try? service.current(partners: lastPartners) {
+            withAnimation { suggestions = withNudges }
+        }
+
+        _ = await activityTask.value  // keep the refreshing indicator until activity finishes too
         updateBadge()
+    }
+
+    /// Pull the latest activity feed (Splitwise sync + the generic notifications list); keeps the prior feed
+    /// on failure.
+    private func loadActivity() async -> [Components.Schemas.NotificationResponse] {
+        _ = try? await env.splitwise.syncNotifications()
+        return (try? await env.notifications.list()) ?? activity
     }
 
     private func accept(_ s: Suggestion) {

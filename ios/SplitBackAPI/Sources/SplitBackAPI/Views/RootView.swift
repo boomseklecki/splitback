@@ -148,6 +148,9 @@ private struct MainTabView: View {
             catch { errorMessageText = errorMessage(error) }
             await env.refreshInboxBadge(context)
             env.requestPushAuthorization()
+            // Warm the on-device AI category pass in the background so the Inbox's categorize cards are
+            // usually ready by the time the user opens the tab. Un-awaited → no launch delay.
+            Task(priority: .background) { await env.suggestions(context).refreshAI() }
         }
     }
 

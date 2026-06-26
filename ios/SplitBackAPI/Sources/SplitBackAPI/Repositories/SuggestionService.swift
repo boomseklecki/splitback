@@ -15,9 +15,10 @@ struct SuggestionService {
 
     // MARK: Read
 
-    /// The current suggestions: actionable cards from the cached store, plus partner/friend-balance nudges
-    /// fetched best-effort (offline just omits them).
-    func current() async throws -> [Suggestion] {
+    /// Suggestions computed **synchronously** from the cached store, given a known partner set. No network —
+    /// the caller supplies `partners` (so the Inbox can paint cached cards instantly, then recompute once the
+    /// accepted-connections fetch returns). Friend nudges read the cached `Friend` snapshot.
+    func current(partners: Set<String>) throws -> [Suggestion] {
         let transactions = try context.fetch(FetchDescriptor<Transaction>())
         let expenses = try context.fetch(FetchDescriptor<Expense>())
         let accounts = try context.fetch(FetchDescriptor<Account>())
@@ -34,8 +35,6 @@ struct SuggestionService {
             templates: templates, rules: rules, decisions: decisions, me: me,
             linkThreshold: LinkSensitivity.current().threshold)
 
-        let partners = Set(((try? await ConnectionRepository(client: client).list()) ?? [])
-            .filter { $0.status == "accepted" }.map(\.other_identifier))
         // Read the cached Friend balances (snapshot from the last /friends sync); names from the directory.
         let directory = (try? context.fetch(FetchDescriptor<User>())) ?? []
         let friendNets: [(identifier: String, name: String, net: Decimal)] =
@@ -46,6 +45,17 @@ struct SuggestionService {
             goals: goals, transactions: transactions, expenses: expenses, accounts: accounts, lookup: lookup,
             groupMembers: groupMembers, partners: partners, friendNets: friendNets, decisions: decisions, me: me)
         return result
+    }
+
+    /// The accepted partner connections (network, best-effort — offline yields an empty set).
+    func fetchPartners() async -> Set<String> {
+        Set(((try? await ConnectionRepository(client: client).list()) ?? [])
+            .filter { $0.status == "accepted" }.map(\.other_identifier))
+    }
+
+    /// Convenience one-shot: fetch partners then compute (used where streaming isn't needed, e.g. the badge).
+    func current() async throws -> [Suggestion] {
+        try current(partners: await fetchPartners())
     }
 
     // MARK: AI pass
