@@ -3,6 +3,7 @@
 .env.dev
 .env.prod
 .env.demo
+.env.relay
 .env.*.local
 
 # Local Claude Code settings (machine-local permissions)
