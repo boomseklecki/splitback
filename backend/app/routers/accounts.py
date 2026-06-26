@@ -14,6 +14,7 @@ from app.db import get_session
 from app.models import Account, AccountOverride, Transaction, TransactionItem, TransactionOverride, User
 from app.models.enums import ShareLevel, TransactionSource
 from app.schemas.account import ACCOUNT_KINDS, AccountCreate, AccountResponse, AccountUpdate
+from app.services import notify as notify_svc
 from app.schemas.transaction import (
     TransactionCreate,
     TransactionItemInput,
@@ -132,12 +133,17 @@ async def update_account(
     # share_level is a real account column the owner sets directly (not a per-user override).
     if "share_level" in fields:
         level = fields.pop("share_level")
+        was_private = account.share_level == ShareLevel.private
         try:
             account.share_level = ShareLevel(level)
         except ValueError:
             raise HTTPException(status_code=422, detail="share_level must be private/balances/full")
         await session.commit()
         await session.refresh(account)
+        if was_private and account.share_level != ShareLevel.private:
+            actor = await notify_svc.display_name(session, caller)
+            await notify_svc.notify(session, await audience(session, caller), "account_shared",
+                                    f"{actor} shared an account: {account.name}", actor=caller)
     if "display_name" in fields:
         # Empty/whitespace resets to Plaid's name.
         name = (fields["display_name"] or "").strip()

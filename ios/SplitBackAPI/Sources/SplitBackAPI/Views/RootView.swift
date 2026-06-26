@@ -140,6 +140,7 @@ private struct MainTabView: View {
             do { try await env.refreshAll(context) }
             catch { errorMessageText = errorMessage(error) }
             await env.refreshInboxBadge(context)
+            env.requestPushAuthorization()
         }
     }
 

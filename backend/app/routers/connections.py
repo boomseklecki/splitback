@@ -9,6 +9,7 @@ from app.db import get_session
 from app.models import Connection, User
 from app.models.enums import ConnectionStatus
 from app.schemas.connection import ConnectionCreate, ConnectionResponse
+from app.services import notify as notify_svc
 
 router = APIRouter(prefix="/connections", tags=["connections"])
 
@@ -91,6 +92,9 @@ async def create_connection(
     session.add(conn)
     await session.commit()
     await session.refresh(conn)
+    actor = await notify_svc.display_name(session, caller)
+    await notify_svc.notify(session, {other.identifier}, "connection_request",
+                            f"{actor} wants to connect", actor=caller)
     return _response(conn, caller, {other.identifier: other})
 
 
@@ -108,6 +112,9 @@ async def accept_connection(
         raise HTTPException(status_code=403, detail="Only the invited person can accept")
     conn.status = ConnectionStatus.accepted
     await session.commit()
+    actor = await notify_svc.display_name(session, caller or conn.addressee_identifier)
+    await notify_svc.notify(session, {conn.requester_identifier}, "connection_accepted",
+                            f"{actor} accepted your connection request", actor=caller)
     by_id = {u.identifier: u for u in await session.scalars(
         select(User).where(User.identifier.in_(
             [conn.requester_identifier, conn.addressee_identifier])))}

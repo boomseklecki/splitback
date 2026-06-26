@@ -9,6 +9,7 @@ from app.models.enums import (
     TransactionSource,
     UserSource,
 )
+from app.models.device_token import DeviceToken
 from app.models.expense import Expense
 from app.models.expense_item import ExpenseItem
 from app.models.expense_override import ExpenseOverride
@@ -37,6 +38,7 @@ __all__ = [
     "BackendType",
     "Connection",
     "ConnectionStatus",
+    "DeviceToken",
     "Expense",
     "ExpenseOverride",
     "Friend",

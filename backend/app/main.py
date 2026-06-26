@@ -13,6 +13,7 @@ from app.routers import (
     backups,
     balances,
     connections,
+    devices,
     expenses,
     goals,
     groups,
@@ -81,6 +82,7 @@ app.include_router(balances.router, dependencies=_protected)
 app.include_router(splitwise.router, dependencies=_protected)
 app.include_router(goals.router, dependencies=_protected)
 app.include_router(connections.router, dependencies=_protected)
+app.include_router(devices.router, dependencies=_protected)
 app.include_router(notifications.router, dependencies=_protected)
 app.include_router(preferences.router, dependencies=_protected)
 app.include_router(backups.router)  # each route self-gates with require_admin

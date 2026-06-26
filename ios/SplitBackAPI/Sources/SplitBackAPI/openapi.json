@@ -3725,6 +3725,84 @@
         }
       }
     },
+    "/devices": {
+      "post": {
+        "tags": [
+          "devices"
+        ],
+        "summary": "Register Device",
+        "description": "Registers (idempotently) the caller's APNs device token for push.",
+        "operationId": "register_device_devices_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceRegister"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "devices"
+        ],
+        "summary": "Unregister Device",
+        "description": "Removes the caller's device token (sign-out / push disabled).",
+        "operationId": "unregister_device_devices_delete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceRegister"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/notifications": {
       "get": {
         "tags": [
@@ -4602,6 +4680,24 @@
         },
         "type": "object",
         "title": "DemoAuthRequest"
+      },
+      "DeviceRegister": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "title": "Token"
+          },
+          "platform": {
+            "type": "string",
+            "title": "Platform",
+            "default": "ios"
+          }
+        },
+        "type": "object",
+        "required": [
+          "token"
+        ],
+        "title": "DeviceRegister"
       },
       "ExchangeRequest": {
         "properties": {

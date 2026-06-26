@@ -12,6 +12,7 @@ from app.db import get_session
 from app.models import User
 from app.models.goal import Goal
 from app.schemas.goal import GoalCreate, GoalResponse, GoalUpdate
+from app.services import notify as notify_svc
 
 router = APIRouter(tags=["goals"])
 
@@ -39,6 +40,10 @@ async def create_goal(
     session.add(goal)
     await session.commit()
     await session.refresh(goal)
+    if goal.shared:
+        actor = await notify_svc.display_name(session, caller)
+        await notify_svc.notify(session, await audience(session, caller), "goal_shared",
+                                f"{actor} shared a budget: {goal.name}", actor=caller)
     goal.shared_by = goal.shared_by_identifier = None
     return goal
 
@@ -92,10 +97,15 @@ async def update_goal(
     session: AsyncSession = Depends(get_session),
 ) -> Goal:
     goal = await _get_owned_or_404(session, goal_id, caller)
+    was_shared = goal.shared
     for field, value in body.model_dump(exclude_unset=True).items():
         setattr(goal, field, value)
     await session.commit()
     await session.refresh(goal)
+    if goal.shared and not was_shared:
+        actor = await notify_svc.display_name(session, caller)
+        await notify_svc.notify(session, await audience(session, caller), "goal_shared",
+                                f"{actor} shared a budget: {goal.name}", actor=caller)
     goal.shared_by = goal.shared_by_identifier = None
     return goal
 

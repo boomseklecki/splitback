@@ -58,6 +58,9 @@ targets:
         # (splitback.app/plaid/oauth, app-handled — resumes Plaid Link, no backend route).
         com.apple.developer.associated-domains:
           - applinks:splitback.app
+        # APNs push. Device builds also need the Push Notifications capability on the App ID +
+        # a provisioning profile with it enabled; "development" for dev/TestFlight sandbox APNs.
+        aps-environment: development
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.splitback.app

@@ -15,8 +15,10 @@ from app.config import settings
 from app.db import get_session
 from app.integrations.splitwise import client as sw_client
 from app.integrations.splitwise import writer as sw_writer
+from app.integrations.splitwise.mapper import SETTLEUP_CATEGORY
 from app.integrations.storage import minio_client
 from app.models import BackendType, Expense, ExpenseItem, ExpenseOverride, Group, GroupMember, Split
+from app.services import notify as notify_svc
 from app.schemas.expense import (
     ExpenseCreate,
     ExpenseOverrideUpdate,
@@ -197,6 +199,15 @@ async def create_expense(
         await _sync_to_splitwise(session, expense, group, "create", caller=caller)
     session.add(expense)
     await session.commit()
+    # Notify the other members of a local group (Splitwise groups get Splitwise's own notifications).
+    if group.backend_type == BackendType.self_hosted:
+        actor = await notify_svc.display_name(session, caller)
+        settle = body.category == SETTLEUP_CATEGORY
+        await notify_svc.notify(
+            session, await notify_svc.group_recipients(session, body.group_id),
+            "settle_up" if settle else "expense_added",
+            f"{actor} recorded a settle-up" if settle else f"{actor} added “{body.description}”",
+            actor=caller)
     return await _load_detail(session, expense.id, caller)
 
 
@@ -303,6 +314,11 @@ async def update_expense(
             await _sync_to_splitwise(session, expense, target_group, "create", caller=caller)
 
     await session.commit()
+    if target_group.backend_type == BackendType.self_hosted:
+        actor = await notify_svc.display_name(session, caller)
+        await notify_svc.notify(
+            session, await notify_svc.group_recipients(session, expense.group_id),
+            "expense_edited", f"{actor} edited “{expense.description}”", actor=caller)
     return await _load_detail(session, expense_id, caller)
 
 
@@ -349,15 +365,23 @@ async def delete_expense(
     if expense is None:
         raise HTTPException(status_code=404, detail="Expense not found")
     await assert_group_member(session, expense.group_id, caller)
+    group = await session.get(Group, expense.group_id)
+    # Capture before the row is gone (local groups only — Splitwise has its own notifications).
+    local_recipients = (await notify_svc.group_recipients(session, expense.group_id)
+                        if group is not None and group.backend_type == BackendType.self_hosted else set())
+    description = expense.description
 
     if expense.splitwise_expense_id is not None:
-        group = await session.get(Group, expense.group_id)
         do_propagate = propagate if propagate is not None else (group.superseded_at is None)
         if do_propagate and group.backend_type == BackendType.splitwise:
             await _sync_to_splitwise(
                 session, expense, group, "delete", sw_id=expense.splitwise_expense_id, caller=caller
             )
     await _hard_delete(session, expense)
+    if local_recipients:
+        actor = await notify_svc.display_name(session, caller)
+        await notify_svc.notify(session, local_recipients, "expense_deleted",
+                                f"{actor} deleted “{description}”", actor=caller)
 
 
 @router.patch("/expenses/{expense_id}/override", response_model=ExpenseResponse)

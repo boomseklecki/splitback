@@ -18,6 +18,9 @@ struct SplitBackApp: App {
     /// App-wide services (API client, repositories, token state), injected into the environment.
     @State private var environment = AppEnvironment()
 
+    /// Bridges APNs registration callbacks into the app (see `PushAppDelegate`).
+    @UIApplicationDelegateAdaptor(PushAppDelegate.self) private var pushDelegate
+
     var body: some Scene {
         WindowGroup {
             RootView()

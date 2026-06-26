@@ -1,6 +1,8 @@
 import Foundation
 import SwiftData
 import Observation
+import UIKit
+import UserNotifications
 
 /// Shared app-wide services: one configured API `Client` plus repository/service factories and the
 /// bearer-token state. Created by the app shell and injected into the SwiftUI environment.
@@ -155,8 +157,11 @@ public final class AppEnvironment {
         await refreshCurrentUser(context)
     }
 
-    /// Clears the session token and profile (sign out).
+    /// Clears the session token and profile (sign out). Also unregisters this device's push token.
     func signOut() {
+        if let token = deviceToken {
+            Task { try? await devices.unregister(token: token) }
+        }
         setToken(nil)
         currentUser = nil
     }
@@ -217,6 +222,29 @@ public final class AppEnvironment {
     var invites: InviteRepository { .init(client: client) }
     var connections: ConnectionRepository { .init(client: client) }
     var notifications: NotificationRepository { .init(client: client) }
+    var devices: DeviceRepository { .init(client: client) }
+
+    /// The APNs token last handed to us, so we can unregister it on sign-out.
+    @ObservationIgnored private var deviceToken: String?
+
+    /// Requests push authorization and registers for remote notifications (call after sign-in). When the
+    /// token arrives (via `PushTokenStore`) it's forwarded to `POST /devices`.
+    func requestPushAuthorization() {
+        PushTokenStore.shared.onToken = { [weak self] token in self?.forwardDeviceToken(token) }
+        Task {
+            _ = try? await UNUserNotificationCenter.current().requestAuthorization(
+                options: [.alert, .badge, .sound])
+            UIApplication.shared.registerForRemoteNotifications()
+            if let token = PushTokenStore.shared.token { forwardDeviceToken(token) }  // already registered
+        }
+    }
+
+    /// Sends the device token to the backend once we have both a token and a signed-in user.
+    private func forwardDeviceToken(_ token: String) {
+        deviceToken = token
+        guard currentUser != nil else { return }
+        Task { try? await devices.register(token: token) }
+    }
 
     /// Sets the inbox badge directly (the Inbox view computes it from what it already loaded).
     func setInboxBadge(_ count: Int) { inboxBadge = count }
