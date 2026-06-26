@@ -2,32 +2,29 @@ import Foundation
 import SwiftData
 
 /// Pull-to-refresh staleness thresholds (minutes), loaded from server settings. A live provider sync fires
-/// only when the in-scope data is staler than the level's threshold; 0 = always sync.
+/// only when the in-scope data is staler than that provider's threshold; 0 = always sync. Split by provider
+/// (not by screen) because Plaid calls cost money while Splitwise is free; the *scope* of a pull comes from
+/// the freshness signal each screen passes, not from the threshold.
 public struct RefreshThresholds {
-    var list: Int
-    var detail: Int
-    var leaf: Int
-    var item: Int
+    var plaid: Int
+    var splitwise: Int
 
-    public init(list: Int = 30, detail: Int = 15, leaf: Int = 0, item: Int = 5) {
-        self.list = list; self.detail = detail; self.leaf = leaf; self.item = item
+    public init(plaid: Int = 60, splitwise: Int = 15) {
+        self.plaid = plaid; self.splitwise = splitwise
     }
 
-    func minutes(for level: AppEnvironment.RefreshLevel) -> Int {
-        switch level {
-        case .list: return list
-        case .detail: return detail
-        case .leaf: return leaf
-        case .item: return item
+    func minutes(for source: AppEnvironment.RefreshSource) -> Int {
+        switch source {
+        case .bank: return plaid
+        case .splitwise: return splitwise
+        case .none: return 0  // unused — a .none source never live-syncs
         }
     }
 }
 
 @MainActor
 extension AppEnvironment {
-    /// How tight the freshness threshold is, by screen scope.
-    public enum RefreshLevel { case list, detail, leaf, item }
-    /// The external source a scope can live-sync from.
+    /// The external source a scope can live-sync from (also selects which freshness threshold applies).
     public enum RefreshSource { case bank, splitwise, none }
     /// Which slice of Splitwise a live sync pulls. Drill-in scopes hit the narrow endpoints (one group /
     /// friend / expense) so a detail pull doesn't re-fetch the whole account; `.all` is the list-level
@@ -35,11 +32,10 @@ extension AppEnvironment {
     public enum SplitwiseScope: Sendable { case all, group(String), friend(String), expense(String) }
 
     /// The one pull-to-refresh path. Decides — from the in-scope `freshness` (an entity's `updatedAt`, which
-    /// equals its last sync time) vs the level's server-set threshold — whether to do a **live** provider sync
-    /// then reconcile, or just **reconcile** the backend cache. Drives the status banner. `reconcile` is the
-    /// screen's local re-fetch (used in the reconcile-only path and after a Splitwise live sync).
+    /// equals its last sync time) vs the provider's server-set threshold — whether to do a **live** provider
+    /// sync then reconcile, or just **reconcile** the backend cache. Drives the status banner. `reconcile` is
+    /// the screen's local re-fetch (used in the reconcile-only path and after a Splitwise live sync).
     func smartRefresh(
-        level: RefreshLevel,
         source rawSource: RefreshSource,
         freshness: Date?,
         plaidItemId: UUID? = nil,
@@ -49,7 +45,7 @@ extension AppEnvironment {
     ) async {
         // A Splitwise scope falls back to reconcile-only when Splitwise isn't connected.
         let source: RefreshSource = (rawSource == .splitwise && !splitwiseConnected) ? .none : rawSource
-        let threshold = refreshThresholds.minutes(for: level)
+        let threshold = refreshThresholds.minutes(for: source)
         let stale = freshness == nil || threshold <= 0
             || Date().timeIntervalSince(freshness!) >= Double(threshold) * 60
         do {

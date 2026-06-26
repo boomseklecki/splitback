@@ -12,10 +12,8 @@ class ServerSettingsResponse(BaseModel):
     backup_interval_hours: int
     backups_retention_days: int
     backups_retention_min_keep: int
-    refresh_list_stale_minutes: int
-    refresh_detail_stale_minutes: int
-    refresh_leaf_stale_minutes: int
-    refresh_item_stale_minutes: int
+    refresh_plaid_stale_minutes: int
+    refresh_splitwise_stale_minutes: int
     notifications_retention_count: int
 
 
@@ -30,8 +28,6 @@ class ServerSettingsUpdate(BaseModel):
     backup_interval_hours: int | None = None
     backups_retention_days: int | None = None
     backups_retention_min_keep: int | None = None
-    refresh_list_stale_minutes: int | None = None
-    refresh_detail_stale_minutes: int | None = None
-    refresh_leaf_stale_minutes: int | None = None
-    refresh_item_stale_minutes: int | None = None
+    refresh_plaid_stale_minutes: int | None = None
+    refresh_splitwise_stale_minutes: int | None = None
     notifications_retention_count: int | None = None

@@ -180,7 +180,7 @@ struct TransactionDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .refreshable {  // leaf: always live-sync this transaction's bank (if any), then reconcile
             let pid = accounts.first { $0.id == transaction.accountId }?.plaidItemId
-            await env.smartRefresh(level: .leaf, source: pid != nil ? .bank : .none,
+            await env.smartRefresh(source: pid != nil ? .bank : .none,
                                    freshness: transaction.updatedAt, plaidItemId: pid, context: context) {
                 try await env.accounts(context).refreshTransactions(accountId: transaction.accountId)
             }

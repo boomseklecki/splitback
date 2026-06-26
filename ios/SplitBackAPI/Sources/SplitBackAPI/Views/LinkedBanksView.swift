@@ -117,7 +117,7 @@ struct LinkedBanksView: View {
     /// else reconciles; the top banner shows which happened.
     private func refresh(item: Components.Schemas.PlaidItemResponse, linked: [Account]) {
         Task {
-            await env.smartRefresh(level: .item, source: .bank, freshness: linked.map(\.updatedAt).max(),
+            await env.smartRefresh(source: .bank, freshness: linked.map(\.updatedAt).max(),
                                    plaidItemId: UUID(uuidString: item.id), context: context) {
                 try await env.accounts(context).refreshAccounts()
             }
@@ -127,7 +127,7 @@ struct LinkedBanksView: View {
     /// Per-account refresh — syncs that account's bank (gated by the item threshold), else reconciles.
     private func refresh(account: Account) {
         Task {
-            await env.smartRefresh(level: .item, source: account.plaidItemId != nil ? .bank : .none,
+            await env.smartRefresh(source: account.plaidItemId != nil ? .bank : .none,
                                    freshness: account.updatedAt, plaidItemId: account.plaidItemId,
                                    context: context) {
                 try await env.accounts(context).refreshAccounts()

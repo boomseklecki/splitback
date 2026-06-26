@@ -91,7 +91,7 @@ struct GoalsView: View {
             .sheet(isPresented: $showingReorder) { CustomizeGoalsView() }
             .sheet(isPresented: $showingNew) { GoalEditView() }
             .refreshable {
-                await env.smartRefresh(level: .list, source: .bank,
+                await env.smartRefresh(source: .bank,
                                        freshness: accounts.map(\.updatedAt).max(),
                                        context: context, reconcile: reconcileGoals)
             }

@@ -266,8 +266,7 @@ struct ExpenseDetailView: View {
         .navigationTitle(expense.details)
         .navigationBarTitleDisplayMode(.inline)
         .refreshable {  // leaf: always live-sync this expense's Splitwise group (if any), then reconcile
-            await env.smartRefresh(level: .leaf,
-                                   source: group?.backendType == .splitwise ? .splitwise : .none,
+            await env.smartRefresh(source: group?.backendType == .splitwise ? .splitwise : .none,
                                    freshness: expense.updatedAt,
                                    splitwiseScope: expense.splitwiseExpenseId.map { .expense($0) } ?? .all,
                                    context: context) {

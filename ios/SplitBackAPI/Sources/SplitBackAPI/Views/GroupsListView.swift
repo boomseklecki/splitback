@@ -233,7 +233,7 @@ struct GroupsListView: View {
                 }
             }
             .refreshable {
-                await env.smartRefresh(level: .list, source: .splitwise,
+                await env.smartRefresh(source: .splitwise,
                                        freshness: groups.map(\.updatedAt).max(), context: context) {
                     try await env.refreshAll(context)
                 }

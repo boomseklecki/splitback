@@ -5378,21 +5378,13 @@
             "type": "integer",
             "title": "Backups Retention Min Keep"
           },
-          "refresh_list_stale_minutes": {
+          "refresh_plaid_stale_minutes": {
             "type": "integer",
-            "title": "Refresh List Stale Minutes"
+            "title": "Refresh Plaid Stale Minutes"
           },
-          "refresh_detail_stale_minutes": {
+          "refresh_splitwise_stale_minutes": {
             "type": "integer",
-            "title": "Refresh Detail Stale Minutes"
-          },
-          "refresh_leaf_stale_minutes": {
-            "type": "integer",
-            "title": "Refresh Leaf Stale Minutes"
-          },
-          "refresh_item_stale_minutes": {
-            "type": "integer",
-            "title": "Refresh Item Stale Minutes"
+            "title": "Refresh Splitwise Stale Minutes"
           },
           "notifications_retention_count": {
             "type": "integer",
@@ -5410,10 +5402,8 @@
           "backup_interval_hours",
           "backups_retention_days",
           "backups_retention_min_keep",
-          "refresh_list_stale_minutes",
-          "refresh_detail_stale_minutes",
-          "refresh_leaf_stale_minutes",
-          "refresh_item_stale_minutes",
+          "refresh_plaid_stale_minutes",
+          "refresh_splitwise_stale_minutes",
           "notifications_retention_count"
         ],
         "title": "ServerSettingsResponse",
@@ -5457,21 +5447,13 @@
             "type": "integer",
             "title": "Backups Retention Min Keep"
           },
-          "refresh_list_stale_minutes": {
+          "refresh_plaid_stale_minutes": {
             "type": "integer",
-            "title": "Refresh List Stale Minutes"
+            "title": "Refresh Plaid Stale Minutes"
           },
-          "refresh_detail_stale_minutes": {
+          "refresh_splitwise_stale_minutes": {
             "type": "integer",
-            "title": "Refresh Detail Stale Minutes"
-          },
-          "refresh_leaf_stale_minutes": {
-            "type": "integer",
-            "title": "Refresh Leaf Stale Minutes"
-          },
-          "refresh_item_stale_minutes": {
-            "type": "integer",
-            "title": "Refresh Item Stale Minutes"
+            "title": "Refresh Splitwise Stale Minutes"
           },
           "notifications_retention_count": {
             "type": "integer",

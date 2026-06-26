@@ -68,8 +68,7 @@ public final class AppEnvironment {
     func loadRefreshThresholds() async {
         guard let s = try? await serverSettings.get() else { return }
         refreshThresholds = RefreshThresholds(
-            list: s.refresh_list_stale_minutes, detail: s.refresh_detail_stale_minutes,
-            leaf: s.refresh_leaf_stale_minutes, item: s.refresh_item_stale_minutes)
+            plaid: s.refresh_plaid_stale_minutes, splitwise: s.refresh_splitwise_stale_minutes)
     }
 
     public init() {

@@ -187,8 +187,7 @@ struct GroupDetailView: View {
         } message: { Text(scan.infoMessage ?? "") }
         .errorAlert(Binding(get: { scan.errorText }, set: { scan.errorText = $0 }))
         .refreshable {
-            await env.smartRefresh(level: .detail,
-                                   source: group.backendType == .splitwise ? .splitwise : .none,
+            await env.smartRefresh(source: group.backendType == .splitwise ? .splitwise : .none,
                                    freshness: group.updatedAt,
                                    splitwiseScope: group.splitwiseGroupId.map { .group($0) } ?? .all,
                                    context: context, reconcile: reconcileGroup)

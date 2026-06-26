@@ -186,7 +186,7 @@ struct AccountsView: View {
     /// Pull-to-refresh / on-appear: refresh cached accounts from the backend, then recompute the
     /// last-transaction dates. The Sync button does the heavier Plaid round-trip.
     private func reload() async {
-        await env.smartRefresh(level: .list, source: .bank,
+        await env.smartRefresh(source: .bank,
                                freshness: accounts.map(\.updatedAt).max(), context: context) {
             try await env.accounts(context).refreshAccounts()
         }

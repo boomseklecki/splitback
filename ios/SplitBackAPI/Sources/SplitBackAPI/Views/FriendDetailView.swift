@@ -111,7 +111,7 @@ struct FriendDetailView: View {
         .refreshable {
             let gids = Set(friend.groups.compactMap(\.groupId))
             let freshness = allGroups.filter { gids.contains($0.id) }.map(\.updatedAt).max()
-            await env.smartRefresh(level: .detail, source: .splitwise, freshness: freshness,
+            await env.smartRefresh(source: .splitwise, freshness: freshness,
                                    splitwiseScope: .friend(friend.id),
                                    context: context, reconcile: reconcileFriend)
         }

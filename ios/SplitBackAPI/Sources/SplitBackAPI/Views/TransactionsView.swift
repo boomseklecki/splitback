@@ -120,14 +120,14 @@ struct TransactionsView: View {
         }
         .refreshable {
             if let account {  // one account → detail scope, sync just its bank
-                await env.smartRefresh(level: .detail, source: account.plaidItemId != nil ? .bank : .none,
+                await env.smartRefresh(source: account.plaidItemId != nil ? .bank : .none,
                                        freshness: account.updatedAt, plaidItemId: account.plaidItemId,
                                        context: context) {
                     try await env.accounts(context).refreshTransactions(accountId: account.id)
                 }
             } else {  // all transactions → list scope, all banks (freshness = last bank sync)
                 let freshness = (try? context.fetch(FetchDescriptor<Account>()))?.map(\.updatedAt).max()
-                await env.smartRefresh(level: .list, source: .bank, freshness: freshness, context: context) {
+                await env.smartRefresh(source: .bank, freshness: freshness, context: context) {
                     try await env.accounts(context).refreshTransactions(accountId: nil)
                 }
             }

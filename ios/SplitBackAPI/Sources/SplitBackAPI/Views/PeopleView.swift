@@ -53,7 +53,7 @@ struct PeopleView: View {
         }
         .navigationTitle("People")
         .refreshable {
-            await env.smartRefresh(level: .list, source: .splitwise,
+            await env.smartRefresh(source: .splitwise,
                                    freshness: users.map(\.updatedAt).max(), context: context) {
                 try await env.users(context).refresh()
             }
