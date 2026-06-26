@@ -26,6 +26,9 @@ services:
     environment:
       # Pin the DB target regardless of the .env DATABASE_URL placeholder (which still says @db).
       DATABASE_URL: postgresql+asyncpg://splitback:splitback@db:5432/splitback
+      # Push goes through the relay (PUSH_RELAY_API_KEY comes from .env). Point at the VPS host instead
+      # (https://push.splitback.app) if you don't run the relay container locally.
+      PUSH_RELAY_URL: http://relay:8000
     depends_on:
       db:
         condition: service_healthy
@@ -51,6 +54,22 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  # --- Push relay (standalone) ---
+  # Holds the official APNs .p8 and forwards push for self-hosted instances, so the open-source backend
+  # carries no Apple creds. Self-hosters register at push.splitback.app for an instance key and set it as
+  # PUSH_RELAY_API_KEY on their api. Separable: `docker compose up relay` alone, or move it to a VPS and
+  # point each api's PUSH_RELAY_URL at https://push.splitback.app. Reads .env.relay (APNS_* + ADMIN_TOKEN).
+  relay:
+    build: ./relay
+    env_file:
+      - .env.relay
+    environment:
+      DB_PATH: /data/relay.db
+    volumes:
+      - relay_data:/data
+    ports:
+      - "8003:8000"     # LAN: uplink.local:8003 ; public: https://push.splitback.app
 
   # --- Dev sandbox stack (profile: dev) ---
   # Optional side-by-side sandbox: PLAID_ENV=sandbox + synthetic seed data, so you can develop without
@@ -153,6 +172,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://splitback:splitback@db-demo:5432/splitback
       MINIO_BUCKET: receipts-demo
       BACKUPS_BUCKET: backups-demo
+      PUSH_RELAY_URL: http://relay:8000   # demo push completes the app (key in .env.demo)
     depends_on:
       db-demo:
         condition: service_healthy
@@ -167,6 +187,7 @@ services:
   #   splitback.app       -> http://api:8000        (the default/real instance)
   #   dev.splitback.app   -> http://api-dev:8000    (--profile dev sandbox)
   #   demo.splitback.app  -> http://api-demo:8000   (--profile demo)
+  #   push.splitback.app  -> http://relay:8000      (the push relay: registration form + /push)
   # The connector is environment-agnostic; the dashboard routes decide what's public. Reads
   # CLOUDFLARE_TUNNEL_TOKEN via Compose substitution from the auto-loaded .env. Start with `--profile tunnel`.
   cloudflared:
@@ -186,3 +207,4 @@ volumes:
     name: ${DEV_DB_VOLUME:-db_data_dev}
   minio_data:
   db_data_demo:
+  relay_data:

@@ -1,4 +1,6 @@
-"""Fire-and-forget APNs dispatch for app notifications. No-op unless APNs is configured."""
+"""Fire-and-forget push dispatch via the standalone relay (push.splitback.app). The backend holds no Apple
+creds — it POSTs the device tokens + alert to the relay, which forwards to APNs and reports dead tokens.
+No-op unless a relay URL + key are configured."""
 import asyncio
 import logging
 
@@ -7,7 +9,6 @@ from sqlalchemy import delete, select
 
 from app.config import settings
 from app.db import async_session
-from app.integrations.apns import sender
 from app.models import DeviceToken
 
 log = logging.getLogger(__name__)
@@ -15,7 +16,7 @@ log = logging.getLogger(__name__)
 
 def enqueue(owners: set[str], title: str, body: str) -> None:
     """Schedules a best-effort push to the owners' devices, without blocking the request."""
-    if not settings.apns_configured or not owners:
+    if not settings.push_configured or not owners:
         return
     asyncio.create_task(_send(set(owners), title, body))
 
@@ -23,15 +24,21 @@ def enqueue(owners: set[str], title: str, body: str) -> None:
 async def _send(owners: set[str], title: str, body: str) -> None:
     try:
         async with async_session() as session:
-            tokens = list(await session.scalars(
-                select(DeviceToken).where(DeviceToken.user_identifier.in_(owners))))
+            tokens = [dt.token for dt in await session.scalars(
+                select(DeviceToken).where(DeviceToken.user_identifier.in_(owners)))]
             if not tokens:
                 return
             dead: list[str] = []
-            async with httpx.AsyncClient(http2=True, timeout=10) as client:
-                for dt in tokens:
-                    if await sender.send(client, dt.token, title, body):
-                        dead.append(dt.token)
+            try:
+                async with httpx.AsyncClient(timeout=10) as client:
+                    resp = await client.post(
+                        f"{settings.push_relay_url.rstrip('/')}/push",
+                        headers={"Authorization": f"Bearer {settings.push_relay_api_key}"},
+                        json={"tokens": tokens, "title": title, "body": body})
+                if resp.status_code == 200:
+                    dead = resp.json().get("dead", [])
+            except Exception:
+                log.warning("relay push failed", exc_info=True)
             if dead:
                 await session.execute(delete(DeviceToken).where(DeviceToken.token.in_(dead)))
                 await session.commit()

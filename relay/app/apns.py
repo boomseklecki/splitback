@@ -1,4 +1,4 @@
-"""APNs token-based push (HTTP/2 + ES256 provider JWT). No-op unless `settings.apns_configured`."""
+"""APNs token-based push (HTTP/2 + ES256 provider JWT). The relay owns the official .p8 credential."""
 import base64
 import json
 import logging
@@ -11,7 +11,6 @@ from app.config import settings
 
 log = logging.getLogger(__name__)
 
-# Provider JWT, cached (~50 min; Apple rejects tokens older than 1h).
 _token_cache: tuple[str, float] | None = None
 
 
@@ -34,8 +33,6 @@ def _host() -> str:
 
 async def send(client: httpx.AsyncClient, token: str, title: str, body: str) -> bool:
     """Sends one alert push; returns True if the device token is dead (caller should drop it)."""
-    if not settings.apns_configured:
-        return False
     payload = {"aps": {"alert": {"title": title, "body": body}, "sound": "default"}}
     try:
         resp = await client.post(
@@ -47,7 +44,7 @@ async def send(client: httpx.AsyncClient, token: str, title: str, body: str) -> 
     except Exception:
         log.warning("apns send failed", exc_info=True)
         return False
-    if resp.status_code == 410:  # Unregistered
+    if resp.status_code == 410:
         return True
     if resp.status_code == 400:
         try:

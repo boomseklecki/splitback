@@ -85,17 +85,15 @@ class Settings(BaseSettings):
     # FALSE on dev/prod (the endpoint 404s when off).
     demo_mode: bool = False
 
-    # APNs push (server-side only; all empty = push disabled, like Plaid/Splitwise). Token-based auth: a .p8
-    # auth key from the Apple Developer account, base64-encoded into `apns_auth_key`.
-    apns_key_id: str = ""        # the .p8 key's Key ID
-    apns_team_id: str = ""       # Apple Developer Team ID
-    apns_bundle_id: str = ""     # app bundle id → APNs topic (e.g. com.splitback.app)
-    apns_auth_key: str = ""      # base64-encoded .p8 (PEM) private key
-    apns_env: str = "production"  # "production" or "sandbox" (dev builds)
+    # Push: the backend never touches APNs directly — keeping the open-source server free of Apple creds.
+    # It POSTs to a standalone push relay (push.splitback.app) with an instance key issued by the relay's
+    # self-serve registration. Empty = push disabled.
+    push_relay_url: str = ""       # e.g. https://push.splitback.app
+    push_relay_api_key: str = ""
 
     @property
-    def apns_configured(self) -> bool:
-        return all([self.apns_key_id, self.apns_team_id, self.apns_bundle_id, self.apns_auth_key])
+    def push_configured(self) -> bool:
+        return bool(self.push_relay_url and self.push_relay_api_key)
 
     @property
     def libpq_dsn(self) -> str:

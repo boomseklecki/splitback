@@ -1,15 +1,8 @@
-"""Device-token registration (idempotent + owner-scoped) and the APNs provider-JWT builder."""
-import base64
-
-import jwt as pyjwt
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import ec
+"""Device-token registration (idempotent + owner-scoped). The APNs sender now lives in the relay service."""
 from fastapi import HTTPException
 from sqlalchemy import delete, select
 
-from app.config import settings
 from app.db import async_session
-from app.integrations.apns import sender
 from app.models import DeviceToken
 from app.routers.devices import register_device, unregister_device
 from app.schemas.device import DeviceRegister
@@ -59,22 +52,6 @@ async def test_register_requires_auth():
             raise AssertionError("expected 401")
         except HTTPException as e:
             assert e.status_code == 401
-
-
-async def test_apns_provider_token_builds():
-    key = ec.generate_private_key(ec.SECP256R1())
-    pem = key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
-                            serialization.NoEncryption())
-    saved = (settings.apns_key_id, settings.apns_team_id, settings.apns_auth_key)
-    sender._token_cache = None
-    settings.apns_key_id, settings.apns_team_id = "KID123", "TEAM123"
-    settings.apns_auth_key = base64.b64encode(pem).decode()
-    try:
-        header = pyjwt.get_unverified_header(sender._provider_token())
-        assert header["alg"] == "ES256" and header["kid"] == "KID123"
-    finally:
-        settings.apns_key_id, settings.apns_team_id, settings.apns_auth_key = saved
-        sender._token_cache = None
 
 
 if __name__ == "__main__":
