@@ -193,6 +193,9 @@ public final class AppEnvironment {
     func receipts(_ context: ModelContext) -> ReceiptRepository { .init(client: client, context: context) }
     func accounts(_ context: ModelContext) -> AccountRepository { .init(client: client, context: context) }
     func goals(_ context: ModelContext) -> GoalRepository { .init(client: client, context: context) }
+    func suggestions(_ context: ModelContext) -> SuggestionService {
+        .init(client: client, context: context, me: currentUser?.identifier)
+    }
     func categoryMaps(_ context: ModelContext) -> CategoryMapRepository { .init(client: client, context: context) }
     func plaid(_ context: ModelContext) -> PlaidRepository { .init(client: client, context: context) }
     func plaidSlow(_ context: ModelContext) -> PlaidRepository { .init(client: slowClient, context: context) }  // exchange auto-syncs the new bank, which can backfill many months

@@ -51,6 +51,8 @@ struct GroupsListView: View {
     /// Latest-expense summary per group (date for activity sort, settle-up flag for hiding). Loaded on
     /// demand with a `fetchLimit: 1` query per group rather than materializing every expense.
     @State private var lastExpense: [UUID: (date: Date, isSettleUp: Bool)] = [:]
+    /// Review-queue count for the entry badge (heuristic + already-cached AI suggestions).
+    @State private var suggestionCount = 0
 
     private var sortMode: SortMode { SortMode(rawValue: sortModeRaw) ?? .activity }
     private var viewMode: ViewMode { ViewMode(rawValue: viewModeRaw) ?? .groups }
@@ -131,6 +133,15 @@ struct GroupsListView: View {
     var body: some View {
         NavigationStack {
             List {
+                if suggestionCount > 0 {
+                    Section {
+                        NavigationLink {
+                            ReviewQueueView()
+                        } label: {
+                            Label("Review", systemImage: "sparkles").badge(suggestionCount)
+                        }
+                    }
+                }
                 if viewMode == .friends {
                     Section("Friends") {
                         ForEach(friendRows) { row in
@@ -197,6 +208,7 @@ struct GroupsListView: View {
             .navigationTitle("Splits")
             .navigationDestination(for: ExpenseGroup.self) { GroupDetailView(group: $0) }
             .navigationDestination(for: FriendRow.self) { FriendDetailView(friend: $0) }
+            .onAppear { suggestionCount = (try? env.suggestions(context).current().count) ?? 0 }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Menu {

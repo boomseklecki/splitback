@@ -29,11 +29,21 @@ struct ExpenseDetailView: View {
     @State private var extractAvailable = false
     @State private var extracting = false
     @State private var showingMatcher = false
+    @State private var rememberedSplit = false
 
     private var hasReceipt: Bool { expense.receipts.first != nil || expense.splitwiseReceiptURL != nil }
 
     private var meIdentifier: String? { env.currentUser?.identifier }
     private var isSettleUp: Bool { expense.category == SettleUp.category }
+    /// A real shared, transaction-linked expense whose split is worth remembering for future charges.
+    private var isSharedSplit: Bool {
+        expense.transactionId != nil && expense.splits.filter { $0.owedShare > 0 }.count >= 2
+    }
+
+    private func rememberSplit() {
+        do { try env.suggestions(context).rememberSplit(expense); rememberedSplit = true }
+        catch { errorText = errorMessage(error) }
+    }
 
     // Category display is canonical (so imported Splitwise labels like "Dining out" read "Dining"), with
     // provenance — matching the transaction detail.
@@ -163,6 +173,13 @@ struct ExpenseDetailView: View {
                         }
                         Button("Unlink Transaction", systemImage: "link.badge.plus", role: .destructive) {
                             link(nil)
+                        }
+                        if isSharedSplit {
+                            Button(rememberedSplit ? "Split Remembered" : "Remember This Split",
+                                   systemImage: rememberedSplit ? "checkmark.circle" : "arrow.triangle.2.circlepath") {
+                                rememberSplit()
+                            }
+                            .disabled(rememberedSplit)
                         }
                     } else {
                         Button {

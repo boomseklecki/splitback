@@ -29,6 +29,10 @@ final class Transaction {
     /// Plaid category is vague ("Other"/uncategorized). Client-only and derived — not synced, and the
     /// transaction upsert never clears it.
     var refinedCategory: String?
+    /// The on-device AI's *opinion* of this transaction's category, kept even when a higher-precedence
+    /// layer wins — distinct from `refinedCategory` (a fallback used in resolution). Powers the review
+    /// queue's "recategorize" suggestions. Client-only, derived, never synced; survives the upsert.
+    var aiSuggestedCategory: String?
     /// Line items breaking this transaction's spend across categories (receipt itemization). Empty for a
     /// flat transaction; when present, analytics attribute each item to its own category.
     @Relationship(deleteRule: .cascade, inverse: \TransactionItem.transaction)
