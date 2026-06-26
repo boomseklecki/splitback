@@ -90,7 +90,11 @@ struct GoalsView: View {
             }
             .sheet(isPresented: $showingReorder) { CustomizeGoalsView() }
             .sheet(isPresented: $showingNew) { GoalEditView() }
-            .refreshable { await reload() }
+            .refreshable {
+                await env.smartRefresh(level: .list, source: .bank,
+                                       freshness: accounts.map(\.updatedAt).max(),
+                                       context: context, reconcile: reconcileGoals)
+            }
             .task { await reload() }
             .errorAlert($errorText)
         }
@@ -173,16 +177,16 @@ struct GoalsView: View {
         }
     }
 
-    private func reload() async {
-        do {
-            try await env.accounts(context).refreshAccounts()
-            // Pull a generous window so the donut/budgets and Trends charts have history.
-            let since = Calendar.current.date(byAdding: .month, value: -6, to: Date())
-            try await env.accounts(context).refreshTransactions(since: since, limit: 500)
-            try await env.goals(context).refresh()
-        } catch {
-            errorText = errorMessage(error)
-        }
+    private func reload() async {  // on appear: reconcile only
+        do { try await reconcileGoals() } catch { errorText = errorMessage(error) }
+    }
+
+    private func reconcileGoals() async throws {
+        try await env.accounts(context).refreshAccounts()
+        // Pull a generous window so the donut/budgets and Trends charts have history.
+        let since = Calendar.current.date(byAdding: .month, value: -6, to: Date())
+        try await env.accounts(context).refreshTransactions(since: since, limit: 500)
+        try await env.goals(context).refresh()
     }
 }
 

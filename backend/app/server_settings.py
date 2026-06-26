@@ -26,6 +26,12 @@ REGISTRY: dict[str, tuple[type, object]] = {
     "backup_interval_hours": (int, 0),
     "backups_retention_days": (int, 30),
     "backups_retention_min_keep": (int, 7),
+    # Smart pull-to-refresh: a live provider sync fires only when the in-scope data is staler than these
+    # (minutes); otherwise it just reconciles. Threshold tightens as the scope narrows.
+    "refresh_list_stale_minutes": (int, 30),    # Accounts/Groups/People lists
+    "refresh_detail_stale_minutes": (int, 15),  # an account / group / friendship
+    "refresh_leaf_stale_minutes": (int, 0),     # a transaction / expense (0 = always sync)
+    "refresh_item_stale_minutes": (int, 5),     # Settings per-bank/per-account refresh icons
 }
 
 

@@ -183,22 +183,24 @@ struct GroupDetailView: View {
             Button("OK") {}
         } message: { Text(scan.infoMessage ?? "") }
         .errorAlert(Binding(get: { scan.errorText }, set: { scan.errorText = $0 }))
-        .refreshable { await reload() }
+        .refreshable {
+            await env.smartRefresh(level: .detail,
+                                   source: group.backendType == .splitwise ? .splitwise : .none,
+                                   freshness: group.updatedAt, context: context, reconcile: reconcileGroup)
+        }
         .task { await reload() }
         .errorAlert($errorText)
     }
 
+    /// On-appear reconcile (local only — the pull-to-refresh path decides whether to live-sync first).
     private func reload() async {
-        if env.splitwiseConnected, group.backendType == .splitwise {
-            do { try await env.splitwise.syncExpenses() } catch { /* best-effort */ }
-        }
-        do {
-            try await env.expenses(context).reconcileAll(groupId: group.id)
-            try await env.groups(context).refreshMembers(groupId: group.id)
-            try await env.balances(context).refreshGroup(group.id)
-        } catch {
-            errorText = errorMessage(error)
-        }
+        do { try await reconcileGroup() } catch { errorText = errorMessage(error) }
+    }
+
+    private func reconcileGroup() async throws {
+        try await env.expenses(context).reconcileAll(groupId: group.id)
+        try await env.groups(context).refreshMembers(groupId: group.id)
+        try await env.balances(context).refreshGroup(group.id)
     }
 
     private func importLocal() {

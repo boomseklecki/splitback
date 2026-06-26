@@ -48,6 +48,12 @@ struct LinkedBanksView: View {
                                     .foregroundStyle(account.kind.balanceColor)
                             }
                         }
+                        .swipeActions(edge: .trailing) {
+                            Button { refresh(account: account) } label: {
+                                Label("Refresh", systemImage: "arrow.triangle.2.circlepath")
+                            }
+                            .tint(.blue)
+                        }
                     }
                     Button("Unlink Bank", systemImage: "trash", role: .destructive) {
                         confirmingUnlink = UnlinkTarget(id: item.id, name: item.institution_name ?? "Bank")
@@ -56,6 +62,12 @@ struct LinkedBanksView: View {
                     HStack(spacing: 8) {
                         bankAvatar(for: item)
                         Text(item.institution_name ?? "Bank").textCase(nil)
+                        Spacer()
+                        Button { refresh(item: item, linked: linked) } label: {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                        }
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel("Refresh \(item.institution_name ?? "bank")")
                     }
                 }
             }
@@ -97,6 +109,28 @@ struct LinkedBanksView: View {
             }
         } else {
             avatar
+        }
+    }
+
+    /// Per-item (whole bank) refresh — syncs just this bank if it's staler than the item threshold (5 min),
+    /// else reconciles; the top banner shows which happened.
+    private func refresh(item: Components.Schemas.PlaidItemResponse, linked: [Account]) {
+        Task {
+            await env.smartRefresh(level: .item, source: .bank, freshness: linked.map(\.updatedAt).max(),
+                                   plaidItemId: UUID(uuidString: item.id), context: context) {
+                try await env.accounts(context).refreshAccounts()
+            }
+        }
+    }
+
+    /// Per-account refresh — syncs that account's bank (gated by the item threshold), else reconciles.
+    private func refresh(account: Account) {
+        Task {
+            await env.smartRefresh(level: .item, source: account.plaidItemId != nil ? .bank : .none,
+                                   freshness: account.updatedAt, plaidItemId: account.plaidItemId,
+                                   context: context) {
+                try await env.accounts(context).refreshAccounts()
+            }
         }
     }
 

@@ -41,7 +41,36 @@ public final class AppEnvironment {
     /// Persisted so it survives the install→open hop; drives the gate's "you have an invite" hint.
     public private(set) var pendingInvite: String?
 
+    /// Transient status shown by the top banner during/after a smart refresh ("Syncing with your bank…",
+    /// "Already up to date"). Set by `smartRefresh` (see SmartRefresh.swift). Nil = no banner.
+    public private(set) var syncStatus: String?
+    @ObservationIgnored private var statusToken = UUID()
+    /// Pull-to-refresh staleness thresholds (minutes), loaded from server settings; defaults until loaded.
+    @ObservationIgnored var refreshThresholds = RefreshThresholds()
+
     private static let pendingInviteKey = "pending_invite"
+
+    /// Shows the sync banner. `autoDismiss` clears it after a beat (for terminal messages); the in-progress
+    /// "Syncing…" message stays until replaced by the terminal one.
+    func showSyncStatus(_ text: String?, autoDismiss: Bool) {
+        syncStatus = text
+        let token = UUID()
+        statusToken = token
+        guard autoDismiss, text != nil else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.8))
+            if statusToken == token { syncStatus = nil }
+        }
+    }
+
+    /// Loads the pull-to-refresh staleness thresholds from server settings (best-effort; keeps defaults on
+    /// failure). Readable by any enrolled member.
+    func loadRefreshThresholds() async {
+        guard let s = try? await serverSettings.get() else { return }
+        refreshThresholds = RefreshThresholds(
+            list: s.refresh_list_stale_minutes, detail: s.refresh_detail_stale_minutes,
+            leaf: s.refresh_leaf_stale_minutes, item: s.refresh_item_stale_minutes)
+    }
 
     public init() {
         let store = KeychainTokenStore.forServer(APIConfig.baseURL)

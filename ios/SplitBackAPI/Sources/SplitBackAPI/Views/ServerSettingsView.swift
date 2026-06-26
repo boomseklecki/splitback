@@ -18,6 +18,10 @@ struct ServerSettingsView: View {
     @State private var backupIntervalHours = 0
     @State private var backupsRetentionDays = 30
     @State private var backupsRetentionMinKeep = 7
+    @State private var refreshListStale = 30
+    @State private var refreshDetailStale = 15
+    @State private var refreshLeafStale = 0
+    @State private var refreshItemStale = 5
 
     var body: some View {
         Form {
@@ -67,6 +71,18 @@ struct ServerSettingsView: View {
             }
 
             Section {
+                Stepper("Lists: \(staleLabel(refreshListStale))", value: $refreshListStale, in: 0...1440)
+                Stepper("Detail: \(staleLabel(refreshDetailStale))", value: $refreshDetailStale, in: 0...1440)
+                Stepper("Transaction/expense: \(staleLabel(refreshLeafStale))", value: $refreshLeafStale, in: 0...1440)
+                Stepper("Settings icons: \(staleLabel(refreshItemStale))", value: $refreshItemStale, in: 0...1440)
+            } header: {
+                Text("Pull-to-refresh freshness")
+            } footer: {
+                Text("Pull-to-refresh does a live bank/Splitwise sync only when the data is older than this; "
+                     + "otherwise it just refreshes from the server. 0 minutes = always sync.")
+            }
+
+            Section {
                 Button { save() } label: {
                     Label(saving ? "Saving…" : (saved ? "Saved" : "Save Changes"),
                           systemImage: saved ? "checkmark.circle.fill" : "square.and.arrow.down")
@@ -81,6 +97,7 @@ struct ServerSettingsView: View {
     }
 
     private func intervalLabel(_ hours: Int) -> String { hours <= 0 ? "Off" : "every \(hours)h" }
+    private func staleLabel(_ minutes: Int) -> String { minutes <= 0 ? "always sync" : "\(minutes) min" }
 
     private func apply(_ s: Components.Schemas.ServerSettingsResponse) {
         serverName = s.public_hostname
@@ -92,6 +109,10 @@ struct ServerSettingsView: View {
         backupIntervalHours = s.backup_interval_hours
         backupsRetentionDays = s.backups_retention_days
         backupsRetentionMinKeep = s.backups_retention_min_keep
+        refreshListStale = s.refresh_list_stale_minutes
+        refreshDetailStale = s.refresh_detail_stale_minutes
+        refreshLeafStale = s.refresh_leaf_stale_minutes
+        refreshItemStale = s.refresh_item_stale_minutes
     }
 
     private func load() async {
@@ -114,8 +135,13 @@ struct ServerSettingsView: View {
                     sync_interval_hours: syncIntervalHours,
                     backup_interval_hours: backupIntervalHours,
                     backups_retention_days: backupsRetentionDays,
-                    backups_retention_min_keep: backupsRetentionMinKeep))
+                    backups_retention_min_keep: backupsRetentionMinKeep,
+                    refresh_list_stale_minutes: refreshListStale,
+                    refresh_detail_stale_minutes: refreshDetailStale,
+                    refresh_leaf_stale_minutes: refreshLeafStale,
+                    refresh_item_stale_minutes: refreshItemStale))
                 apply(updated)
+                await env.loadRefreshThresholds()  // apply the new thresholds to the running app
                 saved = true
             } catch { errorText = errorMessage(error) }
         }

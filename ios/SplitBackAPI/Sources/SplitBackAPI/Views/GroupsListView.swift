@@ -233,14 +233,10 @@ struct GroupsListView: View {
                 }
             }
             .refreshable {
-                if env.splitwiseConnected {
-                    do {
-                        try await env.splitwise.syncExpenses()
-                        try await env.splitwise.syncGroups()
-                    } catch { /* best-effort: Splitwise sync never blocks the local refresh */ }
+                await env.smartRefresh(level: .list, source: .splitwise,
+                                       freshness: groups.map(\.updatedAt).max(), context: context) {
+                    try await env.refreshAll(context)
                 }
-                do { try await env.refreshAll(context) }
-                catch { errorText = errorMessage(error) }
                 await loadMyBalances()
                 loadLastExpenses()
                 if viewMode == .friends { await loadFriends() }

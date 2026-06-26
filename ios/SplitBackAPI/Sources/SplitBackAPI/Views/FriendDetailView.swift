@@ -106,7 +106,12 @@ struct FriendDetailView: View {
         }
         .navigationTitle(friend.name)
         .navigationBarTitleDisplayMode(.inline)
-        .refreshable { await reload() }
+        .refreshable {
+            let gids = Set(friend.groups.compactMap(\.groupId))
+            let freshness = allGroups.filter { gids.contains($0.id) }.map(\.updatedAt).max()
+            await env.smartRefresh(level: .detail, source: .splitwise, freshness: freshness,
+                                   context: context, reconcile: reconcileFriend)
+        }
         .task { await reload() }
         .errorAlert($errorText)
     }
@@ -127,13 +132,13 @@ struct FriendDetailView: View {
 
     /// Best-effort refresh of the shared groups' expenses so this friend's expense list fills in (the local
     /// cache can be partial for large groups).
-    private func reload() async {
-        if env.splitwiseConnected {
-            do { try await env.splitwise.syncExpenses() } catch { /* best-effort */ }
-        }
+    private func reload() async {  // on appear: reconcile only
+        do { try await reconcileFriend() } catch { errorText = errorMessage(error) }
+    }
+
+    private func reconcileFriend() async throws {
         for gid in friend.groups.compactMap(\.groupId) {
-            do { try await env.expenses(context).reconcileAll(groupId: gid) }
-            catch { errorText = errorMessage(error) }
+            try await env.expenses(context).reconcileAll(groupId: gid)
         }
     }
 }

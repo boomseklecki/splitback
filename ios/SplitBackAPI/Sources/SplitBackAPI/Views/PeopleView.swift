@@ -53,11 +53,10 @@ struct PeopleView: View {
         }
         .navigationTitle("People")
         .refreshable {
-            if env.splitwiseConnected {
-                do { try await env.splitwise.syncUsers() } catch { /* best-effort */ }
+            await env.smartRefresh(level: .list, source: .splitwise,
+                                   freshness: users.map(\.updatedAt).max(), context: context) {
+                try await env.users(context).refresh()
             }
-            do { try await env.users(context).refresh() }
-            catch { errorText = errorMessage(error) }
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {

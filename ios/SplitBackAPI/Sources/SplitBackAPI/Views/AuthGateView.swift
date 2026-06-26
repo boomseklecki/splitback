@@ -85,7 +85,7 @@ public struct AuthGateView: View {
                     }
                     if offers("splitwise") {
                         Button { run { try await env.auth(context).signInWithSplitwise(invite: env.pendingInvite) } } label: {
-                            Label("Continue with Splitwise", systemImage: "arrow.triangle.2.circlepath")
+                            Label("Continue with Splitwise", systemImage: "person.crop.circle.badge.checkmark")
                         }
                     }
                   } header: {

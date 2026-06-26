@@ -5039,6 +5039,22 @@
           "backups_retention_min_keep": {
             "type": "integer",
             "title": "Backups Retention Min Keep"
+          },
+          "refresh_list_stale_minutes": {
+            "type": "integer",
+            "title": "Refresh List Stale Minutes"
+          },
+          "refresh_detail_stale_minutes": {
+            "type": "integer",
+            "title": "Refresh Detail Stale Minutes"
+          },
+          "refresh_leaf_stale_minutes": {
+            "type": "integer",
+            "title": "Refresh Leaf Stale Minutes"
+          },
+          "refresh_item_stale_minutes": {
+            "type": "integer",
+            "title": "Refresh Item Stale Minutes"
           }
         },
         "type": "object",
@@ -5051,7 +5067,11 @@
           "sync_interval_hours",
           "backup_interval_hours",
           "backups_retention_days",
-          "backups_retention_min_keep"
+          "backups_retention_min_keep",
+          "refresh_list_stale_minutes",
+          "refresh_detail_stale_minutes",
+          "refresh_leaf_stale_minutes",
+          "refresh_item_stale_minutes"
         ],
         "title": "ServerSettingsResponse",
         "description": "The full server-settings registry resolved to current values."
@@ -5093,6 +5113,22 @@
           "backups_retention_min_keep": {
             "type": "integer",
             "title": "Backups Retention Min Keep"
+          },
+          "refresh_list_stale_minutes": {
+            "type": "integer",
+            "title": "Refresh List Stale Minutes"
+          },
+          "refresh_detail_stale_minutes": {
+            "type": "integer",
+            "title": "Refresh Detail Stale Minutes"
+          },
+          "refresh_leaf_stale_minutes": {
+            "type": "integer",
+            "title": "Refresh Leaf Stale Minutes"
+          },
+          "refresh_item_stale_minutes": {
+            "type": "integer",
+            "title": "Refresh Item Stale Minutes"
           }
         },
         "type": "object",

@@ -45,6 +45,9 @@ async def _upsert_group(
                 "group_type": group_type,
                 "avatar_url": avatar_url,
                 "cover_photo_url": cover_photo_url,
+                # on_conflict bypasses SQLAlchemy onupdate; bump so updated_at tracks the last sync (the
+                # freshness signal the app's smart-refresh thresholds read).
+                "updated_at": func.now(),
             },
         )
         .returning(Group.id)

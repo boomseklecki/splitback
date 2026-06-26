@@ -262,6 +262,13 @@ struct ExpenseDetailView: View {
         }
         .navigationTitle(expense.details)
         .navigationBarTitleDisplayMode(.inline)
+        .refreshable {  // leaf: always live-sync this expense's Splitwise group (if any), then reconcile
+            await env.smartRefresh(level: .leaf,
+                                   source: group?.backendType == .splitwise ? .splitwise : .none,
+                                   freshness: expense.updatedAt, context: context) {
+                try await env.expenses(context).reconcileAll(groupId: expense.groupId)
+            }
+        }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("Edit") { editPrefill = nil; showingEdit = true }

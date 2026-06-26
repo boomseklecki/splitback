@@ -70,6 +70,28 @@ public struct RootView: View {
     }
 }
 
+/// Transient banner shown during/after a pull-to-refresh ("Syncing with your bank…", "Already up to date"),
+/// driven by `AppEnvironment.syncStatus`. Auto-dismisses (the env clears terminal messages on a timer).
+private struct SyncStatusBanner: View {
+    @Environment(AppEnvironment.self) private var env
+
+    var body: some View {
+        SwiftUI.Group {
+            if let status = env.syncStatus {
+                Label(status, systemImage: "arrow.triangle.2.circlepath")
+                    .font(.footnote.weight(.medium))
+                    .padding(.horizontal, 14).padding(.vertical, 7)
+                    .background(.regularMaterial, in: Capsule())
+                    .foregroundStyle(.secondary)
+                    .shadow(radius: 2, y: 1)
+                    .padding(.top, 6)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .animation(.snappy, value: env.syncStatus)
+    }
+}
+
 /// Persistent reminder that the current backend is a public demo with sample data.
 private struct DemoBanner: View {
     var body: some View {
@@ -105,6 +127,7 @@ private struct MainTabView: View {
                     .tag("settings")
             }
         }
+        .overlay(alignment: .top) { SyncStatusBanner() }
         .errorAlert($errorMessageText)
         .task {
             guard !didInitialRefresh else { return }
@@ -112,6 +135,7 @@ private struct MainTabView: View {
             await env.refreshCurrentUser(context)
             await env.refreshSplitwiseStatus()
             await env.bootstrapPreferences(context)
+            await env.loadRefreshThresholds()
             do { try await env.refreshAll(context) }
             catch { errorMessageText = errorMessage(error) }
         }
