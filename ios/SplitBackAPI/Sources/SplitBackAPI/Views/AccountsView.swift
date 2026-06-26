@@ -27,6 +27,8 @@ struct AccountsView: View {
     @State private var lastTransaction: [UUID: Date] = [:]
     /// Plaid items (bank → its accounts), loaded lazily for the Bank sort only.
     @State private var items: [Components.Schemas.PlaidItemResponse] = []
+    /// Partner-owned accounts shared *to* you (live-fetched, never cached so they stay out of analytics).
+    @State private var sharedAccounts: [Components.Schemas.AccountResponse] = []
 
     struct LinkSession: Identifiable { let id = UUID(); let token: String }
 
@@ -100,6 +102,12 @@ struct AccountsView: View {
                     Section("Accounts") {
                         let sorted = sortMode == .balance ? byBalance(accounts) : byLastTransaction(accounts)
                         ForEach(sorted) { accountRow($0) }
+                    }
+                }
+
+                if !sharedAccounts.isEmpty {
+                    Section("Shared with you") {
+                        ForEach(sharedAccounts, id: \.id) { sharedRow($0) }
                     }
                 }
 
@@ -187,6 +195,31 @@ struct AccountsView: View {
         }
     }
 
+    /// A partner-shared account row. A `full` account drills into a read-only, live-fetched transaction
+    /// list; a `balances` account shows the balance only (no drill-in). Never enters the local cache.
+    @ViewBuilder
+    private func sharedRow(_ r: Components.Schemas.AccountResponse) -> some View {
+        let balance = (try? Mapping.decimal(r.balance, field: "Account.balance")) ?? 0
+        let label = HStack(spacing: 12) {
+            AvatarView(url: InstitutionBrand.logoURL(domain: r.institution_domain, name: r.institution_name),
+                       name: r.institution_name ?? r.name, size: 32,
+                       systemImage: "building.columns", logo: true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(r.display_name ?? r.name)
+                Text("Shared by \(r.shared_by ?? "partner")").font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Text(balance.formatted(.currency(code: r.currency)))
+        }
+        if r.share_level == "full" {
+            NavigationLink {
+                SharedAccountTransactionsView(account: r)
+            } label: { label }
+        } else {
+            label
+        }
+    }
+
     /// Pull-to-refresh / on-appear: refresh cached accounts from the backend, then recompute the
     /// last-transaction dates. The Sync button does the heavier Plaid round-trip.
     private func reload() async {
@@ -195,6 +228,7 @@ struct AccountsView: View {
             try await env.accounts(context).refreshAccounts()
         }
         loadLastTransactions()
+        sharedAccounts = (try? await env.accounts(context).sharedInAccounts()) ?? sharedAccounts
         if sortMode == .bank { await loadItems() }
     }
 

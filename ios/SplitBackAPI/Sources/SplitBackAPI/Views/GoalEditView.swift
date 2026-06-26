@@ -18,6 +18,7 @@ struct GoalEditView: View {
     @State private var accountId: UUID?
     @State private var amountString: String
     @State private var saveType: SaveTargetType
+    @State private var shared: Bool
     @State private var showingCategoryPicker = false
     @State private var saving = false
     @State private var errorText: String?
@@ -30,6 +31,7 @@ struct GoalEditView: View {
         _accountId = State(initialValue: editing?.accountId)
         _amountString = State(initialValue: editing.map { Mapping.decimalString($0.targetAmount) } ?? "")
         _saveType = State(initialValue: editing?.saveTarget ?? .balance)
+        _shared = State(initialValue: editing?.shared ?? false)
     }
 
     private var amount: Decimal { Decimal(string: amountString, locale: Locale(identifier: "en_US_POSIX")) ?? 0 }
@@ -90,6 +92,12 @@ struct GoalEditView: View {
                 Section("Name") {
                     TextField(defaultName, text: $name)
                 }
+
+                Section {
+                    Toggle("Share with partner", isOn: $shared)
+                } footer: {
+                    Text("Connected partners see this goal read-only.")
+                }
             }
             .navigationTitle(editing == nil ? "New Goal" : "Edit Goal")
             .navigationBarTitleDisplayMode(.inline)
@@ -135,7 +143,8 @@ struct GoalEditView: View {
             targetAmount: amount,
             saveTargetType: kind == .save ? saveType : nil,
             startingBalance: startingBalance,
-            startingDate: startingDate
+            startingDate: startingDate,
+            shared: shared
         )
         Task {
             defer { saving = false }

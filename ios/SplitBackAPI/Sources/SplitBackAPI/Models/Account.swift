@@ -27,6 +27,10 @@ final class Account {
     var institutionDomain: String?
     var institutionColor: String?
     var institutionStatus: String?
+    /// Zeta-style outbound sharing toward partners (owner-set): "private" | "balances" | "full". On the
+    /// local cache this is always the caller's own setting — shared-in (partner-owned) accounts are never
+    /// persisted, so the analytics/net-worth queries stay owner-pure.
+    var shareLevel: String
     var createdAt: Date
     var updatedAt: Date
 
@@ -47,6 +51,7 @@ final class Account {
         institutionDomain: String? = nil,
         institutionColor: String? = nil,
         institutionStatus: String? = nil,
+        shareLevel: String = "private",
         createdAt: Date,
         updatedAt: Date
     ) {
@@ -66,7 +71,29 @@ final class Account {
         self.institutionDomain = institutionDomain
         self.institutionColor = institutionColor
         self.institutionStatus = institutionStatus
+        self.shareLevel = shareLevel
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
+}
+
+/// How much of an account an owner exposes to a connected partner (Zeta-style). Backed by `share_level`.
+enum AccountShareLevel: String, CaseIterable, Identifiable {
+    case _private = "private"   // owner only — partner sees nothing
+    case balances               // partner sees the balance, not transactions
+    case full                   // partner sees balance + transactions
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case ._private: return "Private"
+        case .balances: return "Balances only"
+        case .full: return "Full access"
+        }
+    }
+}
+
+extension Account {
+    var shareLevelValue: AccountShareLevel { AccountShareLevel(rawValue: shareLevel) ?? ._private }
 }

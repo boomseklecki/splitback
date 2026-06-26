@@ -9,15 +9,25 @@ struct GoalRepository {
     let context: ModelContext
 
     /// Reconciles the active goals: upsert those returned, drop locals the server no longer lists.
+    /// Only the caller's OWN goals are cached; partner-shared goals (`shared_by_identifier != nil`) are never
+    /// persisted (live-fetched read-only via `sharedInGoals()`), so they stay out of budgets/analytics.
     func refresh() async throws {
         let responses = try await client.list_goals_goals_get(query: .init(include_archived: false))
             .ok.body.json
-        try upsert(responses)
-        let keep = Set(try responses.map { try Mapping.uuid($0.id, field: "Goal.id") })
+        let own = responses.filter { $0.shared_by_identifier == nil }
+        try upsert(own)
+        let keep = Set(try own.map { try Mapping.uuid($0.id, field: "Goal.id") })
         for local in try context.fetch(FetchDescriptor<Goal>()) where !keep.contains(local.id) {
             context.delete(local)
         }
         try context.save()
+    }
+
+    /// Goals a partner has marked shared with the caller (read-only). Transient — never cached.
+    func sharedInGoals() async throws -> [Components.Schemas.GoalResponse] {
+        let responses = try await client.list_goals_goals_get(query: .init(include_archived: false))
+            .ok.body.json
+        return responses.filter { $0.shared_by_identifier != nil }
     }
 
     @discardableResult
@@ -82,6 +92,7 @@ struct GoalRepository {
             existing.period = mapped.period
             existing.currency = mapped.currency
             existing.archivedAt = mapped.archivedAt
+            existing.shared = mapped.shared
             existing.createdAt = mapped.createdAt
             existing.updatedAt = mapped.updatedAt
         }

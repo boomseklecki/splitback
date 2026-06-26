@@ -23,6 +23,9 @@ class AccountUpdate(BaseModel):
     kind: str | None = None
     include_in_spending: bool | None = None
     include_in_cash_flow: bool | None = None
+    # Owner-only outbound sharing toward partners: "private" | "balances" | "full" (a real account column,
+    # not a per-user override).
+    share_level: str | None = None
 
 
 class AccountResponse(BaseModel):
@@ -44,5 +47,10 @@ class AccountResponse(BaseModel):
     institution_domain: str | None
     institution_color: str | None
     institution_status: str | None
+    # Sharing: `share_level` is the owner's outbound setting on own accounts, or the level granted to the
+    # caller on a shared-in account. `shared_by*` are set only on shared-in (partner-owned) accounts.
+    share_level: str
+    shared_by: str | None = None
+    shared_by_identifier: str | None = None
     created_at: datetime
     updated_at: datetime

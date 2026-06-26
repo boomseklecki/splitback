@@ -12,6 +12,7 @@ from app.routers import (
     auth,
     backups,
     balances,
+    connections,
     expenses,
     goals,
     groups,
@@ -78,6 +79,7 @@ app.include_router(users.router, dependencies=_protected)
 app.include_router(balances.router, dependencies=_protected)
 app.include_router(splitwise.router, dependencies=_protected)
 app.include_router(goals.router, dependencies=_protected)
+app.include_router(connections.router, dependencies=_protected)
 app.include_router(preferences.router, dependencies=_protected)
 app.include_router(backups.router)  # each route self-gates with require_admin
 app.include_router(invites.router)  # self-gates: require_can_invite (admin, or any member when allowed)

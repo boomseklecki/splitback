@@ -11,12 +11,16 @@ struct AccountRepository {
     func refreshAccounts() async throws {
         let output = try await client.list_accounts_accounts_get()
         let responses = try output.ok.body.json
-        try upsertAccounts(responses)
-        // The accounts list is the full (per-caller-scoped) set, so prune any cached account the backend
+        // Cache only the caller's OWN accounts; partner-shared accounts (`shared_by_identifier != nil`) are
+        // never persisted, so they can't leak into net-worth/analytics @Query results. The "Shared with you"
+        // section live-fetches them separately (see `sharedInAccounts()`).
+        let own = responses.filter { $0.shared_by_identifier == nil }
+        try upsertAccounts(own)
+        // The owned list is the full (per-caller-scoped) set, so prune any cached account the backend
         // no longer returns — plus the transactions belonging to those removed accounts — so another
         // user's data (or a now-hidden account) can't linger after sign-in/scoping. refreshTransactions is
         // paged and must NOT prune, so the transaction cleanup is anchored to account ownership here.
-        let keep = Set(try responses.map { try Mapping.uuid($0.id, field: "Account.id") })
+        let keep = Set(try own.map { try Mapping.uuid($0.id, field: "Account.id") })
         for account in try context.fetch(FetchDescriptor<Account>()) where !keep.contains(account.id) {
             context.delete(account)
         }
@@ -24,6 +28,21 @@ struct AccountRepository {
             if let aid = txn.accountId, !keep.contains(aid) { context.delete(txn) }
         }
         try context.save()
+    }
+
+    /// Partner-owned accounts shared *to* the caller (balances or full). Transient API objects — never
+    /// cached, so they stay out of the owner-pure local analytics. Drives the "Shared with you" section.
+    func sharedInAccounts() async throws -> [Components.Schemas.AccountResponse] {
+        let responses = try await client.list_accounts_accounts_get().ok.body.json
+        return responses.filter { $0.shared_by_identifier != nil }
+    }
+
+    /// Live, non-caching read of a (full-shared) account's transactions for the read-only shared drill-in.
+    /// Deliberately does NOT upsert into SwiftData — shared transactions must never enter the local cache.
+    func fetchTransactions(accountId: UUID, limit: Int = 200) async throws
+        -> [Components.Schemas.TransactionResponse] {
+        try await client.list_transactions_transactions_get(query: .init(
+            account_id: accountId.uuidString, limit: limit, offset: 0)).ok.body.json
     }
 
     func refreshTransactions(
@@ -102,12 +121,14 @@ struct AccountRepository {
     /// matching the backend's exclude_unset semantics) and caches the response. Pass an empty
     /// `displayName` to reset the name back to the Plaid value.
     func update(id: UUID, displayName: String? = nil, kind: String? = nil,
-                includeInSpending: Bool? = nil, includeInCashFlow: Bool? = nil) async throws {
+                includeInSpending: Bool? = nil, includeInCashFlow: Bool? = nil,
+                shareLevel: String? = nil) async throws {
         let output = try await client.update_account_accounts__account_id__patch(
             path: .init(account_id: id.uuidString),
             body: .json(Mapping.accountUpdate(
                 displayName: displayName, kind: kind,
-                includeInSpending: includeInSpending, includeInCashFlow: includeInCashFlow))
+                includeInSpending: includeInSpending, includeInCashFlow: includeInCashFlow,
+                shareLevel: shareLevel))
         )
         switch output {
         case let .ok(ok): try upsertAccounts([try ok.body.json])
@@ -141,6 +162,7 @@ struct AccountRepository {
                 existing.institutionDomain = r.institution_domain
                 existing.institutionColor = r.institution_color
                 existing.institutionStatus = r.institution_status
+                existing.shareLevel = r.share_level
                 existing.createdAt = r.created_at
                 existing.updatedAt = r.updated_at
             } else {

@@ -204,6 +204,11 @@ struct SettingsView: View {
                             Text("\(users.count)").foregroundStyle(.secondary)
                         }
                     }
+                    NavigationLink {
+                        PartnersView()
+                    } label: {
+                        Label("Partners", systemImage: "person.line.dotted.person")
+                    }
                 }
 
                 Section("Spending") {

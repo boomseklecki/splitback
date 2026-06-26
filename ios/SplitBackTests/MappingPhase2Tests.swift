@@ -41,18 +41,6 @@ final class MappingPhase2Tests: XCTestCase {
         XCTAssertEqual(balance.paidTotal, Decimal(string: "100.00"))
     }
 
-    func testExpenseArchivedAtDecodes() throws {
-        let archived = Date(timeIntervalSince1970: 1_700_000_000)
-        let response = Components.Schemas.ExpenseResponse(
-            id: uuidA, group_id: uuidB, description: "x", amount: "1.00", currency: "USD",
-            date: "2026-01-01", created_at: epoch, updated_at: epoch
-        )
-        var withArchive = response
-        withArchive.archived_at = archived
-        XCTAssertNil(try Mapping.expense(response).archivedAt)
-        XCTAssertEqual(try Mapping.expense(withArchive).archivedAt, archived)
-    }
-
     // MARK: Reverse mappers
 
     func testExpenseCreateUsesStringMoneyAndUUIDs() {

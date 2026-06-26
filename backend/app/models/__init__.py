@@ -1,6 +1,14 @@
 from app.models.account import Account
 from app.models.account_override import AccountOverride
-from app.models.enums import BackendType, NotificationSource, TransactionSource, UserSource
+from app.models.connection import Connection
+from app.models.enums import (
+    BackendType,
+    ConnectionStatus,
+    NotificationSource,
+    ShareLevel,
+    TransactionSource,
+    UserSource,
+)
 from app.models.expense import Expense
 from app.models.expense_item import ExpenseItem
 from app.models.expense_override import ExpenseOverride
@@ -27,6 +35,8 @@ __all__ = [
     "Account",
     "AccountOverride",
     "BackendType",
+    "Connection",
+    "ConnectionStatus",
     "Expense",
     "ExpenseOverride",
     "Friend",
@@ -41,6 +51,7 @@ __all__ = [
     "PlaidItem",
     "Receipt",
     "ServerSetting",
+    "ShareLevel",
     "Split",
     "SplitwiseOAuthState",
     "SplitwiseToken",

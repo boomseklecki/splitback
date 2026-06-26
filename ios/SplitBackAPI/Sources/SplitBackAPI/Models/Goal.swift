@@ -20,6 +20,9 @@ final class Goal {
     var period: String
     var currency: String
     var archivedAt: Date?
+    /// Owner's flag: this goal is visible read-only to connected partners. On the local cache this is the
+    /// caller's own setting — shared-in (partner-owned) goals are never persisted (live-fetched for display).
+    var shared: Bool
     var createdAt: Date
     var updatedAt: Date
 
@@ -36,6 +39,7 @@ final class Goal {
         period: String = "monthly",
         currency: String,
         archivedAt: Date? = nil,
+        shared: Bool = false,
         createdAt: Date,
         updatedAt: Date
     ) {
@@ -51,6 +55,7 @@ final class Goal {
         self.period = period
         self.currency = currency
         self.archivedAt = archivedAt
+        self.shared = shared
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }

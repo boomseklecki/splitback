@@ -3558,6 +3558,173 @@
         }
       }
     },
+    "/connections": {
+      "get": {
+        "tags": [
+          "connections"
+        ],
+        "summary": "List Connections",
+        "description": "The caller's partner connections (incoming/outgoing pending + accepted), each with the other party.",
+        "operationId": "list_connections_connections_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ConnectionResponse"
+                  },
+                  "type": "array",
+                  "title": "Response List Connections Connections Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "connections"
+        ],
+        "summary": "Create Connection",
+        "description": "Invite a partner to connect (pending until they accept).",
+        "operationId": "create_connection_connections_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/connections/{connection_id}/accept": {
+      "post": {
+        "tags": [
+          "connections"
+        ],
+        "summary": "Accept Connection",
+        "description": "Accept a pending invite (only the invited party). Idempotent on an already-accepted one.",
+        "operationId": "accept_connection_connections__connection_id__accept_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "connection_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Connection Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/connections/{connection_id}": {
+      "delete": {
+        "tags": [
+          "connections"
+        ],
+        "summary": "Delete Connection",
+        "description": "Decline a pending invite or disconnect an accepted partner (either party).",
+        "operationId": "delete_connection_connections__connection_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "connection_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Connection Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/preferences": {
       "get": {
         "tags": [
@@ -4109,6 +4276,18 @@
             "type": "string",
             "title": "Institution Status"
           },
+          "share_level": {
+            "type": "string",
+            "title": "Share Level"
+          },
+          "shared_by": {
+            "type": "string",
+            "title": "Shared By"
+          },
+          "shared_by_identifier": {
+            "type": "string",
+            "title": "Shared By Identifier"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -4126,6 +4305,7 @@
           "name",
           "balance",
           "currency",
+          "share_level",
           "created_at",
           "updated_at"
         ],
@@ -4148,6 +4328,10 @@
           "include_in_cash_flow": {
             "type": "boolean",
             "title": "Include In Cash Flow"
+          },
+          "share_level": {
+            "type": "string",
+            "title": "Share Level"
           }
         },
         "type": "object",
@@ -4276,6 +4460,58 @@
           "net"
         ],
         "title": "BalanceEntry"
+      },
+      "ConnectionCreate": {
+        "properties": {
+          "identifier": {
+            "type": "string",
+            "title": "Identifier"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          }
+        },
+        "type": "object",
+        "title": "ConnectionCreate"
+      },
+      "ConnectionResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "other_identifier": {
+            "type": "string",
+            "title": "Other Identifier"
+          },
+          "other_display_name": {
+            "type": "string",
+            "title": "Other Display Name"
+          },
+          "other_avatar_url": {
+            "type": "string",
+            "title": "Other Avatar Url"
+          },
+          "direction": {
+            "type": "string",
+            "title": "Direction"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "other_identifier",
+          "other_display_name",
+          "direction",
+          "status"
+        ],
+        "title": "ConnectionResponse"
       },
       "DemoAuthRequest": {
         "properties": {
@@ -4735,6 +4971,11 @@
           "currency": {
             "type": "string",
             "title": "Currency"
+          },
+          "shared": {
+            "type": "boolean",
+            "title": "Shared",
+            "default": false
           }
         },
         "type": "object",
@@ -4801,6 +5042,19 @@
             "format": "date-time",
             "title": "Archived At"
           },
+          "shared": {
+            "type": "boolean",
+            "title": "Shared",
+            "default": false
+          },
+          "shared_by": {
+            "type": "string",
+            "title": "Shared By"
+          },
+          "shared_by_identifier": {
+            "type": "string",
+            "title": "Shared By Identifier"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -4866,6 +5120,10 @@
           "currency": {
             "type": "string",
             "title": "Currency"
+          },
+          "shared": {
+            "type": "boolean",
+            "title": "Shared"
           }
         },
         "type": "object",

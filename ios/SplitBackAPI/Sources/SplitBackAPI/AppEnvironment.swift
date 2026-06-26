@@ -210,6 +210,7 @@ public final class AppEnvironment {
     var splitwise: SplitwiseService { .init(client: slowClient) }  // slow client: the cold-backfill import can run minutes
     var backups: BackupsRepository { .init(client: slowClient) }   // slow client: pg_dump/restore + receipts can run minutes
     var invites: InviteRepository { .init(client: client) }
+    var connections: ConnectionRepository { .init(client: client) }
     var serverSettings: ServerSettingsRepository { .init(client: client) }
     func auth(_ context: ModelContext) -> AuthService { .init(client: client, context: context) }
 

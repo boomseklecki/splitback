@@ -16,6 +16,7 @@ struct AccountEditView: View {
     @State private var kind: AccountKind
     @State private var includeInSpending: Bool
     @State private var includeInCashFlow: Bool
+    @State private var shareLevel: AccountShareLevel
     @State private var saving = false
     @State private var errorText: String?
 
@@ -25,6 +26,7 @@ struct AccountEditView: View {
         _kind = State(initialValue: account.kind)
         _includeInSpending = State(initialValue: account.countsInSpending)
         _includeInCashFlow = State(initialValue: account.countsInCashFlow)
+        _shareLevel = State(initialValue: account.shareLevelValue)
     }
 
     var body: some View {
@@ -86,6 +88,17 @@ struct AccountEditView: View {
             }
 
             Section {
+                Picker("Share with partner", selection: $shareLevel) {
+                    ForEach(AccountShareLevel.allCases) { Text($0.label).tag($0) }
+                }
+            } header: {
+                Text("Sharing")
+            } footer: {
+                Text("Partners you've connected with see this account based on your choice: nothing when "
+                     + "private, the balance only, or the balance plus its transactions.")
+            }
+
+            Section {
                 LabeledContent("Balance",
                                value: account.balance.formatted(.currency(code: account.currency)))
             }
@@ -130,7 +143,8 @@ struct AccountEditView: View {
                 // include flags are pinned to the toggles' current values.
                 try await env.accounts(context).update(
                     id: account.id, displayName: name, kind: kind.canonical,
-                    includeInSpending: includeInSpending, includeInCashFlow: includeInCashFlow)
+                    includeInSpending: includeInSpending, includeInCashFlow: includeInCashFlow,
+                    shareLevel: shareLevel.rawValue)
                 dismiss()
             } catch { errorText = errorMessage(error) }
         }

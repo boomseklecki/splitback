@@ -22,12 +22,22 @@ struct GoalsView: View {
     @State private var selectedCategory: String?
     @State private var showingReorder = false
     @State private var horizontalSwiping = false
+    /// Partner-shared goals + the partner accounts they may track (live-fetched, never cached). Shown
+    /// read-only; a shared save goal's progress is computable only when its account is also shared.
+    @State private var sharedGoals: [Components.Schemas.GoalResponse] = []
+    @State private var sharedAccountBalances: [String: Decimal] = [:]
     @AppStorage("goalsOrder") private var goalsOrderRaw = GoalSection.serialize(GoalSection.allCases)
 
     private var lookup: [String: String] { CategoryMapping.lookup(categoryMaps) }
     private var me: String? { env.currentUser?.identifier }
     private var spendGoals: [Goal] { goals.filter { $0.goalKind == .spend }.sorted { $0.name < $1.name } }
     private var saveGoals: [Goal] { goals.filter { $0.goalKind == .save }.sorted { $0.name < $1.name } }
+    private var sharedSpendGoals: [Components.Schemas.GoalResponse] {
+        sharedGoals.filter { $0.kind == "spend" }.sorted { $0.name < $1.name }
+    }
+    private var sharedSaveGoals: [Components.Schemas.GoalResponse] {
+        sharedGoals.filter { $0.kind == "save" }.sorted { $0.name < $1.name }
+    }
     private var accountsById: [UUID: Account] {
         Dictionary(accounts.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
     }
@@ -139,7 +149,8 @@ struct GoalsView: View {
                             accounts: accounts, lookup: lookup, expenses: expenses, me: me))
                     }
                 }
-                if spendGoals.isEmpty {
+                ForEach(sharedSpendGoals, id: \.id) { SharedGoalRow(goal: $0, currentBalance: nil) }
+                if spendGoals.isEmpty && sharedSpendGoals.isEmpty {
                     Text("Add a budget to track a category's monthly spend.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
@@ -151,7 +162,10 @@ struct GoalsView: View {
                         SaveRow(goal: goal, account: goal.accountId.flatMap { accountsById[$0] })
                     }
                 }
-                if saveGoals.isEmpty {
+                ForEach(sharedSaveGoals, id: \.id) { goal in
+                    SharedGoalRow(goal: goal, currentBalance: goal.account_id.flatMap { sharedAccountBalances[$0] })
+                }
+                if saveGoals.isEmpty && sharedSaveGoals.isEmpty {
                     Text("Set a goal to grow an account's balance.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
@@ -188,6 +202,56 @@ struct GoalsView: View {
         let since = Calendar.current.date(byAdding: .month, value: -6, to: Date())
         try await env.accounts(context).refreshTransactions(since: since, limit: 500)
         try await env.goals(context).refresh()
+        // Partner-shared goals (read-only) + the partner accounts that back any shared save goal, so its
+        // progress can be shown. Best-effort: a failure here leaves the prior shared lists untouched.
+        sharedGoals = (try? await env.goals(context).sharedInGoals()) ?? sharedGoals
+        if let shared = try? await env.accounts(context).sharedInAccounts() {
+            sharedAccountBalances = Dictionary(
+                shared.compactMap { acct in
+                    (try? Mapping.decimal(acct.balance, field: "Account.balance")).map { (acct.id, $0) }
+                },
+                uniquingKeysWith: { first, _ in first })
+        }
+    }
+}
+
+/// A read-only Goals row for a partner's shared goal (budget or savings). No drill-in, no live spend; a
+/// savings goal shows progress when its account is also shared (`currentBalance`), else just the target.
+struct SharedGoalRow: View {
+    let goal: Components.Schemas.GoalResponse
+    let currentBalance: Decimal?
+
+    private var target: Decimal { (try? Mapping.decimal(goal.target_amount, field: "target")) ?? 0 }
+    private var isSave: Bool { goal.kind == "save" }
+    private var fraction: Double? {
+        guard isSave, let currentBalance, let type = goal.save_target_type.flatMap(SaveTargetType.init(rawValue:))
+        else { return nil }
+        let starting = (try? Mapping.optionalDecimal(goal.starting_balance, field: "start")) ?? 0
+        return GoalProgress.saveFraction(current: currentBalance, starting: starting ?? 0,
+                                         target: target, type: type)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Image(systemName: isSave ? "banknote" : categorySymbol(goal.category))
+                    .foregroundStyle(.secondary).frame(width: 22)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(goal.name)
+                    Text("Shared by \(goal.shared_by ?? "partner")")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                if let fraction {
+                    Text("\(Int(fraction * 100))%").font(.subheadline).foregroundStyle(.secondary).monospacedDigit()
+                } else {
+                    Text(target.formatted(.currency(code: goal.currency)))
+                        .font(.subheadline).foregroundStyle(.secondary).monospacedDigit()
+                }
+            }
+            if let fraction { ProgressView(value: fraction).tint(.secondary) }
+        }
+        .padding(.vertical, 2)
     }
 }
 

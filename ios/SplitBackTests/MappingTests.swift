@@ -26,7 +26,7 @@ final class MappingTests: XCTestCase {
         XCTAssertEqual(group.name, "Household")
         XCTAssertEqual(group.backendType, .selfHosted)
         XCTAssertNil(group.splitwiseGroupId)
-        XCTAssertNil(group.archivedAt)
+        XCTAssertNil(group.supersededAt)
         XCTAssertFalse(group.hidden)
     }
 
@@ -38,14 +38,14 @@ final class MappingTests: XCTestCase {
             backend_type: .splitwise,
             splitwise_group_id: "sw-42",
             hidden: true,
-            archived_at: archived,
+            superseded_at: archived,
             created_at: epoch,
             updated_at: epoch
         )
         let group = try Mapping.group(response)
         XCTAssertEqual(group.backendType, .splitwise)
         XCTAssertEqual(group.splitwiseGroupId, "sw-42")
-        XCTAssertEqual(group.archivedAt, archived)
+        XCTAssertEqual(group.supersededAt, archived)
         XCTAssertTrue(group.hidden)
     }
 
@@ -152,6 +152,7 @@ final class MappingTests: XCTestCase {
             plaid_account_id: "acct-1",
             balance: "1234.56",
             currency: "USD",
+            share_level: "private",
             created_at: epoch,
             updated_at: epoch
         )
@@ -159,6 +160,7 @@ final class MappingTests: XCTestCase {
         XCTAssertEqual(account.name, "Checking")
         XCTAssertEqual(account.type, "depository")
         XCTAssertEqual(account.balance, Decimal(string: "1234.56"))
+        XCTAssertEqual(account.shareLevel, "private")
         XCTAssertNil(account.plaidItemId)
     }
 

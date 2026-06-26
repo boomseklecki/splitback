@@ -8,11 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.auth import require_auth
-from app.auth.scope import assert_owner
+from app.auth.scope import assert_owner, audience
 from app.config import settings
 from app.db import get_session
-from app.models import Account, AccountOverride, Transaction, TransactionItem, TransactionOverride
-from app.models.enums import TransactionSource
+from app.models import Account, AccountOverride, Transaction, TransactionItem, TransactionOverride, User
+from app.models.enums import ShareLevel, TransactionSource
 from app.schemas.account import ACCOUNT_KINDS, AccountCreate, AccountResponse, AccountUpdate
 from app.schemas.transaction import (
     TransactionCreate,
@@ -39,6 +39,33 @@ async def list_accounts(
         stmt = stmt.where(Account.updated_at >= ensure_utc(updated_since))
     rows = list(await session.scalars(stmt.order_by(Account.name)))
     await _attach_account_overrides(session, caller, rows)
+    for a in rows:  # own accounts: not shared-in
+        a.shared_by = a.shared_by_identifier = None
+
+    # Plus accounts a partner has shared with the caller (balances or full), read-only.
+    shared = await _shared_in_accounts(session, caller)
+    return rows + shared
+
+
+async def _shared_in_accounts(session: AsyncSession, caller: str | None) -> list[Account]:
+    """Accounts owned by the caller's accepted partners with a non-private `share_level`, tagged with the
+    owner's display name (read-only to the caller; no per-caller overrides in v1)."""
+    aud = await audience(session, caller)
+    if not aud:
+        return []
+    rows = list(await session.scalars(
+        select(Account).where(
+            Account.owner_identifier.in_(aud), Account.share_level != ShareLevel.private
+        ).order_by(Account.name)
+    ))
+    owners = {u.identifier: u for u in await session.scalars(
+        select(User).where(User.identifier.in_({a.owner_identifier for a in rows})))}
+    for a in rows:
+        for field in _OVERRIDE_FIELDS:  # shared-in accounts show base values (no caller override)
+            setattr(a, field, None)
+        owner = owners.get(a.owner_identifier)
+        a.shared_by = owner.display_name if owner else a.owner_identifier
+        a.shared_by_identifier = a.owner_identifier
     return rows
 
 
@@ -83,6 +110,7 @@ async def create_account(
     await session.commit()
     await session.refresh(account)
     await _attach_account_overrides(session, caller, [account])
+    account.shared_by = account.shared_by_identifier = None
     return account
 
 
@@ -101,13 +129,22 @@ async def update_account(
         raise HTTPException(status_code=404, detail="Account not found")
     assert_owner(account.owner_identifier, caller)
     fields = body.model_dump(exclude_unset=True)
+    # share_level is a real account column the owner sets directly (not a per-user override).
+    if "share_level" in fields:
+        level = fields.pop("share_level")
+        try:
+            account.share_level = ShareLevel(level)
+        except ValueError:
+            raise HTTPException(status_code=422, detail="share_level must be private/balances/full")
+        await session.commit()
+        await session.refresh(account)
     if "display_name" in fields:
         # Empty/whitespace resets to Plaid's name.
         name = (fields["display_name"] or "").strip()
         fields["display_name"] = name or None
     if fields.get("kind") is not None and fields["kind"] not in ACCOUNT_KINDS:
         raise HTTPException(status_code=422, detail=f"kind must be one of {sorted(ACCOUNT_KINDS)}")
-    if caller is not None:  # open mode has no per-user override to key on
+    if caller is not None and fields:  # open mode has no per-user override to key on
         override = await session.scalar(
             select(AccountOverride).where(
                 AccountOverride.owner_identifier == caller, AccountOverride.account_id == account_id
@@ -124,6 +161,7 @@ async def update_account(
         await session.commit()
         await session.refresh(account)  # reload the real columns after commit-expire
     await _attach_account_overrides(session, caller, [account])
+    account.shared_by = account.shared_by_identifier = None
     return account
 
 
@@ -152,8 +190,20 @@ async def list_transactions(
     caller: str | None = Depends(require_auth),
     session: AsyncSession = Depends(get_session),
 ) -> list[Transaction]:
+    # A `full`-shared partner account can be read by account_id (read-only); the unscoped list stays
+    # caller-owned so shared data never enters the viewer's main list/analytics. Balances-only / private → 403.
+    shared_full = False
+    if caller is not None and account_id is not None:
+        account = await session.get(Account, account_id)
+        if account is not None and account.owner_identifier != caller:
+            aud = await audience(session, caller)
+            if account.owner_identifier in aud and account.share_level == ShareLevel.full:
+                shared_full = True
+            else:
+                raise HTTPException(status_code=403, detail="Not permitted for this account.")
+
     stmt = select(Transaction).options(selectinload(Transaction.items))
-    if caller is not None:
+    if caller is not None and not shared_full:
         stmt = stmt.where(Transaction.owner_identifier == caller)
     if account_id is not None:
         stmt = stmt.where(Transaction.account_id == account_id)

@@ -148,6 +148,7 @@ enum Mapping {
             institutionDomain: r.institution_domain,
             institutionColor: r.institution_color,
             institutionStatus: r.institution_status,
+            shareLevel: r.share_level,
             createdAt: r.created_at,
             updatedAt: r.updated_at
         )
@@ -167,6 +168,7 @@ enum Mapping {
             period: r.period,
             currency: r.currency,
             archivedAt: r.archived_at,
+            shared: r.shared ?? false,
             createdAt: r.created_at,
             updatedAt: r.updated_at
         )
@@ -420,7 +422,8 @@ enum Mapping {
             starting_balance: d.startingBalance.map(decimalString),
             starting_date: d.startingDate.map(dateOnlyString),
             period: d.period,
-            currency: d.currency
+            currency: d.currency,
+            shared: d.shared
         )
     }
 
@@ -434,15 +437,18 @@ enum Mapping {
             starting_balance: d.startingBalance.map(decimalString),
             starting_date: d.startingDate.map(dateOnlyString),
             period: d.period,
-            currency: d.currency
+            currency: d.currency,
+            shared: d.shared
         )
     }
 
     static func accountUpdate(displayName: String? = nil, kind: String? = nil,
-                              includeInSpending: Bool? = nil, includeInCashFlow: Bool? = nil)
+                              includeInSpending: Bool? = nil, includeInCashFlow: Bool? = nil,
+                              shareLevel: String? = nil)
         -> Components.Schemas.AccountUpdate {
         .init(display_name: displayName, kind: kind,
-              include_in_spending: includeInSpending, include_in_cash_flow: includeInCashFlow)
+              include_in_spending: includeInSpending, include_in_cash_flow: includeInCashFlow,
+              share_level: shareLevel)
     }
 }
 
@@ -518,4 +524,5 @@ struct GoalDraft {
     var startingDate: Date? = nil
     var period: String = "monthly"
     var currency: String? = nil
+    var shared: Bool = false
 }

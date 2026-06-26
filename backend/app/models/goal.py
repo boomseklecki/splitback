@@ -3,7 +3,7 @@ from datetime import date as date_type
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Date, DateTime, ForeignKey, Numeric, String
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Numeric, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -36,3 +36,5 @@ class Goal(UUIDMixin, TimestampMixin, Base):
     period: Mapped[str] = mapped_column(String(16), nullable=False, default="monthly")
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD")
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Owner-set: when true, the goal is visible (read-only) to the owner's accepted connections.
+    shared: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

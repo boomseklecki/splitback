@@ -1,12 +1,13 @@
 import uuid
 from decimal import Decimal
 
-from sqlalchemy import ForeignKey, Numeric, String
+from sqlalchemy import Enum, ForeignKey, Numeric, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
 from app.models.base import TimestampMixin, UUIDMixin
+from app.models.enums import ShareLevel
 
 
 class Account(UUIDMixin, TimestampMixin, Base):
@@ -31,6 +32,11 @@ class Account(UUIDMixin, TimestampMixin, Base):
     # The local identifier this account belongs to (per-caller scoping). For Plaid accounts this is the
     # linker (plaid_items.user_identifier); for manual accounts, the creator. Null = legacy/unowned.
     owner_identifier: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # Owner-set visibility toward the owner's accepted connections (partners): private (default) / balances /
+    # full. Not a per-user override (it's the owner's outbound choice); Plaid sync never touches it.
+    share_level: Mapped[ShareLevel] = mapped_column(
+        Enum(ShareLevel, name="share_level"), nullable=False, default=ShareLevel.private
+    )
     # Institution branding denormalized from the account's PlaidItem (so AccountResponse carries it without a
     # join). Refreshed on each Plaid sync; null for manual accounts.
     institution_name: Mapped[str | None] = mapped_column(String(255), nullable=True)

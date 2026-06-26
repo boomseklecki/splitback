@@ -6,9 +6,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import require_auth
-from app.auth.scope import assert_owner
+from app.auth.scope import assert_owner, audience
 from app.config import settings
 from app.db import get_session
+from app.models import User
 from app.models.goal import Goal
 from app.schemas.goal import GoalCreate, GoalResponse, GoalUpdate
 
@@ -32,11 +33,13 @@ async def create_goal(
         starting_date=body.starting_date,
         period=body.period,
         currency=body.currency or settings.default_currency,
+        shared=body.shared,
         owner_identifier=caller,
     )
     session.add(goal)
     await session.commit()
     await session.refresh(goal)
+    goal.shared_by = goal.shared_by_identifier = None
     return goal
 
 
@@ -51,8 +54,26 @@ async def list_goals(
         stmt = stmt.where(Goal.owner_identifier == caller)
     if not include_archived:
         stmt = stmt.where(Goal.archived_at.is_(None))
-    rows = await session.scalars(stmt.order_by(Goal.created_at.desc()))
-    return list(rows)
+    rows = list(await session.scalars(stmt.order_by(Goal.created_at.desc())))
+    for g in rows:  # own goals
+        g.shared_by = g.shared_by_identifier = None
+
+    # Plus goals a partner has marked shared (read-only, active only), tagged with the owner's name.
+    aud = await audience(session, caller)
+    if aud:
+        shared = list(await session.scalars(
+            select(Goal).where(
+                Goal.owner_identifier.in_(aud), Goal.shared.is_(True), Goal.archived_at.is_(None)
+            ).order_by(Goal.created_at.desc())
+        ))
+        owners = {u.identifier: u for u in await session.scalars(
+            select(User).where(User.identifier.in_({g.owner_identifier for g in shared})))}
+        for g in shared:
+            owner = owners.get(g.owner_identifier)
+            g.shared_by = owner.display_name if owner else g.owner_identifier
+            g.shared_by_identifier = g.owner_identifier
+        rows += shared
+    return rows
 
 
 async def _get_owned_or_404(session: AsyncSession, goal_id: UUID, caller: str | None) -> Goal:
@@ -75,6 +96,7 @@ async def update_goal(
         setattr(goal, field, value)
     await session.commit()
     await session.refresh(goal)
+    goal.shared_by = goal.shared_by_identifier = None
     return goal
 
 

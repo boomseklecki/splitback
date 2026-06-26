@@ -17,15 +17,15 @@ final class GoalsAnalyticsTests: XCTestCase {
                     createdAt: Date(), updatedAt: Date())
     }
 
-    /// An expense with a single split for `me` owing `owed`, optionally linked to a transaction/archived.
+    /// An expense with a single split for `me` owing `owed`, optionally linked to a transaction.
     private func expense(_ amount: Decimal, category: String?, me: String = "me", owed: Decimal,
-                         transactionId: UUID? = nil, splitwiseId: String? = nil, archived: Date? = nil,
+                         transactionId: UUID? = nil, splitwiseId: String? = nil,
                          date: Date = Date(), details: String = "e") -> Expense {
         let split = Split(id: UUID(), userIdentifier: me, paidShare: amount, owedShare: owed)
         return Expense(id: UUID(), groupId: UUID(), transactionId: transactionId,
                        splitwiseExpenseId: splitwiseId, details: details,
                        amount: amount, currency: "USD", date: date, category: category,
-                       archivedAt: archived, createdAt: Date(), updatedAt: Date(), splits: [split])
+                       createdAt: Date(), updatedAt: Date(), splits: [split])
     }
 
     // MARK: CategoryMapping
@@ -215,10 +215,6 @@ final class GoalsAnalyticsTests: XCTestCase {
         let result = SpendingAnalytics.byCategory(in: Date(), transactions: [],
                                                   accounts: [checking], lookup: [:], expenses: exps, me: "me")
         XCTAssertTrue(result.isEmpty)
-        // And nil `me` means no expenses are attributed at all.
-        let archived = [expense(40, category: "Dining", owed: 20, archived: Date())]
-        XCTAssertTrue(SpendingAnalytics.byCategory(in: Date(), transactions: [], accounts: [checking],
-                                                   lookup: [:], expenses: archived, me: "me").isEmpty)
     }
 
     func testIncomeAndReimbursementCountAsInflow() {
