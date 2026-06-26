@@ -482,6 +482,37 @@
         }
       }
     },
+    "/groups/deleted": {
+      "get": {
+        "tags": [
+          "groups"
+        ],
+        "summary": "List Deleted Groups",
+        "description": "Splitwise groups the caller is a member of that were deleted through the app (restorable), newest first.",
+        "operationId": "list_deleted_groups_groups_deleted_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/GroupResponse"
+                  },
+                  "type": "array",
+                  "title": "Response List Deleted Groups Groups Deleted Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/groups/{group_id}": {
       "get": {
         "tags": [
@@ -611,6 +642,55 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/groups/{group_id}/restore": {
+      "post": {
+        "tags": [
+          "groups"
+        ],
+        "summary": "Restore Group",
+        "description": "Restore a deleted Splitwise group (undelete on Splitwise + its expenses, clear the flag, re-sync). Any\nmember of the group can call this.",
+        "operationId": "restore_group_groups__group_id__restore_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Group Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupResponse"
+                }
+              }
+            }
           },
           "422": {
             "description": "Validation Error",
@@ -3177,53 +3257,6 @@
         ]
       }
     },
-    "/splitwise/groups/restore": {
-      "post": {
-        "tags": [
-          "splitwise"
-        ],
-        "summary": "Restore Group",
-        "description": "Restore a previously deleted Splitwise group (by its Splitwise id \u2014 it needn't exist locally) and its\nexpenses, then sync the group + expenses back into the local DB and return it.",
-        "operationId": "restore_group_splitwise_groups_restore_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/GroupRestoreRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GroupResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
-      }
-    },
     "/splitwise/groups/{group_id}/import-local": {
       "post": {
         "tags": [
@@ -4976,6 +5009,11 @@
             "format": "date-time",
             "title": "Superseded At"
           },
+          "deleted_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Deleted At"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -4997,19 +5035,6 @@
           "updated_at"
         ],
         "title": "GroupResponse"
-      },
-      "GroupRestoreRequest": {
-        "properties": {
-          "splitwise_group_id": {
-            "type": "string",
-            "title": "Splitwise Group Id"
-          }
-        },
-        "type": "object",
-        "required": [
-          "splitwise_group_id"
-        ],
-        "title": "GroupRestoreRequest"
       },
       "GroupUpdate": {
         "properties": {

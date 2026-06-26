@@ -24,6 +24,9 @@ class Group(UUIDMixin, TimestampMixin, Base):
     # Internal "superseded by local import" marker (set only by import_group_local, so its expenses stop
     # counting after they've been cloned to a self-hosted group). NOT a user-facing archive; null = active.
     superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # "Deleted on Splitwise but restorable" marker: a Splitwise group deleted through the app keeps its shared
+    # row (+ members) flagged so any member can restore it (Splitwise supports undelete). null = active.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Note: the per-user `hidden` visibility toggle now lives in `group_overrides` (per (owner, group)).
 
     expenses: Mapped[list["Expense"]] = relationship(  # noqa: F821

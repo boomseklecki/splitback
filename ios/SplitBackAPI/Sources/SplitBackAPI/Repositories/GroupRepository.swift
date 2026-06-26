@@ -142,18 +142,24 @@ struct GroupRepository {
         }
     }
 
-    /// Restores a deleted Splitwise group (by its Splitwise id) and its expenses, syncing them back. Returns
-    /// the restored local group id.
-    @discardableResult
-    func restore(splitwiseGroupId: String) async throws -> UUID {
-        let output = try await client.restore_group_splitwise_groups_restore_post(
-            body: .json(.init(splitwise_group_id: splitwiseGroupId))
+    /// Splitwise groups the caller is a member of that were deleted through the app (restorable), newest first.
+    func deletedGroups() async throws -> [Components.Schemas.GroupResponse] {
+        let output = try await client.list_deleted_groups_groups_deleted_get()
+        switch output {
+        case let .ok(ok): return try ok.body.json
+        case let .undocumented(statusCode, _): throw BackendError.fromUndocumented(statusCode)
+        }
+    }
+
+    /// Restores a deleted Splitwise group (undelete on Splitwise + its expenses, clear the flag, re-sync).
+    /// Any member can call this. Upserts the restored group locally.
+    func restore(groupId: UUID) async throws {
+        let output = try await client.restore_group_groups__group_id__restore_post(
+            path: .init(group_id: groupId.uuidString)
         )
         switch output {
         case let .ok(ok):
-            let response = try ok.body.json
-            try upsert([response])
-            return try Mapping.uuid(response.id, field: "Group.id")
+            try upsert([try ok.body.json])
         case let .unprocessableContent(error):
             throw BackendError.validation(BackendError.validationMessage(try? error.body.json))
         case let .undocumented(statusCode, _):

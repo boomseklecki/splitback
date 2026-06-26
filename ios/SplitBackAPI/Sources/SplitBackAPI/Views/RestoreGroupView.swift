@@ -1,64 +1,64 @@
 import SwiftUI
 import SwiftData
 
-/// Restore a deleted Splitwise group (and its expenses) by its Splitwise group id. Offers recently-deleted
-/// groups for one tap, plus a manual id field for older deletions.
+/// Restore a Splitwise group deleted through the app (and its expenses). The list comes from the server, so
+/// any member of the group sees it — no need to know the Splitwise id. One tap restores it for everyone.
 struct RestoreGroupView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
 
-    @State private var recent = RecentlyDeletedGroups.all()
-    @State private var manualId = ""
-    @State private var restoring = false
+    @State private var deleted: [Components.Schemas.GroupResponse] = []
+    @State private var loaded = false
+    @State private var restoringId: String?
     @State private var errorText: String?
 
     var body: some View {
         NavigationStack {
-            Form {
-                if !recent.isEmpty {
-                    Section("Recently deleted") {
-                        ForEach(recent) { entry in
-                            Button {
-                                restore(entry.splitwiseGroupId)
-                            } label: {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(entry.name)
-                                    Text("Deleted \(entry.deletedAt.formatted(.relative(presentation: .named)))")
-                                        .font(.caption).foregroundStyle(.secondary)
-                                }
+            List {
+                ForEach(deleted, id: \.id) { group in
+                    Button {
+                        restore(group)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(group.name)
+                            if let when = group.deleted_at {
+                                Text("Deleted \(when.formatted(.relative(presentation: .named)))")
+                                    .font(.caption).foregroundStyle(.secondary)
                             }
-                            .disabled(restoring)
                         }
                     }
+                    .disabled(restoringId != nil)
                 }
-                Section {
-                    TextField("Splitwise group id", text: $manualId)
-                        .keyboardType(.numberPad)
-                    Button("Restore") { restore(manualId.trimmingCharacters(in: .whitespaces)) }
-                        .disabled(restoring || manualId.trimmingCharacters(in: .whitespaces).isEmpty)
-                } header: {
-                    Text("By id")
-                } footer: {
-                    Text("Restores the group and its expenses on Splitwise, then syncs them back here.")
+            }
+            .overlay {
+                if loaded && deleted.isEmpty {
+                    ContentUnavailableView("Nothing to Restore", systemImage: "arrow.uturn.backward",
+                                           description: Text("Groups you delete here can be restored from this screen."))
                 }
             }
             .navigationTitle("Restore Group")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
+            .task { await load() }
             .errorAlert($errorText)
         }
     }
 
-    private func restore(_ splitwiseGroupId: String) {
-        guard !splitwiseGroupId.isEmpty else { return }
-        restoring = true
+    private func load() async {
+        do { deleted = try await env.groups(context).deletedGroups() }
+        catch { errorText = errorMessage(error) }
+        loaded = true
+    }
+
+    private func restore(_ group: Components.Schemas.GroupResponse) {
+        guard let id = UUID(uuidString: group.id) else { return }
+        restoringId = group.id
         Task {
-            defer { restoring = false }
+            defer { restoringId = nil }
             do {
-                try await env.groups(context).restore(splitwiseGroupId: splitwiseGroupId)
-                RecentlyDeletedGroups.remove(splitwiseGroupId: splitwiseGroupId)
-                dismiss()
+                try await env.groups(context).restore(groupId: id)
+                deleted.removeAll { $0.id == group.id }
             } catch { errorText = errorMessage(error) }
         }
     }

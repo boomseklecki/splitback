@@ -249,13 +249,10 @@ struct GroupDetailView: View {
 
     private func deleteGroup() {
         let id = group.id
-        // Remember Splitwise deletions so they can be one-tap restored (the id is gone once deleted locally).
-        let swId = group.backendType == .splitwise ? group.splitwiseGroupId : nil
-        let name = group.name
         Task {
             do {
+                // Splitwise deletes are restorable server-side (any member); the Restore screen lists them.
                 try await env.groups(context).delete(id: id)
-                if let swId { RecentlyDeletedGroups.record(splitwiseGroupId: swId, name: name) }
                 dismiss()
             } catch { errorText = errorMessage(error) }
         }

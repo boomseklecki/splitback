@@ -13,10 +13,6 @@ class GroupCreate(BaseModel):
     group_type: str | None = None  # Splitwise group type (apartment/trip/…), optional
 
 
-class GroupRestoreRequest(BaseModel):
-    splitwise_group_id: str  # a Splitwise group id (the group need not exist locally)
-
-
 class GroupUpdate(BaseModel):
     name: str | None = None
     # Per-user overrides (in `group_overrides`): `hidden` (reserved/future), plus budget inclusion. Only
@@ -41,5 +37,6 @@ class GroupResponse(BaseModel):
     include_in_spending: bool | None = None
     include_in_cash_flow: bool | None = None
     superseded_at: datetime | None
+    deleted_at: datetime | None
     created_at: datetime
     updated_at: datetime

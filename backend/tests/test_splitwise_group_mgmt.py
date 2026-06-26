@@ -1,6 +1,6 @@
 """Two-way Splitwise group management: create / delete / restore / add-member / remove-member propagate to
 Splitwise (wrappers monkeypatched, no live calls); self-hosted groups stay local. DB-backed."""
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from fastapi import HTTPException
@@ -9,9 +9,15 @@ from sqlalchemy import delete, select
 from app.db import async_session
 from app.integrations.splitwise import client as c
 from app.models import BackendType, Expense, Group, GroupMember, Split, SplitwiseToken, User
-from app.routers.groups import add_member, create_group, delete_group, remove_member
-from app.routers.splitwise import restore_group
-from app.schemas.group import GroupCreate, GroupRestoreRequest
+from app.routers.groups import (
+    add_member,
+    create_group,
+    delete_group,
+    list_deleted_groups,
+    remove_member,
+    restore_group,
+)
+from app.schemas.group import GroupCreate
 from app.schemas.group_member import GroupMemberCreate
 
 SWID = "gm-sw-9100"
@@ -99,10 +105,10 @@ async def test_create_self_hosted_stays_local():
     await _purge()
 
 
-async def test_delete_splitwise_propagates_then_removes():
+async def test_delete_splitwise_soft_deletes_keeping_row():
     await _purge()
     await _seed_token()
-    gid = await _seed_sw_group()
+    gid = await _seed_sw_group(members=[("8001", "alice")])
     orig = (c.make_client, c.delete_group)
     calls = {}
     c.make_client = lambda token: object()
@@ -112,7 +118,15 @@ async def test_delete_splitwise_propagates_then_removes():
             await delete_group(gid, caller=TOKEN_USER, session=s)
             assert calls["del"] == SWID
         async with async_session() as s:
-            assert await s.get(Group, gid) is None
+            g = await s.get(Group, gid)
+            assert g is not None and g.deleted_at is not None  # flagged, not gone
+            members = (await s.scalars(
+                select(GroupMember.user_identifier).where(GroupMember.group_id == gid))).all()
+            assert "alice" in members  # members kept so any of them can restore
+        # The caller (a member) sees it in the deleted list; the active list excludes it.
+        async with async_session() as s:
+            deleted = await list_deleted_groups(caller=TOKEN_USER, session=s)
+            assert any(d.id == gid for d in deleted)
     finally:
         c.make_client, c.delete_group = orig
         await _purge()
@@ -136,7 +150,8 @@ async def test_delete_splitwise_error_keeps_group():
             except HTTPException as e:
                 assert e.status_code == 502
         async with async_session() as s:
-            assert await s.get(Group, gid) is not None  # not deleted locally
+            g = await s.get(Group, gid)
+            assert g is not None and g.deleted_at is None  # untouched (not even flagged)
     finally:
         c.make_client, c.delete_group = orig
         await _purge()
@@ -189,21 +204,27 @@ async def test_remove_member_propagates():
         await _purge()
 
 
-async def test_restore_group_syncs_back():
+async def test_restore_group_clears_flag_and_syncs():
     await _purge()
     await _seed_token()
+    gid = await _seed_sw_group(members=[("8001", "alice")])
+    async with async_session() as s:  # flag it deleted, as delete_group would
+        g = await s.get(Group, gid)
+        g.deleted_at = datetime.now(timezone.utc)
+        await s.commit()
     orig = (c.make_client, c.restore_group, c.fetch_groups, c.fetch_expenses)
     calls = {}
     c.make_client = lambda token: object()
     c.restore_group = lambda token, sw_id: calls.setdefault("restore", sw_id)
-    c.fetch_groups = lambda client: [_group_dict(SWID, "GM Trip", [_member("8001", "Me")])]
+    c.fetch_groups = lambda client: [_group_dict(SWID, "GM Trip", [_member("8001", "alice")])]
     c.fetch_expenses = lambda client, **kw: []
     try:
         async with async_session() as s:
-            g = await restore_group(GroupRestoreRequest(splitwise_group_id=SWID),
-                                    caller=TOKEN_USER, session=s)
+            g = await restore_group(gid, caller=TOKEN_USER, session=s)
             assert calls["restore"] == SWID
-            assert g.splitwise_group_id == SWID
+            assert g.deleted_at is None
+        async with async_session() as s:
+            assert (await s.get(Group, gid)).deleted_at is None  # cleared, back in active lists
     finally:
         c.make_client, c.restore_group, c.fetch_groups, c.fetch_expenses = orig
         await _purge()

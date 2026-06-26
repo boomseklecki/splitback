@@ -27,7 +27,7 @@ from app.models import (
     SplitwiseToken,
     User,
 )
-from app.schemas.group import GroupResponse, GroupRestoreRequest
+from app.schemas.group import GroupResponse
 from app.schemas.splitwise import (
     LocalImportRequest,
     LocalImportResult,
@@ -293,37 +293,6 @@ async def _copy_uploaded_receipt(session: AsyncSession, source: Receipt, target_
         expense_id=target_expense_id, bucket=settings.minio_bucket,
         object_key=object_key, content_type=source.content_type,
     ))
-
-
-@router.post("/groups/restore", response_model=GroupResponse)
-async def restore_group(
-    body: GroupRestoreRequest,
-    caller: str | None = Depends(require_auth),
-    session: AsyncSession = Depends(get_session),
-) -> Group:
-    """Restore a previously deleted Splitwise group (by its Splitwise id — it needn't exist locally) and its
-    expenses, then sync the group + expenses back into the local DB and return it."""
-    token = await _select_token(session, caller)
-    try:
-        await asyncio.to_thread(sw_client.restore_group, token.access_token, body.splitwise_group_id)
-    except Exception as exc:  # upstream Splitwise error
-        raise HTTPException(status_code=502, detail=f"Splitwise rejected the request: {exc}")
-    client = sw_client.make_client(token.access_token)
-    groups = await asyncio.to_thread(sw_client.fetch_groups, client)
-    scoped = [g for g in groups if g["splitwise_id"] == body.splitwise_group_id]
-    await importer.sync_groups(session, client, settings.splitwise_user_map, groups=scoped)
-    await importer.sync_expenses(
-        session, client, settings.splitwise_user_map, group_id=body.splitwise_group_id
-    )
-    group = await session.scalar(
-        select(Group).where(Group.splitwise_group_id == body.splitwise_group_id)
-    )
-    if group is None:
-        raise HTTPException(status_code=502, detail="Restored on Splitwise but did not sync back")
-    group.hidden = False  # per-user override transients for the response (a fresh restore has none)
-    group.include_in_spending = None
-    group.include_in_cash_flow = None
-    return group
 
 
 @router.post("/groups/{group_id}/import-local", response_model=LocalImportResult)

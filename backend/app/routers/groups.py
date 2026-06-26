@@ -1,9 +1,9 @@
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import require_auth
@@ -115,8 +115,8 @@ async def list_groups(
         )
     if backend_type is not None:
         stmt = stmt.where(Group.backend_type == backend_type)
-    # Always exclude a group superseded by a local import (its expenses live on the self-hosted clone).
-    stmt = stmt.where(Group.superseded_at.is_(None))
+    # Always exclude superseded (local-import source) + deleted (restorable Splitwise) groups.
+    stmt = stmt.where(Group.superseded_at.is_(None), Group.deleted_at.is_(None))
     if caller is not None and not include_hidden:  # exclude groups the caller has hidden (open mode hides none)
         stmt = stmt.where(
             Group.id.notin_(
@@ -128,6 +128,23 @@ async def list_groups(
     if updated_since is not None:
         stmt = stmt.where(Group.updated_at >= ensure_utc(updated_since))
     rows = list(await session.scalars(stmt.order_by(Group.created_at)))
+    await _attach_group_overrides(session, caller, rows)
+    return rows
+
+
+# NOTE: declared before `/{group_id}` so "deleted" isn't matched as a group id.
+@router.get("/deleted", response_model=list[GroupResponse])
+async def list_deleted_groups(
+    caller: str | None = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
+) -> list[Group]:
+    """Splitwise groups the caller is a member of that were deleted through the app (restorable), newest first."""
+    stmt = select(Group).where(Group.deleted_at.is_not(None))
+    if caller is not None:
+        stmt = stmt.where(
+            Group.id.in_(select(GroupMember.group_id).where(GroupMember.user_identifier == caller))
+        )
+    rows = list(await session.scalars(stmt.order_by(Group.deleted_at.desc())))
     await _attach_group_overrides(session, caller, rows)
     return rows
 
@@ -183,18 +200,32 @@ async def update_group(
     return group
 
 
-async def _hard_delete_group(session: AsyncSession, group: Group) -> None:
+async def _remove_group_receipts(session: AsyncSession, group_id: UUID) -> None:
+    """Best-effort MinIO cleanup of a group's expense receipts (the DB rows cascade on expense/group delete)."""
     keys = await session.scalars(
         select(Receipt.object_key)
         .join(Expense, Receipt.expense_id == Expense.id)
-        .where(Expense.group_id == group.id)
+        .where(Expense.group_id == group_id)
     )
     for key in keys:
         try:
             await asyncio.to_thread(minio_client.remove, key)
         except Exception:
-            pass  # best-effort; don't block the delete on storage hiccups
+            pass  # don't block the delete on storage hiccups
+
+
+async def _hard_delete_group(session: AsyncSession, group: Group) -> None:
+    await _remove_group_receipts(session, group.id)
     await session.delete(group)
+    await session.commit()
+
+
+async def _soft_delete_splitwise_group(session: AsyncSession, group: Group) -> None:
+    """Flag a Splitwise group deleted (restorable) and drop its expenses (gone on Splitwise; restore re-syncs
+    them). Keeps the shared group row + members so any member can restore. Commits."""
+    await _remove_group_receipts(session, group.id)
+    await session.execute(delete(Expense).where(Expense.group_id == group.id))
+    group.deleted_at = datetime.now(timezone.utc)
     await session.commit()
 
 
@@ -217,7 +248,41 @@ async def delete_group(
             await asyncio.to_thread(sw_client.delete_group, client, group.splitwise_group_id)
         except Exception as exc:  # SDK / upstream Splitwise error
             raise HTTPException(status_code=502, detail=f"Splitwise rejected the request: {exc}")
-    await _hard_delete_group(session, group)
+        # Restorable: keep the shared row (+ members) flagged so any member can undo. (Self-hosted is final.)
+        await _soft_delete_splitwise_group(session, group)
+    else:
+        await _hard_delete_group(session, group)
+
+
+@router.post("/{group_id}/restore", response_model=GroupResponse)
+async def restore_group(
+    group_id: UUID,
+    caller: str | None = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
+) -> Group:
+    """Restore a deleted Splitwise group (undelete on Splitwise + its expenses, clear the flag, re-sync). Any
+    member of the group can call this."""
+    group = await session.get(Group, group_id)
+    if group is None or group.deleted_at is None:
+        raise HTTPException(status_code=404, detail="No deleted group to restore")
+    await assert_group_member(session, group_id, caller)
+    if not group.splitwise_group_id:
+        raise HTTPException(status_code=400, detail="Splitwise group is missing splitwise_group_id")
+    token = await _push_token(session, caller)
+    try:
+        await asyncio.to_thread(sw_client.restore_group, token.access_token, group.splitwise_group_id)
+    except Exception as exc:  # upstream Splitwise error
+        raise HTTPException(status_code=502, detail=f"Splitwise rejected the request: {exc}")
+    group.deleted_at = None
+    await session.commit()
+    await _sync_splitwise_group(session, token, group.splitwise_group_id)
+    await importer.sync_expenses(
+        session, sw_client.make_client(token.access_token), settings.splitwise_user_map,
+        group_id=group.splitwise_group_id,
+    )
+    await session.refresh(group)
+    await _attach_group_overrides(session, caller, [group])
+    return group
 
 
 @router.get("/{group_id}/members", response_model=list[GroupMemberResponse])
