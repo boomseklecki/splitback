@@ -79,7 +79,7 @@ struct AccountsView: View {
                         let items = byBalance(accounts.filter { $0.kind == section.kind })
                         if !items.isEmpty {
                             Section(section.title) {
-                                ForEach(items) { accountRow($0) }
+                                ForEach(items) { accountRow($0, byType: true) }
                             }
                         }
                     }
@@ -159,7 +159,14 @@ struct AccountsView: View {
     }
 
     @ViewBuilder
-    private func accountRow(_ account: Account, inBank: Bool = false) -> some View {
+    private func accountRow(_ account: Account, inBank: Bool = false, byType: Bool = false) -> some View {
+        // Bank sections show type + mask; Type sections already convey the type, so show bank + mask there
+        // (not the type again); other sorts show bank + type.
+        let caption: String = inBank
+            ? account.kind.label + (account.maskLabel.map { " · \($0)" } ?? "")
+            : byType
+                ? [account.institutionName, account.maskLabel].compactMap { $0 }.joined(separator: " · ")
+                : [account.institutionName, account.kind.label].compactMap { $0 }.joined(separator: " · ")
         NavigationLink {
             TransactionsView(account: account)
         } label: {
@@ -171,10 +178,7 @@ struct AccountsView: View {
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(account.displayLabel)
-                    Text(inBank
-                         ? account.kind.label + (account.maskLabel.map { " · \($0)" } ?? "")
-                         : [account.institutionName, account.kind.label].compactMap { $0 }.joined(separator: " · "))
-                        .font(.caption).foregroundStyle(.secondary)
+                    Text(caption).font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Text(account.balance.formatted(.currency(code: account.currency)))

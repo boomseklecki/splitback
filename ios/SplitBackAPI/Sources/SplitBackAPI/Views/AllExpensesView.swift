@@ -40,6 +40,7 @@ struct AllExpensesView: View {
             }
         }
         .navigationTitle("All Expenses")
+        .navigationBarTitleDisplayMode(.inline)
         .overlay {
             if expenses.isEmpty {
                 ContentUnavailableView("No Expenses", systemImage: "list.bullet.rectangle",

@@ -77,7 +77,6 @@ struct ExpenseEditView: View {
         _notes = State(initialValue: editing?.notes ?? "")
         let payingSplits = (editing?.splits ?? []).filter { $0.paidShare > 0 }
         _payer = State(initialValue: payingSplits.first?.userIdentifier ?? people.first ?? "")
-        // Preserve multiple payers from an imported/edited expense.
         _multiPayer = State(initialValue: payingSplits.count > 1)
         var paid: [String: String] = [:]
         for split in payingSplits { paid[split.userIdentifier] = Mapping.decimalString(split.paidShare) }
@@ -88,8 +87,6 @@ struct ExpenseEditView: View {
         var owed: [String: String] = [:]
         for split in editing?.splits ?? [] { owed[split.userIdentifier] = Mapping.decimalString(split.owedShare) }
         _customOwed = State(initialValue: owed)
-        // Seed from the edited expense's items, plus any prefill items (a fresh scan, or items extracted
-        // from an existing receipt being reviewed). The user prunes duplicates in the editor.
         let existingItems = editing?.items.map {
             ItemDraft(id: $0.id, name: $0.name, quantity: $0.quantity, price: $0.price,
                       category: $0.category, owner: $0.ownerIdentifier)

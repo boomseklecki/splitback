@@ -19,9 +19,8 @@ struct PlaidRepository {
         }
     }
 
-    /// Exchanges the Plaid public token for an item + accounts, caches the accounts, then auto-syncs just
-    /// that new bank so its transactions appear immediately. A fresh link can backfill ~24 months, so call
-    /// this on the slow client (see `AppEnvironment.plaidSlow`).
+    /// Exchanges a Plaid public token for an item + accounts, caches them, then auto-syncs that new bank.
+    /// The initial sync can backfill ~24 months, so call this on the slow client (`AppEnvironment.plaidSlow`).
     func exchange(publicToken: String, userIdentifier: String, institutionName: String? = nil) async throws {
         let output = try await client.exchange_plaid_exchange_post(
             body: .json(.init(public_token: publicToken, user_identifier: userIdentifier, institution_name: institutionName))

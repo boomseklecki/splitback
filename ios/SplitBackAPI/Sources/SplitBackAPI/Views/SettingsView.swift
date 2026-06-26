@@ -14,6 +14,7 @@ struct SettingsView: View {
     @State private var baseURL = ""
     @State private var pendingBaseURL = ""
     @State private var confirmingSwitch = false
+    @State private var confirmingSignOut = false
     @State private var confirmingDelete = false
     @State private var importing = false
     @State private var importSummary: String?
@@ -49,7 +50,7 @@ struct SettingsView: View {
                                     .font(.caption2).foregroundStyle(.secondary).textSelection(.enabled)
                             }
                         }
-                        Button("Sign Out", role: .destructive) { env.signOut() }
+                        Button("Sign Out", role: .destructive) { confirmingSignOut = true }
                         Button("Delete Account", role: .destructive) { confirmingDelete = true }
                     } else {
                         Text("Not signed in").foregroundStyle(.secondary)
@@ -262,6 +263,11 @@ struct SettingsView: View {
                 Text("Connects to the new server and clears locally cached accounts, transactions, groups, "
                      + "and expenses so prod and dev records don't mix. You stay signed in if you've used "
                      + "this server before — otherwise sign in again.")
+            }
+            .confirmationDialog("Sign out?", isPresented: $confirmingSignOut, titleVisibility: .visible) {
+                Button("Sign Out", role: .destructive) { env.signOut() }
+            } message: {
+                Text("You'll need to sign in again to use this server.")
             }
             .confirmationDialog("Delete your account?", isPresented: $confirmingDelete,
                                 titleVisibility: .visible) {

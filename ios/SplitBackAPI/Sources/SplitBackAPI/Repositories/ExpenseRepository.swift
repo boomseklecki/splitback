@@ -210,8 +210,7 @@ struct ExpenseRepository {
         try context.save()
     }
 
-    /// Reconcile a to-many relationship by `id`: update matched children in place, insert new ones,
-    /// delete removed ones — so unchanged children aren't invalidated out from under live views.
+    /// Reconcile a to-many relationship by `id`: update matched children in place, insert new, delete removed.
     private func reconcileSplits(_ expense: Expense, _ incoming: [Split]) {
         var byId = Dictionary(expense.splits.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var result: [Split] = []

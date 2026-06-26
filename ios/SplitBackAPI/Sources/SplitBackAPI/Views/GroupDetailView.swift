@@ -49,8 +49,7 @@ struct GroupDetailView: View {
     }
 
     var body: some View {
-        // Hoist per-render values out of the row builders below — reading `users` (a `@Query`) or
-        // `env.currentUser` per row makes tapping a row (which triggers the ForEach update pass) freeze.
+        // Hoist per-render values out of the row builders — reading a @Query/env per row freezes the list on tap.
         let users = self.users
         let me = env.currentUser?.identifier
         // Cached server balances render instantly (a @Query); `reload` refreshes them in the background.
@@ -97,8 +96,7 @@ struct GroupDetailView: View {
             ForEach(expenseMonthGroups(data), id: \.id) { month in
                 Section {
                     ForEach(month.expenses) { expense in
-                        // Closure-based (not value-based) NavigationLink: value-based links nested in
-                        // the Splits NavigationStack drop the first tap (off-by-one push).
+                        // Closure-based nav: value-based links nested here drop the first tap (off-by-one).
                         NavigationLink {
                             LazyView(ExpenseDetailView(expense: expense))
                         } label: {
@@ -114,6 +112,7 @@ struct GroupDetailView: View {
             }
         }
         .navigationTitle(group.name)
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Menu {

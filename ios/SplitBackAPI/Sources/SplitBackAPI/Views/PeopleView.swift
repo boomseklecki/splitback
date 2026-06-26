@@ -52,6 +52,7 @@ struct PeopleView: View {
             }
         }
         .navigationTitle("People")
+        .navigationBarTitleDisplayMode(.inline)
         .refreshable {
             await env.smartRefresh(source: .splitwise,
                                    freshness: users.map(\.updatedAt).max(), context: context) {
