@@ -5,9 +5,9 @@ import Foundation
 struct DeviceRepository {
     let client: Client
 
-    func register(token: String) async throws {
+    func register(token: String, publicKey: String? = nil) async throws {
         let output = try await client.register_device_devices_post(
-            body: .json(.init(token: token, platform: "ios")))
+            body: .json(.init(token: token, platform: "ios", public_key: publicKey)))
         switch output {
         case .noContent: return
         case let .unprocessableContent(error):

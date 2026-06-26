@@ -68,6 +68,57 @@ def test_push_forwards_and_returns_dead(client, monkeypatch):
          settings.apns_bundle_id, settings.apns_auth_key) = saved
 
 
+def _configure_apns():
+    saved = (settings.apns_key_id, settings.apns_team_id, settings.apns_bundle_id, settings.apns_auth_key)
+    settings.apns_key_id, settings.apns_team_id = "K", "T"
+    settings.apns_bundle_id, settings.apns_auth_key = "com.splitback.app", "x"
+    return saved
+
+
+def test_push_forwards_encrypted_messages(client, monkeypatch):
+    key = db.create_key("a@x.com", None)
+    saved = _configure_apns()
+    seen = []
+
+    async def fake_enc(_c, token, ft, fb, epk, box):
+        seen.append((token, ft, fb, epk, box))
+        return token == "dead-enc"
+    monkeypatch.setattr(apns, "send_encrypted", fake_enc)
+    try:
+        resp = client.post("/push", json={
+            "messages": [{"token": "good", "epk": "E1", "box": "B1"},
+                         {"token": "dead-enc", "epk": "E2", "box": "B2"}],
+            "fallback_title": "SplitBack", "fallback_body": "New activity"},
+            headers={"Authorization": f"Bearer {key}"})
+        assert resp.status_code == 200
+        assert resp.json()["dead"] == ["dead-enc"]
+        assert seen[0] == ("good", "SplitBack", "New activity", "E1", "B1")
+    finally:
+        (settings.apns_key_id, settings.apns_team_id,
+         settings.apns_bundle_id, settings.apns_auth_key) = saved
+
+
+def test_require_e2ee_rejects_plaintext_accepts_messages(client, monkeypatch):
+    key = db.create_key("a@x.com", None)
+    saved = _configure_apns()
+    settings.require_e2ee = True
+
+    async def fake_enc(*a):
+        return False
+    monkeypatch.setattr(apns, "send_encrypted", fake_enc)
+    try:
+        plain = client.post("/push", json={"tokens": ["t"], "title": "x", "body": "secret"},
+                            headers={"Authorization": f"Bearer {key}"})
+        assert plain.status_code == 400                       # plaintext refused
+        enc = client.post("/push", json={"messages": [{"token": "t", "epk": "E", "box": "B"}]},
+                          headers={"Authorization": f"Bearer {key}"})
+        assert enc.status_code == 200                         # ciphertext accepted
+    finally:
+        settings.require_e2ee = False
+        (settings.apns_key_id, settings.apns_team_id,
+         settings.apns_bundle_id, settings.apns_auth_key) = saved
+
+
 def test_provider_token_builds():
     pem = ec.generate_private_key(ec.SECP256R1()).private_bytes(
         serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())

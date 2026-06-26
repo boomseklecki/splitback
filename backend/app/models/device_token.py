@@ -14,3 +14,6 @@ class DeviceToken(UUIDMixin, TimestampMixin, Base):
     user_identifier: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     token: Mapped[str] = mapped_column(String(256), nullable=False)
     platform: Mapped[str] = mapped_column(String(16), nullable=False, default="ios")
+    # Base64 X9.63 (uncompressed-point) P-256 public key for ECIES push sealing (see services/crypto_push).
+    # Nullable: older app builds register without one and get plaintext pushes (back-compat).
+    public_key: Mapped[str | None] = mapped_column(String(128), nullable=True)

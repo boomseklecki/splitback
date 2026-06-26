@@ -22,7 +22,11 @@ async def register_device(
     existing = await session.scalar(select(DeviceToken).where(
         DeviceToken.user_identifier == caller, DeviceToken.token == body.token))
     if existing is None:
-        session.add(DeviceToken(user_identifier=caller, token=body.token, platform=body.platform))
+        session.add(DeviceToken(user_identifier=caller, token=body.token, platform=body.platform,
+                                public_key=body.public_key))
+        await session.commit()
+    elif body.public_key is not None and existing.public_key != body.public_key:
+        existing.public_key = body.public_key  # device rotated / first published its key
         await session.commit()
 
 

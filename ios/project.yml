@@ -17,6 +17,7 @@ targets:
       - SplitBack
     dependencies:
       - package: SplitBackAPI
+      - target: SplitBackNotificationService  # E2E push decryption extension (embedded)
     info:
       path: SplitBack/Info.plist
       properties:
@@ -61,6 +62,11 @@ targets:
         # APNs push. Device builds also need the Push Notifications capability on the App ID +
         # a provisioning profile with it enabled; "development" for dev/TestFlight sandbox APNs.
         aps-environment: development
+        # Shared App Group: the E2E push private key lives in this group's Keychain so the notification
+        # service extension can read it to decrypt pushes. Device builds need the App Groups capability
+        # on the App ID + matching provisioning profiles (app + extension).
+        com.apple.security.application-groups:
+          - group.com.splitback.app
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.splitback.app
@@ -70,6 +76,34 @@ targets:
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1,2"
         SWIFT_EMIT_LOC_STRINGS: YES
+
+  # Notification Service Extension: decrypts E2E push payloads on-device (relay/Apple stay blind). It
+  # compiles the shared crypto/keychain sources directly (no SwiftData/package link) so it stays tiny.
+  SplitBackNotificationService:
+    type: app-extension
+    platform: iOS
+    sources:
+      - SplitBackNotificationService
+      - path: SplitBackAPI/Sources/SplitBackAPI/Networking/PushCrypto.swift
+        group: Shared
+      - path: SplitBackAPI/Sources/SplitBackAPI/Networking/PushKeychain.swift
+        group: Shared
+    info:
+      path: SplitBackNotificationService/Info.plist
+      properties:
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.usernotifications.service
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).NotificationService
+    entitlements:
+      path: SplitBackNotificationService/SplitBackNotificationService.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.splitback.app
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.splitback.app.NotificationService
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
 
   # Logic tests for the data layer. Depends only on the SplitBackAPI library (no app host), so the
   # library and its transitive runtime deps link cleanly; uses `@testable import SplitBackAPI`.

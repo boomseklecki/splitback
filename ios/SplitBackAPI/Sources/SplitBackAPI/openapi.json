@@ -4691,6 +4691,10 @@
             "type": "string",
             "title": "Platform",
             "default": "ios"
+          },
+          "public_key": {
+            "type": "string",
+            "title": "Public Key"
           }
         },
         "type": "object",

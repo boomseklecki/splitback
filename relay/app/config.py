@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     admin_token: str = ""          # gates /admin/* (approve/revoke); empty = admin disabled
     relay_auto_issue: bool = True  # register → key now; false = pending until approved
     db_path: str = "relay.db"      # sqlite file
+    # When true, the relay refuses plaintext-body pushes and only forwards E2E-encrypted (opaque) payloads,
+    # so it can be safely shared by multiple self-hosters without seeing their content. Off = back-compat.
+    require_e2ee: bool = False
 
     # Rate limits
     register_max_per_hour: int = 5     # per IP

@@ -31,9 +31,8 @@ def _host() -> str:
     return "api.sandbox.push.apple.com" if settings.apns_env == "sandbox" else "api.push.apple.com"
 
 
-async def send(client: httpx.AsyncClient, token: str, title: str, body: str) -> bool:
-    """Sends one alert push; returns True if the device token is dead (caller should drop it)."""
-    payload = {"aps": {"alert": {"title": title, "body": body}, "sound": "default"}}
+async def _post(client: httpx.AsyncClient, token: str, payload: dict) -> bool:
+    """POSTs one alert to APNs; returns True if the token is dead (caller should drop it)."""
     try:
         resp = await client.post(
             f"https://{_host()}/3/device/{token}",
@@ -52,3 +51,18 @@ async def send(client: httpx.AsyncClient, token: str, title: str, body: str) -> 
         except Exception:
             return False
     return False
+
+
+async def send(client: httpx.AsyncClient, token: str, title: str, body: str) -> bool:
+    """Plaintext alert push (back-compat; relay sees the content)."""
+    return await _post(client, token, {"aps": {"alert": {"title": title, "body": body}, "sound": "default"}})
+
+
+async def send_encrypted(client: httpx.AsyncClient, token: str, fallback_title: str, fallback_body: str,
+                         epk: str, box: str) -> bool:
+    """E2E push: a generic fallback alert + the opaque ciphertext for the on-device service extension to
+    decrypt (`mutable-content`). The relay never sees the plaintext."""
+    payload = {"aps": {"alert": {"title": fallback_title, "body": fallback_body},
+                       "mutable-content": 1, "sound": "default"},
+               "e2e": {"epk": epk, "box": box}}
+    return await _post(client, token, payload)

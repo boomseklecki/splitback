@@ -34,10 +34,21 @@ def require_admin(authorization: str | None = Header(default=None)) -> None:
         raise HTTPException(status_code=403, detail="Admin only")
 
 
+class EncMessage(BaseModel):
+    token: str
+    epk: str
+    box: str
+
+
 class PushRequest(BaseModel):
-    tokens: list[str]
-    title: str
-    body: str
+    # Plaintext form (back-compat): relay sees the content.
+    tokens: list[str] = []
+    title: str = "SplitBack"
+    body: str = ""
+    # E2E form: per-device ciphertext + a generic fallback alert. Relay stays blind.
+    messages: list[EncMessage] = []
+    fallback_title: str = "SplitBack"
+    fallback_body: str = "New activity"
 
 
 @app.get("/health")
@@ -47,11 +58,18 @@ def health() -> dict:
 
 @app.post("/push")
 async def push(body: PushRequest, _: None = Depends(require_key)) -> dict:
-    """Forwards an alert to APNs for each device token; returns the dead tokens so the caller can prune."""
+    """Forwards alerts to APNs (encrypted `messages` and/or plaintext `tokens`); returns dead tokens to
+    prune. With `RELAY_REQUIRE_E2EE`, plaintext pushes are refused so the relay only ever sees ciphertext."""
     if not settings.apns_configured:
         raise HTTPException(status_code=503, detail="Relay APNs is not configured")
+    if settings.require_e2ee and body.tokens:
+        raise HTTPException(status_code=400, detail="This relay accepts only E2E-encrypted pushes")
     dead: list[str] = []
     async with httpx.AsyncClient(http2=True, timeout=10) as client:
+        for m in body.messages:
+            if await apns.send_encrypted(client, m.token, body.fallback_title, body.fallback_body,
+                                         m.epk, m.box):
+                dead.append(m.token)
         for token in body.tokens:
             if await apns.send(client, token, body.title, body.body):
                 dead.append(token)

@@ -239,11 +239,13 @@ public final class AppEnvironment {
         }
     }
 
-    /// Sends the device token to the backend once we have both a token and a signed-in user.
+    /// Sends the device token to the backend once we have both a token and a signed-in user, along with this
+    /// device's E2E public key so the backend can seal pushes (relay stays blind to content).
     private func forwardDeviceToken(_ token: String) {
         deviceToken = token
         guard currentUser != nil else { return }
-        Task { try? await devices.register(token: token) }
+        let publicKey = PushKeychain.shared.publicKeyBase64()
+        Task { try? await devices.register(token: token, publicKey: publicKey) }
     }
 
     /// Sets the inbox badge directly (the Inbox view computes it from what it already loaded).
