@@ -11,6 +11,7 @@ struct SettingsView: View {
 
     @AppStorage(AppLock.enabledKey) private var lockEnabled = false
     @AppStorage("appearance") private var appearanceRaw = AppearanceMode.system.rawValue
+    @AppStorage("debug.categoryProvenance") private var showCategoryProvenance = false
     @State private var baseURL = ""
     @State private var pendingBaseURL = ""
     @State private var confirmingSwitch = false
@@ -221,6 +222,9 @@ struct SettingsView: View {
                         SubscriptionsView()
                     } label: {
                         Label("Subscriptions", systemImage: "repeat")
+                    }
+                    Toggle(isOn: $showCategoryProvenance) {
+                        Label("Show category provenance", systemImage: "tag.circle")
                     }
                 }
 

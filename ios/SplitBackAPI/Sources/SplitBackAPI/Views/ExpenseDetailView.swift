@@ -12,7 +12,9 @@ struct ExpenseDetailView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     @Query private var users: [User]
+    @Query private var categoryMaps: [CategoryMap]
     @Query(sort: \SpendCategory.position) private var spendCategories: [SpendCategory]
+    @AppStorage("debug.categoryProvenance") private var showProvenance = false
 
     @State private var showingEdit = false
     @State private var editPrefill: ExpensePrefill?
@@ -32,6 +34,15 @@ struct ExpenseDetailView: View {
 
     private var meIdentifier: String? { env.currentUser?.identifier }
     private var isSettleUp: Bool { expense.category == SettleUp.category }
+
+    // Category display is canonical (so imported Splitwise labels like "Dining out" read "Dining"), with
+    // provenance — matching the transaction detail.
+    private var lookup: [String: String] { CategoryMapping.lookup(categoryMaps) }
+    private var sources: [String: String] { CategoryMapping.sources(categoryMaps) }
+    private var resolution: CategoryResolution {
+        CategoryMapping.resolve(expenseCategory: expense.category, lookup: lookup, sources: sources)
+    }
+    private var displayCategory: String? { resolution.category }
 
     /// The bank/manual transaction this expense is linked to, if any (mirrors the `group` lookup).
     private var linkedTransaction: Transaction? {
@@ -187,13 +198,14 @@ struct ExpenseDetailView: View {
             if !expense.items.isEmpty {
                 Section("Items") {
                     ForEach(expense.items) { item in
+                        let itemCategory = item.category.flatMap { CategoryMapping.canonical($0, lookup: lookup) }
                         HStack(spacing: 10) {
-                            Image(systemName: categorySymbol(item.category))
-                                .foregroundStyle(categoryColor(item.category)).frame(width: 22)
+                            Image(systemName: categorySymbol(itemCategory))
+                                .foregroundStyle(categoryColor(itemCategory)).frame(width: 22)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(item.name)
                                 HStack(spacing: 4) {
-                                    if let category = item.category { Text(category) }
+                                    if let category = itemCategory { Text(category) }
                                     // Item ownership is local-only (see ItemizedSpend); don't show a
                                     // (possibly stale) assignee on Splitwise items.
                                     if expense.splitwiseExpenseId == nil, let owner = item.ownerIdentifier {
@@ -343,7 +355,7 @@ struct ExpenseDetailView: View {
     private var header: some View {
         HStack(alignment: .top, spacing: 16) {
             Button { showingCategoryPicker = true } label: {
-                Image(systemName: categorySymbol(expense.category))
+                Image(systemName: categorySymbol(displayCategory))
                     .font(.title2)
                     .frame(width: 52, height: 52)
                     .background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
@@ -357,7 +369,14 @@ struct ExpenseDetailView: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(currency(expense.amount)).font(.title2).fontWeight(.semibold)
-                Text(expense.category ?? "Uncategorized").font(.subheadline).foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    Text(displayCategory ?? "Uncategorized").font(.subheadline).foregroundStyle(.secondary)
+                    CategoryProvenanceBadge(source: resolution.source)
+                }
+                if showProvenance {
+                    Text(resolution.inspectorString)
+                        .font(.caption2.monospaced()).foregroundStyle(.tertiary)
+                }
                 Text(expense.date.formatted(date: .abbreviated, time: .omitted))
                     .font(.caption).foregroundStyle(.secondary)
             }

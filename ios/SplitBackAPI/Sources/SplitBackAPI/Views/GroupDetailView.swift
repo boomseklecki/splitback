@@ -266,6 +266,9 @@ struct ExpenseRow: View {
     let users: [User]
     let meIdentifier: String?
     var groupName: String? = nil
+    /// Built once by the parent list; empty falls back to deterministic canonicalization (still folds
+    /// Splitwise labels like "Dining out" → "Dining" for the icon).
+    var lookup: [String: String] = [:]
 
     private var isSettleUp: Bool { expense.category == SettleUp.category }
     private var isReimbursement: Bool { expense.category == Reimbursement.category }
@@ -315,7 +318,7 @@ struct ExpenseRow: View {
                     .font(.headline).monospacedDigit()
             }
             .frame(width: 34)
-            Image(systemName: categorySymbol(expense.category))
+            Image(systemName: categorySymbol(expense.category.flatMap { CategoryMapping.canonical($0, lookup: lookup) }))
                 .font(.title3)
                 .foregroundStyle(.secondary)
                 .frame(width: 30)

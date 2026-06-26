@@ -25,11 +25,14 @@ struct TransactionDetailView: View {
     /// The expense linked to this transaction, loaded off the render path (see `loadLinkedExpense`). A
     /// body-time `@Query` over the expenses table blocked the navigation push on large datasets.
     @State private var linkedExpense: Expense?
+    @AppStorage("debug.categoryProvenance") private var showProvenance = false
 
     private var lookup: [String: String] { CategoryMapping.lookup(categoryMaps) }
-    private var effectiveCategory: String? {
-        CategoryMapping.effectiveCategory(for: transaction, lookup: lookup)
+    private var sources: [String: String] { CategoryMapping.sources(categoryMaps) }
+    private var resolution: CategoryResolution {
+        CategoryMapping.resolve(for: transaction, lookup: lookup, sources: sources)
     }
+    private var effectiveCategory: String? { resolution.category }
 
     /// The account this transaction belongs to (for the name). Filtered in memory from the observed
     /// query — never fetch from the context during `body`, which loops the view.
@@ -138,12 +141,13 @@ struct TransactionDetailView: View {
             if transaction.amount > 0 {
                 Section {
                     ForEach(itemsByAdded, id: \.id) { item in
+                        let itemCategory = item.category.flatMap { CategoryMapping.canonical($0, lookup: lookup) }
                         HStack(spacing: 12) {
-                            Image(systemName: categorySymbol(item.category))
-                                .foregroundStyle(categoryColor(item.category)).frame(width: 24)
+                            Image(systemName: categorySymbol(itemCategory))
+                                .foregroundStyle(categoryColor(itemCategory)).frame(width: 24)
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(item.name)
-                                Text(item.category ?? "Uncategorized")
+                                Text(itemCategory ?? "Uncategorized")
                                     .font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
@@ -238,7 +242,14 @@ struct TransactionDetailView: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(amountText).font(.title2).fontWeight(.semibold)
-                Text(effectiveCategory ?? "Uncategorized").font(.subheadline).foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    Text(effectiveCategory ?? "Uncategorized").font(.subheadline).foregroundStyle(.secondary)
+                    CategoryProvenanceBadge(source: resolution.source)
+                }
+                if showProvenance {
+                    Text(resolution.inspectorString)
+                        .font(.caption2.monospaced()).foregroundStyle(.tertiary)
+                }
                 Text(transaction.date.formatted(date: .abbreviated, time: .omitted))
                     .font(.caption).foregroundStyle(.secondary)
             }
