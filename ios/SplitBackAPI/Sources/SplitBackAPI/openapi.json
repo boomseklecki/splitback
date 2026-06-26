@@ -2779,6 +2779,305 @@
         ]
       }
     },
+    "/splitwise/sync/group/{splitwise_group_id}": {
+      "post": {
+        "tags": [
+          "splitwise"
+        ],
+        "summary": "Sync Group",
+        "description": "Drill-in: refresh one Splitwise group's metadata + members and its expenses only.",
+        "operationId": "sync_group_splitwise_sync_group__splitwise_group_id__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "splitwise_group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Splitwise Group Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/app__schemas__splitwise__SyncRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/splitwise/sync/friend/{identifier}": {
+      "post": {
+        "tags": [
+          "splitwise"
+        ],
+        "summary": "Sync Friend",
+        "description": "Drill-in: refresh the expenses shared with one friend (resolved to their Splitwise user id).",
+        "operationId": "sync_friend_splitwise_sync_friend__identifier__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "identifier",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Identifier"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/app__schemas__splitwise__SyncRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/splitwise/sync/expense/{splitwise_expense_id}": {
+      "post": {
+        "tags": [
+          "splitwise"
+        ],
+        "summary": "Sync Expense",
+        "description": "Drill-in: refresh a single expense (upsert, or archive when Splitwise has deleted it).",
+        "operationId": "sync_expense_splitwise_sync_expense__splitwise_expense_id__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "splitwise_expense_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Splitwise Expense Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/app__schemas__splitwise__SyncRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/splitwise/sync/friends": {
+      "post": {
+        "tags": [
+          "splitwise"
+        ],
+        "summary": "Sync Friends",
+        "description": "Pull-to-refresh the Friends list: cache the token owner's Splitwise friends (identity), so a\nfriend with no shared group still resolves to a name/avatar.",
+        "operationId": "sync_friends_splitwise_sync_friends_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/app__schemas__splitwise__SyncRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/splitwise/sync/notifications": {
+      "post": {
+        "tags": [
+          "splitwise"
+        ],
+        "summary": "Sync Notifications",
+        "description": "Pull the token owner's recent Splitwise notifications into the generic notifications store,\npruned to the `notifications_retention_count` server setting.",
+        "operationId": "sync_notifications_splitwise_sync_notifications_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/app__schemas__splitwise__SyncRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/splitwise/notifications": {
+      "get": {
+        "tags": [
+          "splitwise"
+        ],
+        "summary": "List Notifications",
+        "description": "The caller's cached notifications (any source), newest first.",
+        "operationId": "list_notifications_splitwise_notifications_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/NotificationResponse"
+                  },
+                  "type": "array",
+                  "title": "Response List Notifications Splitwise Notifications Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/splitwise/groups/{group_id}/import-local": {
       "post": {
         "tags": [
@@ -4784,6 +5083,45 @@
         ],
         "title": "MeResponse"
       },
+      "NotificationResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "read": {
+            "type": "boolean",
+            "title": "Read"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "source",
+          "content",
+          "created_at",
+          "read"
+        ],
+        "title": "NotificationResponse"
+      },
       "PlaidItemResponse": {
         "properties": {
           "id": {
@@ -5055,6 +5393,10 @@
           "refresh_item_stale_minutes": {
             "type": "integer",
             "title": "Refresh Item Stale Minutes"
+          },
+          "notifications_retention_count": {
+            "type": "integer",
+            "title": "Notifications Retention Count"
           }
         },
         "type": "object",
@@ -5071,7 +5413,8 @@
           "refresh_list_stale_minutes",
           "refresh_detail_stale_minutes",
           "refresh_leaf_stale_minutes",
-          "refresh_item_stale_minutes"
+          "refresh_item_stale_minutes",
+          "notifications_retention_count"
         ],
         "title": "ServerSettingsResponse",
         "description": "The full server-settings registry resolved to current values."
@@ -5129,6 +5472,10 @@
           "refresh_item_stale_minutes": {
             "type": "integer",
             "title": "Refresh Item Stale Minutes"
+          },
+          "notifications_retention_count": {
+            "type": "integer",
+            "title": "Notifications Retention Count"
           }
         },
         "type": "object",
@@ -5332,6 +5679,14 @@
           "users": {
             "type": "integer",
             "title": "Users"
+          },
+          "friends": {
+            "type": "integer",
+            "title": "Friends"
+          },
+          "notifications": {
+            "type": "integer",
+            "title": "Notifications"
           },
           "expenses_fetched": {
             "type": "integer",

@@ -15,3 +15,8 @@ class UserSource(str, enum.Enum):
     app = "app"
     manual = "manual"
     splitwise = "splitwise"
+
+
+class NotificationSource(str, enum.Enum):
+    splitwise = "splitwise"
+    app = "app"

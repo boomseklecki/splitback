@@ -268,7 +268,9 @@ struct ExpenseDetailView: View {
         .refreshable {  // leaf: always live-sync this expense's Splitwise group (if any), then reconcile
             await env.smartRefresh(level: .leaf,
                                    source: group?.backendType == .splitwise ? .splitwise : .none,
-                                   freshness: expense.updatedAt, context: context) {
+                                   freshness: expense.updatedAt,
+                                   splitwiseScope: expense.splitwiseExpenseId.map { .expense($0) } ?? .all,
+                                   context: context) {
                 try await env.expenses(context).reconcileAll(groupId: expense.groupId)
             }
         }

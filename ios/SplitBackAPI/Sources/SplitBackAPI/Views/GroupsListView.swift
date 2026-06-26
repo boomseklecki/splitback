@@ -239,7 +239,15 @@ struct GroupsListView: View {
                 }
                 await loadMyBalances()
                 loadLastExpenses()
-                if viewMode == .friends { await loadFriends() }
+                if viewMode == .friends {
+                    // Cache Splitwise friends (incl. those with no shared group) into the directory, then
+                    // pull the new identities locally so they resolve to a name/avatar.
+                    if env.splitwiseConnected {
+                        try? await env.splitwise.syncFriends()
+                        try? await env.refreshAll(context)
+                    }
+                    await loadFriends()
+                }
             }
             .task(id: balanceKey) {
                 loadLastExpenses()        // renders instantly from the cached balances

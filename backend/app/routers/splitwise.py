@@ -15,11 +15,23 @@ from app.integrations.splitwise import client as sw_client
 from app.integrations.splitwise import importer
 from app.integrations.splitwise import receipts as sw_receipts
 from app.integrations.storage import minio_client
-from app.models import BackendType, Expense, ExpenseItem, Group, GroupMember, Receipt, Split, SplitwiseToken
+from app.models import (
+    BackendType,
+    Expense,
+    ExpenseItem,
+    Group,
+    GroupMember,
+    Notification,
+    Receipt,
+    Split,
+    SplitwiseToken,
+    User,
+)
 from app.schemas.group import GroupResponse
 from app.schemas.splitwise import (
     LocalImportRequest,
     LocalImportResult,
+    NotificationResponse,
     ReceiptDownloadResult,
     SplitwiseImportRequest,
     SplitwiseImportResult,
@@ -154,6 +166,122 @@ async def sync_expenses(
         token.expenses_synced_at = started
         await session.commit()
     return SyncResult(**stats, dry_run=body.dry_run, cursor=None if body.dry_run else started)
+
+
+# --- Scoped (drill-in) syncs ------------------------------------------------------------------------
+# These narrow the live pull to one group / friend / expense so a detail-screen pull-to-refresh doesn't
+# re-fetch the whole account. They deliberately do NOT advance `expenses_synced_at` (the shared token
+# cursor): only the token-wide /sync/expenses and /import own it, so a narrow pull never makes the next
+# full sync skip unrelated expenses.
+
+
+@router.post("/sync/group/{splitwise_group_id}", response_model=SyncResult)
+async def sync_group(
+    splitwise_group_id: str,
+    body: SyncRequest,
+    caller: str | None = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
+) -> SyncResult:
+    """Drill-in: refresh one Splitwise group's metadata + members and its expenses only."""
+    token = await _select_token(session, caller or body.as_user)
+    client = sw_client.make_client(token.access_token)
+    groups = await asyncio.to_thread(sw_client.fetch_groups, client)
+    scoped = [g for g in groups if g["splitwise_id"] == splitwise_group_id]
+    g = await importer.sync_groups(session, client, settings.splitwise_user_map, groups=scoped)
+    e = await importer.sync_expenses(
+        session, client, settings.splitwise_user_map, group_id=splitwise_group_id,
+    )
+    return SyncResult(groups=g["groups"], **e)
+
+
+@router.post("/sync/friend/{identifier}", response_model=SyncResult)
+async def sync_friend(
+    identifier: str,
+    body: SyncRequest,
+    caller: str | None = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
+) -> SyncResult:
+    """Drill-in: refresh the expenses shared with one friend (resolved to their Splitwise user id)."""
+    token = await _select_token(session, caller or body.as_user)
+    splitwise_user_id = await session.scalar(
+        select(User.splitwise_user_id).where(
+            User.identifier == identifier, User.splitwise_user_id.is_not(None)
+        )
+    )
+    if splitwise_user_id is None:
+        raise HTTPException(status_code=404, detail="No Splitwise user for this identifier")
+    client = sw_client.make_client(token.access_token)
+    e = await importer.sync_expenses(
+        session, client, settings.splitwise_user_map, friend_id=splitwise_user_id,
+    )
+    return SyncResult(**e)
+
+
+@router.post("/sync/expense/{splitwise_expense_id}", response_model=SyncResult)
+async def sync_expense(
+    splitwise_expense_id: str,
+    body: SyncRequest,
+    caller: str | None = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
+) -> SyncResult:
+    """Drill-in: refresh a single expense (upsert, or archive when Splitwise has deleted it)."""
+    token = await _select_token(session, caller or body.as_user)
+    client = sw_client.make_client(token.access_token)
+    stats = await importer.sync_one_expense(
+        session, client, settings.splitwise_user_map, splitwise_expense_id,
+    )
+    return SyncResult(**stats)
+
+
+@router.post("/sync/friends", response_model=SyncResult)
+async def sync_friends(
+    body: SyncRequest,
+    caller: str | None = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
+) -> SyncResult:
+    """Pull-to-refresh the Friends list: cache the token owner's Splitwise friends (identity), so a
+    friend with no shared group still resolves to a name/avatar."""
+    token = await _select_token(session, caller or body.as_user)
+    client = sw_client.make_client(token.access_token)
+    stats = await importer.sync_friends(
+        session, client, settings.splitwise_user_map, token.user_identifier,
+    )
+    return SyncResult(**stats)
+
+
+@router.post("/sync/notifications", response_model=SyncResult)
+async def sync_notifications(
+    body: SyncRequest,
+    caller: str | None = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
+) -> SyncResult:
+    """Pull the token owner's recent Splitwise notifications into the generic notifications store,
+    pruned to the `notifications_retention_count` server setting."""
+    token = await _select_token(session, caller or body.as_user)
+    client = sw_client.make_client(token.access_token)
+    retention = await server_settings.get(session, "notifications_retention_count")
+    stats = await importer.sync_notifications(
+        session, client, token.user_identifier,
+        retention=int(retention), access_token=token.access_token,
+    )
+    return SyncResult(**stats)
+
+
+@router.get("/notifications", response_model=list[NotificationResponse])
+async def list_notifications(
+    caller: str | None = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
+) -> list[Notification]:
+    """The caller's cached notifications (any source), newest first."""
+    owner = caller or (await session.scalar(select(SplitwiseToken.user_identifier)))
+    rows = (
+        await session.scalars(
+            select(Notification)
+            .where(Notification.owner_identifier == owner)
+            .order_by(Notification.created_at.desc())
+        )
+    ).all()
+    return list(rows)
 
 
 async def _copy_uploaded_receipt(session: AsyncSession, source: Receipt, target_expense_id: UUID) -> None:

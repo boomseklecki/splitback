@@ -16,6 +16,7 @@ class ServerSettingsResponse(BaseModel):
     refresh_detail_stale_minutes: int
     refresh_leaf_stale_minutes: int
     refresh_item_stale_minutes: int
+    notifications_retention_count: int
 
 
 class ServerSettingsUpdate(BaseModel):
@@ -33,3 +34,4 @@ class ServerSettingsUpdate(BaseModel):
     refresh_detail_stale_minutes: int | None = None
     refresh_leaf_stale_minutes: int | None = None
     refresh_item_stale_minutes: int | None = None
+    notifications_retention_count: int | None = None

@@ -1,4 +1,5 @@
 from datetime import datetime
+from uuid import UUID
 
 from pydantic import BaseModel
 
@@ -52,6 +53,8 @@ class SyncRequest(BaseModel):
 class SyncResult(BaseModel):
     groups: int | None = None
     users: int | None = None
+    friends: int | None = None
+    notifications: int | None = None
     expenses_fetched: int | None = None
     imported: int | None = None
     skipped_deleted: int | None = None
@@ -59,3 +62,14 @@ class SyncResult(BaseModel):
     settle_ups: int | None = None
     cursor: datetime | None = None  # new expenses_synced_at after an /sync/expenses run
     dry_run: bool = False
+
+
+class NotificationResponse(BaseModel):
+    id: UUID
+    source: str
+    type: str | None = None
+    content: str
+    created_at: datetime
+    read: bool
+
+    model_config = {"from_attributes": True}

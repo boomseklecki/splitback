@@ -22,6 +22,7 @@ struct ServerSettingsView: View {
     @State private var refreshDetailStale = 15
     @State private var refreshLeafStale = 0
     @State private var refreshItemStale = 5
+    @State private var notificationsRetention = 100
 
     var body: some View {
         Form {
@@ -83,6 +84,15 @@ struct ServerSettingsView: View {
             }
 
             Section {
+                Stepper("Keep newest \(notificationsRetention)",
+                        value: $notificationsRetention, in: 10...1000, step: 10)
+            } header: {
+                Text("Notifications")
+            } footer: {
+                Text("How many notifications to keep per person; older ones are pruned on each sync.")
+            }
+
+            Section {
                 Button { save() } label: {
                     Label(saving ? "Saving…" : (saved ? "Saved" : "Save Changes"),
                           systemImage: saved ? "checkmark.circle.fill" : "square.and.arrow.down")
@@ -113,6 +123,7 @@ struct ServerSettingsView: View {
         refreshDetailStale = s.refresh_detail_stale_minutes
         refreshLeafStale = s.refresh_leaf_stale_minutes
         refreshItemStale = s.refresh_item_stale_minutes
+        notificationsRetention = s.notifications_retention_count
     }
 
     private func load() async {
@@ -139,7 +150,8 @@ struct ServerSettingsView: View {
                     refresh_list_stale_minutes: refreshListStale,
                     refresh_detail_stale_minutes: refreshDetailStale,
                     refresh_leaf_stale_minutes: refreshLeafStale,
-                    refresh_item_stale_minutes: refreshItemStale))
+                    refresh_item_stale_minutes: refreshItemStale,
+                    notifications_retention_count: notificationsRetention))
                 apply(updated)
                 await env.loadRefreshThresholds()  // apply the new thresholds to the running app
                 saved = true

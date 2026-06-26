@@ -75,6 +75,23 @@ async def test_patch_admin_gate_and_subset_update():
         await _purge()
 
 
+async def test_notifications_retention_roundtrip():
+    """The new notifications_retention_count key is in the registry and PATCH/GET round-trips."""
+    async with async_session() as s:
+        original = await server_settings.get(s, "notifications_retention_count")
+    try:
+        async with async_session() as s:
+            await server_settings.set_value(s, "notifications_retention_count", 42)
+            await s.commit()
+        async with async_session() as s:
+            assert await server_settings.get(s, "notifications_retention_count") == 42
+            assert (await server_settings.get_all(s))["notifications_retention_count"] == 42
+    finally:
+        async with async_session() as s:
+            await server_settings.set_value(s, "notifications_retention_count", original)
+            await s.commit()
+
+
 async def test_internal_timestamp_marker():
     key = f"{PREFIX}-marker"
     when = datetime(2025, 1, 2, 3, 4, 5, tzinfo=timezone.utc)

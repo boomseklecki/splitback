@@ -189,7 +189,9 @@ struct GroupDetailView: View {
         .refreshable {
             await env.smartRefresh(level: .detail,
                                    source: group.backendType == .splitwise ? .splitwise : .none,
-                                   freshness: group.updatedAt, context: context, reconcile: reconcileGroup)
+                                   freshness: group.updatedAt,
+                                   splitwiseScope: group.splitwiseGroupId.map { .group($0) } ?? .all,
+                                   context: context, reconcile: reconcileGroup)
         }
         .task { await reload() }
         .errorAlert($errorText)

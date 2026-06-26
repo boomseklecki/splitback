@@ -13,6 +13,7 @@ from splitwise.user import ExpenseUser
 from app.config import settings
 
 _PAGE_SIZE = 200
+_API_BASE = "https://secure.splitwise.com/api/v3.0"
 
 
 def make_client(access_token: str) -> Splitwise:
@@ -296,10 +297,12 @@ def fetch_expenses(
     updated_after: str | None = None,
     updated_before: str | None = None,
     group_id: str | None = None,
+    friend_id: str | None = None,
 ) -> list[dict]:
     """Page through the user's expenses. `dated_*` windows by expense date (backfill);
     `updated_after` returns only rows changed since a cursor (incremental sync) and includes
-    deleted ones. `group_id` scopes to one group (drill-in)."""
+    deleted ones. `group_id` scopes to one group, `friend_id` to expenses shared with one friend
+    (drill-in scoped syncs)."""
     out: list[dict] = []
     offset = 0
     while True:
@@ -307,6 +310,7 @@ def fetch_expenses(
             offset=offset,
             limit=_PAGE_SIZE,
             group_id=group_id,
+            friend_id=friend_id,
             dated_after=dated_after,
             dated_before=dated_before,
             updated_after=updated_after,
@@ -319,3 +323,52 @@ def fetch_expenses(
             break
         offset += _PAGE_SIZE
     return out
+
+
+def fetch_expense(client: Splitwise, expense_id: str) -> dict | None:
+    """Fetch a single expense by id (drill-in scoped sync). Returns the normalized dict, or None
+    when Splitwise has no such expense. A deleted expense still returns (with `deleted_at` set) so
+    the caller can archive it."""
+    expense = client.getExpense(int(expense_id))
+    if expense is None or _method(expense, "getId") is None:
+        return None
+    return _normalize_expense(expense)
+
+
+def fetch_notifications(client: Splitwise, access_token: str | None = None) -> list[dict]:
+    """The authenticated user's recent Splitwise notifications (mentions, added/updated expenses,
+    settle-ups, etc.), normalized to `{splitwise_id, type, content, created_at}`.
+
+    The `splitwise` SDK doesn't reliably expose `getNotifications()` across versions (its
+    `__getattr__` masks that — see `_method`), so fall back to the REST endpoint with the OAuth
+    token, mirroring `fetch_receipt_bytes`."""
+    notifications = _method(client, "getNotifications")
+    if notifications is not None:
+        return [_normalize_notification_obj(n) for n in notifications]
+    if access_token is None:
+        return []
+    resp = requests.get(
+        f"{_API_BASE}/get_notifications",
+        headers={"Authorization": f"Bearer {access_token}"},
+        timeout=30,
+    )
+    resp.raise_for_status()
+    return [_normalize_notification_dict(n) for n in (resp.json().get("notifications") or [])]
+
+
+def _normalize_notification_obj(n) -> dict:
+    return {
+        "splitwise_id": _str_or_none(_method(n, "getId")),
+        "type": _str_or_none(_method(n, "getType")),
+        "content": _method(n, "getContent") or "",
+        "created_at": _method(n, "getCreatedAt"),
+    }
+
+
+def _normalize_notification_dict(n: dict) -> dict:
+    return {
+        "splitwise_id": _str_or_none(n.get("id")),
+        "type": _str_or_none(n.get("type")),
+        "content": n.get("content") or "",
+        "created_at": n.get("created_at"),
+    }

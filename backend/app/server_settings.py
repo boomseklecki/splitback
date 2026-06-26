@@ -32,6 +32,8 @@ REGISTRY: dict[str, tuple[type, object]] = {
     "refresh_detail_stale_minutes": (int, 15),  # an account / group / friendship
     "refresh_leaf_stale_minutes": (int, 0),     # a transaction / expense (0 = always sync)
     "refresh_item_stale_minutes": (int, 5),     # Settings per-bank/per-account refresh icons
+    # Notifications: cap stored per-owner notifications to the most recent N (prune on each sync).
+    "notifications_retention_count": (int, 100),
 }
 
 

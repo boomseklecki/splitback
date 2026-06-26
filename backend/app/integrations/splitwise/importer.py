@@ -12,8 +12,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.integrations.splitwise import client as sw_client
 from app.integrations.splitwise import mapper
-from app.models import BackendType, Expense, Group, GroupMember, Split, User
-from app.models.enums import UserSource
+from app.models import (
+    BackendType,
+    Expense,
+    Friend,
+    Group,
+    GroupMember,
+    Notification,
+    Split,
+    User,
+)
+from app.models.enums import NotificationSource, UserSource
 
 
 async def _upsert_group(
@@ -288,6 +297,45 @@ async def sync_users(
     return {"users": len(seen_users)}
 
 
+async def _persist_expense(
+    session: AsyncSession,
+    expense: dict,
+    user_map: dict[str, str],
+    *,
+    group_cache: dict[str, UUID],
+    resolved: dict[str, str],
+    seen_users: set[str],
+) -> None:
+    """Resolve one importable expense's participants/creator/editor into the directory, then upsert
+    the expense + its splits. Shared by the windowed `sync_expenses` and the single `sync_one_expense`."""
+    for participant in expense.get("users", []):
+        identifier = await _resolve_identifier(
+            session, splitwise_user_id=participant["user_id"],
+            first_name=participant.get("first_name", ""),
+            email=participant.get("email"), user_map=user_map,
+        )
+        resolved[participant["user_id"]] = identifier
+        await _upsert_user(
+            session, identifier, _full_name(participant), participant["user_id"],
+            email=participant.get("email"), avatar_url=participant.get("picture"),
+            registration_status=participant.get("registration_status"),
+        )
+        seen_users.add(identifier)
+    # Ensure the creator/editor are in the directory so "Added by"/"Edited by" resolve to names.
+    for ref in (expense.get("created_by"), expense.get("updated_by")):
+        if ref:
+            identifier = await _resolve_identifier(
+                session, splitwise_user_id=ref["user_id"], first_name=ref.get("first_name", ""),
+                email=ref.get("email"), user_map=user_map,
+            )
+            resolved[ref["user_id"]] = identifier
+            await _upsert_user(session, identifier, _full_name(ref), ref["user_id"])
+            seen_users.add(identifier)
+    mapped = mapper.map_expense(expense, {**user_map, **resolved})
+    group_id = await _ensure_group(session, mapped["group_key"], group_cache)
+    await _upsert_expense(session, mapped, group_id)
+
+
 async def sync_expenses(
     session: AsyncSession,
     client,
@@ -297,14 +345,18 @@ async def sync_expenses(
     updated_before: str | None = None,
     dated_after: str | None = None,
     dated_before: str | None = None,
+    group_id: str | None = None,
+    friend_id: str | None = None,
     dry_run: bool = False,
 ) -> dict:
     """Upsert expenses in a window. `updated_after` = incremental (deltas + deletions); `dated_*` =
-    backfill by date. Expenses Splitwise has deleted are archived locally. Commits."""
+    backfill by date. `group_id`/`friend_id` scope the pull to one group/friend (drill-in). Expenses
+    Splitwise has deleted are archived locally. Commits."""
     expenses = await asyncio.to_thread(
         sw_client.fetch_expenses, client,
         dated_after=dated_after, dated_before=dated_before,
         updated_after=updated_after, updated_before=updated_before,
+        group_id=group_id, friend_id=friend_id,
     )
     importable = [e for e in expenses if mapper.is_importable(e)]
     deleted = [e for e in expenses if not mapper.is_importable(e)]
@@ -329,37 +381,135 @@ async def sync_expenses(
     # existing user matched by splitwise_user_id/email.
     resolved: dict[str, str] = {}
     for expense in importable:
-        for participant in expense.get("users", []):
-            identifier = await _resolve_identifier(
-                session, splitwise_user_id=participant["user_id"],
-                first_name=participant.get("first_name", ""),
-                email=participant.get("email"), user_map=user_map,
-            )
-            resolved[participant["user_id"]] = identifier
-            await _upsert_user(
-                session, identifier, _full_name(participant), participant["user_id"],
-                email=participant.get("email"), avatar_url=participant.get("picture"),
-                registration_status=participant.get("registration_status"),
-            )
-            seen_users.add(identifier)
-        # Ensure the creator/editor are in the directory so "Added by"/"Edited by" resolve to names.
-        for ref in (expense.get("created_by"), expense.get("updated_by")):
-            if ref:
-                identifier = await _resolve_identifier(
-                    session, splitwise_user_id=ref["user_id"], first_name=ref.get("first_name", ""),
-                    email=ref.get("email"), user_map=user_map,
-                )
-                resolved[ref["user_id"]] = identifier
-                await _upsert_user(session, identifier, _full_name(ref), ref["user_id"])
-                seen_users.add(identifier)
-        mapped = mapper.map_expense(expense, {**user_map, **resolved})
-        group_id = await _ensure_group(session, mapped["group_key"], group_cache)
-        await _upsert_expense(session, mapped, group_id)
+        await _persist_expense(
+            session, expense, user_map,
+            group_cache=group_cache, resolved=resolved, seen_users=seen_users,
+        )
 
     await session.commit()
     stats["archived_deleted"] = archived
     stats["users"] = len(seen_users)
     return stats
+
+
+async def sync_one_expense(
+    session: AsyncSession, client, user_map: dict[str, str], splitwise_expense_id: str
+) -> dict:
+    """Refresh a single expense by id (drill-in scoped sync): upsert it, or archive it locally when
+    Splitwise has deleted it. Does NOT advance the token cursor. Commits."""
+    expense = await asyncio.to_thread(sw_client.fetch_expense, client, splitwise_expense_id)
+    stats = {"expenses_fetched": 0, "imported": 0, "archived_deleted": 0, "settle_ups": 0, "users": 0}
+    if expense is None:
+        await session.commit()
+        return stats
+    stats["expenses_fetched"] = 1
+    if not mapper.is_importable(expense):
+        stats["archived_deleted"] = await _archive_deleted(session, expense["splitwise_id"])
+        await session.commit()
+        return stats
+    seen_users: set[str] = set()
+    await _persist_expense(
+        session, expense, user_map, group_cache={}, resolved={}, seen_users=seen_users,
+    )
+    await session.commit()
+    stats["imported"] = 1
+    stats["settle_ups"] = 1 if expense.get("payment") else 0
+    stats["users"] = len(seen_users)
+    return stats
+
+
+async def _upsert_friend(session: AsyncSession, owner_identifier: str, friend: dict, identifier: str | None) -> None:
+    """Cache one Splitwise friend's identity for `owner_identifier`. Identity only — balances stay
+    live via /balances/friends. on_conflict bumps updated_at (the freshness signal smart-refresh reads)."""
+    values = {
+        "owner_identifier": owner_identifier,
+        "splitwise_friend_id": friend["splitwise_id"],
+        "identifier": identifier,
+        "first_name": friend.get("first_name") or None,
+        "last_name": friend.get("last_name") or None,
+        "email": friend.get("email"),
+        "avatar_url": friend.get("picture"),
+    }
+    stmt = (
+        pg_insert(Friend)
+        .values(**values)
+        .on_conflict_do_update(
+            constraint="uq_friends_owner_friend",
+            set_={
+                "identifier": identifier,
+                "first_name": values["first_name"],
+                "last_name": values["last_name"],
+                "email": values["email"],
+                "avatar_url": values["avatar_url"],
+                "updated_at": func.now(),
+            },
+        )
+    )
+    await session.execute(stmt)
+
+
+async def sync_friends(
+    session: AsyncSession, client, user_map: dict[str, str], owner_identifier: str
+) -> dict:
+    """Refresh the token owner's Splitwise friends into the friends cache (and the users directory),
+    so friends with no shared group still resolve to a name/avatar. Commits."""
+    friends = await asyncio.to_thread(sw_client.fetch_friends, client)
+    for friend in friends:
+        identifier = await _resolve_identifier(
+            session, splitwise_user_id=friend["splitwise_id"],
+            first_name=friend.get("first_name", ""),
+            email=friend.get("email"), user_map=user_map,
+        )
+        await _upsert_user(
+            session, identifier, _full_name(friend), friend["splitwise_id"],
+            email=friend.get("email"), avatar_url=friend.get("picture"),
+        )
+        await _upsert_friend(session, owner_identifier, friend, identifier)
+    await session.commit()
+    return {"friends": len(friends)}
+
+
+async def sync_notifications(
+    session: AsyncSession, client, owner_identifier: str, *, retention: int, access_token: str | None = None
+) -> dict:
+    """Pull the owner's recent Splitwise notifications into the generic notifications table (deduped by
+    splitwise_id) and prune to the newest `retention` rows for that owner. Commits."""
+    notifications = await asyncio.to_thread(sw_client.fetch_notifications, client, access_token)
+    for note in notifications:
+        if not note.get("splitwise_id"):
+            continue
+        values = {
+            "owner_identifier": owner_identifier,
+            "source": NotificationSource.splitwise,
+            "splitwise_id": note["splitwise_id"],
+            "type": note.get("type"),
+            "content": note.get("content") or "",
+            "created_at": mapper._parse_datetime(note.get("created_at")),
+        }
+        stmt = (
+            pg_insert(Notification)
+            .values(**{k: v for k, v in values.items() if v is not None})
+            .on_conflict_do_update(
+                index_elements=[Notification.owner_identifier, Notification.source, Notification.splitwise_id],
+                index_where=text("splitwise_id IS NOT NULL"),
+                set_={"type": values["type"], "content": values["content"]},
+            )
+        )
+        await session.execute(stmt)
+    # Prune to the newest `retention` rows for this owner.
+    keep = (
+        select(Notification.id)
+        .where(Notification.owner_identifier == owner_identifier)
+        .order_by(Notification.created_at.desc())
+        .limit(retention)
+    )
+    await session.execute(
+        delete(Notification)
+        .where(Notification.owner_identifier == owner_identifier)
+        .where(Notification.id.not_in(keep))
+    )
+    await session.commit()
+    return {"notifications": len(notifications)}
 
 
 async def run_import(

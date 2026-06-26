@@ -80,4 +80,82 @@ struct SplitwiseService {
             throw BackendError.fromUndocumented(statusCode)
         }
     }
+
+    // MARK: - Scoped (drill-in) syncs
+    // Narrow the live pull to one group / friend / expense (the backend leaves the token cursor untouched).
+
+    /// Refreshes one Splitwise group's metadata + members and its expenses only.
+    func syncGroup(_ splitwiseGroupId: String) async throws {
+        let output = try await client.sync_group_splitwise_sync_group__splitwise_group_id__post(
+            path: .init(splitwise_group_id: splitwiseGroupId), body: .json(.init()))
+        switch output {
+        case .ok: return
+        case let .unprocessableContent(error):
+            throw BackendError.validation(BackendError.validationMessage(try? error.body.json))
+        case let .undocumented(statusCode, _):
+            throw BackendError.fromUndocumented(statusCode)
+        }
+    }
+
+    /// Refreshes the expenses shared with one friend (resolved by local identifier).
+    func syncFriend(_ identifier: String) async throws {
+        let output = try await client.sync_friend_splitwise_sync_friend__identifier__post(
+            path: .init(identifier: identifier), body: .json(.init()))
+        switch output {
+        case .ok: return
+        case let .unprocessableContent(error):
+            throw BackendError.validation(BackendError.validationMessage(try? error.body.json))
+        case let .undocumented(statusCode, _):
+            throw BackendError.fromUndocumented(statusCode)
+        }
+    }
+
+    /// Refreshes a single expense (upsert, or archive when Splitwise has deleted it).
+    func syncExpense(_ splitwiseExpenseId: String) async throws {
+        let output = try await client.sync_expense_splitwise_sync_expense__splitwise_expense_id__post(
+            path: .init(splitwise_expense_id: splitwiseExpenseId), body: .json(.init()))
+        switch output {
+        case .ok: return
+        case let .unprocessableContent(error):
+            throw BackendError.validation(BackendError.validationMessage(try? error.body.json))
+        case let .undocumented(statusCode, _):
+            throw BackendError.fromUndocumented(statusCode)
+        }
+    }
+
+    /// Caches the token owner's Splitwise friends (identity), so a friend with no shared group still
+    /// resolves to a name/avatar.
+    func syncFriends() async throws {
+        let output = try await client.sync_friends_splitwise_sync_friends_post(body: .json(.init()))
+        switch output {
+        case .ok: return
+        case let .unprocessableContent(error):
+            throw BackendError.validation(BackendError.validationMessage(try? error.body.json))
+        case let .undocumented(statusCode, _):
+            throw BackendError.fromUndocumented(statusCode)
+        }
+    }
+
+    /// Pulls recent Splitwise notifications into the generic notifications store (pruned server-side).
+    func syncNotifications() async throws {
+        let output = try await client.sync_notifications_splitwise_sync_notifications_post(body: .json(.init()))
+        switch output {
+        case .ok: return
+        case let .unprocessableContent(error):
+            throw BackendError.validation(BackendError.validationMessage(try? error.body.json))
+        case let .undocumented(statusCode, _):
+            throw BackendError.fromUndocumented(statusCode)
+        }
+    }
+
+    /// The caller's cached notifications (any source), newest first.
+    func notifications() async throws -> [Components.Schemas.NotificationResponse] {
+        let output = try await client.list_notifications_splitwise_notifications_get()
+        switch output {
+        case let .ok(ok):
+            return try ok.body.json
+        case let .undocumented(statusCode, _):
+            throw BackendError.fromUndocumented(statusCode)
+        }
+    }
 }
