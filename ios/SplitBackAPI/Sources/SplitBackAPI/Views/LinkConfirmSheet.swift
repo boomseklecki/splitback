@@ -1,0 +1,101 @@
+import SwiftData
+import SwiftUI
+
+/// Confirmation before accepting a **Link** suggestion. These matches are heuristic (not exact), so this
+/// shows the expense next to the proposed bank transaction — amounts, dates, categories, and the match
+/// strength — and lets the user verify before de-duping, pick a different transaction, or back out.
+/// `onConfirm` performs the actual link (InboxView's `accept` → `linkTransaction` + reload); `onExternalChange`
+/// lets the picker correction path refresh the Inbox after it links a different transaction itself.
+struct LinkConfirmSheet: View {
+    let suggestion: Suggestion
+    let onConfirm: () -> Void
+    var onExternalChange: () -> Void = {}
+
+    @Environment(\.modelContext) private var context
+    @Environment(\.dismiss) private var dismiss
+    @State private var expense: Expense?
+    @State private var transaction: Transaction?
+    @State private var showPicker = false
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if let expense, let transaction {
+                    Section("Expense") {
+                        recordRow(expense.details, expense.amount, expense.currency, expense.date, expense.category)
+                    }
+                    Section {
+                        recordRow(transaction.details, transaction.amount, transaction.currency,
+                                  transaction.date, transaction.category)
+                    } header: {
+                        HStack {
+                            Text("Bank transaction")
+                            Spacer()
+                            if let score = suggestion.matchScore {
+                                Text(TransactionMatcher.confidenceLabel(score)).foregroundStyle(.tint)
+                            }
+                        }
+                    } footer: {
+                        Text("Linking de-duplicates your spending so this charge counts once, not twice.")
+                    }
+                    Section {
+                        Button { showPicker = true } label: {
+                            Label("Choose a different transaction…", systemImage: "arrow.triangle.swap")
+                        }
+                    }
+                } else {
+                    ContentUnavailableView("Couldn’t load the match", systemImage: "questionmark.circle")
+                }
+            }
+            .navigationTitle("Confirm Link")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Link") { onConfirm(); dismiss() }
+                        .disabled(expense == nil || transaction == nil)
+                }
+            }
+            .task { resolve() }
+            .sheet(isPresented: $showPicker, onDismiss: pickerDismissed) {
+                if let expense { TransactionMatchView(expense: expense) }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func recordRow(_ title: String, _ amount: Decimal, _ currency: String, _ date: Date,
+                           _ category: String?) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(title).font(.headline).lineLimit(2)
+                Spacer()
+                Text(amount.formatted(.currency(code: currency))).monospacedDigit().foregroundStyle(.secondary)
+            }
+            HStack(spacing: 6) {
+                Text(date.formatted(date: .abbreviated, time: .omitted))
+                if let category { Text("· \(category)") }
+            }
+            .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    private func resolve() {
+        if let eid = suggestion.expenseId {
+            expense = try? context.fetch(FetchDescriptor<Expense>(predicate: #Predicate { $0.id == eid })).first
+        }
+        if let tid = suggestion.transactionId {
+            transaction = try? context.fetch(
+                FetchDescriptor<Transaction>(predicate: #Predicate { $0.id == tid })).first
+        }
+    }
+
+    /// If the picker linked a (different) transaction itself, refresh the Inbox and close this sheet too.
+    private func pickerDismissed() {
+        resolve()
+        if expense?.transactionId != nil {
+            onExternalChange()
+            dismiss()
+        }
+    }
+}

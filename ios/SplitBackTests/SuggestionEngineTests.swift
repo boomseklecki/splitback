@@ -25,9 +25,11 @@ final class SuggestionEngineTests: XCTestCase {
 
     private func generate(transactions: [Transaction] = [], expenses: [Expense] = [],
                           templates: [SplitTemplate] = [], rules: [SubscriptionRule] = [],
-                          decisions: [SuggestionDecision] = []) -> [Suggestion] {
+                          decisions: [SuggestionDecision] = [],
+                          linkThreshold: Double = SuggestionEngine.defaultLinkThreshold) -> [Suggestion] {
         SuggestionEngine.generate(transactions: transactions, expenses: expenses, lookup: [:], sources: [:],
-                                  templates: templates, rules: rules, decisions: decisions, me: me)
+                                  templates: templates, rules: rules, decisions: decisions, me: me,
+                                  linkThreshold: linkThreshold)
     }
 
     func testCategorizeOverNonExplicit() {
@@ -52,6 +54,36 @@ final class SuggestionEngineTests: XCTestCase {
         XCTAssertEqual(links.count, 1)
         XCTAssertEqual(links.first?.expenseId, e.id)
         XCTAssertEqual(links.first?.transactionId, t.id)
+        // Confidence rides along for the confirmation sheet.
+        XCTAssertEqual(links.first?.matchScore ?? 0, 1.0, accuracy: 0.0001)
+    }
+
+    func testLinkThresholdGatesLooserMatches() {
+        // Exact amount but 5 days apart and no name overlap → score ≈ 0.78: below Strict (0.85), above Loose.
+        let date = Date()
+        let e = expense("Acme", 50, category: "Dining", splits: [(me, 50)], date: date)
+        let t = txn("Zenith", 50, date: Calendar.current.date(byAdding: .day, value: 5, to: date)!)
+        XCTAssertTrue(generate(transactions: [t], expenses: [e], linkThreshold: 0.85)
+            .filter { $0.kind == .link }.isEmpty)
+        let loose = generate(transactions: [t], expenses: [e], linkThreshold: 0.70).filter { $0.kind == .link }
+        XCTAssertEqual(loose.count, 1)
+        if let score = loose.first?.matchScore { XCTAssertTrue((0.70..<0.85).contains(score)) }
+        else { XCTFail("expected a match score") }
+    }
+
+    func testLinkSensitivityThresholds() {
+        XCTAssertEqual(LinkSensitivity.strict.threshold, 0.85, accuracy: 0.0001)
+        XCTAssertEqual(LinkSensitivity.balanced.threshold, 0.78, accuracy: 0.0001)
+        XCTAssertEqual(LinkSensitivity.loose.threshold, 0.70, accuracy: 0.0001)
+    }
+
+    func testLinkSensitivityDefaultsStrict() {
+        let suite = "test.\(UUID().uuidString)"
+        let d = UserDefaults(suiteName: suite)!
+        defer { d.removePersistentDomain(forName: suite) }
+        XCTAssertEqual(LinkSensitivity.current(d), .strict)       // unset → strict (preserves prior behavior)
+        d.set(LinkSensitivity.loose.rawValue, forKey: LinkSensitivity.storageKey)
+        XCTAssertEqual(LinkSensitivity.current(d), .loose)
     }
 
     func testSubscriptionCardThenSuppressedByRule() {

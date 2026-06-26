@@ -4,8 +4,9 @@ import Foundation
 /// to recompute and easy to test. The costly AI step (populating `Transaction.aiSuggestedCategory`) runs
 /// separately in `SuggestionService`; this only reads the cached opinion.
 enum SuggestionEngine {
-    /// Confidence floor for a transaction↔expense link suggestion (TransactionMatcher score 0…1).
-    static let linkThreshold = 0.85
+    /// Default confidence floor for a transaction↔expense link suggestion (TransactionMatcher score 0…1).
+    /// Overridable per call via `linkThreshold` (the user's `LinkSensitivity` preference).
+    static let defaultLinkThreshold = 0.85
     /// How far back a recurring-split template will match an unlinked charge.
     static let recurringWindowDays = 60
     /// Cap on subscription "track this?" cards so a big history doesn't flood the queue.
@@ -13,7 +14,8 @@ enum SuggestionEngine {
 
     static func generate(transactions: [Transaction], expenses: [Expense], lookup: [String: String],
                          sources: [String: String], templates: [SplitTemplate], rules: [SubscriptionRule],
-                         decisions: [SuggestionDecision], me: String?, asOf: Date = Date()) -> [Suggestion] {
+                         decisions: [SuggestionDecision], me: String?, asOf: Date = Date(),
+                         linkThreshold: Double = defaultLinkThreshold) -> [Suggestion] {
         // Active dismissals/snoozes: both per-suggestion ids and merchant-scope keys.
         let blocked = Set(decisions.filter { $0.isActive }.map(\.key))
         let linkedTxnIds = Set(expenses.lazy.compactMap(\.transactionId))
@@ -43,7 +45,7 @@ enum SuggestionEngine {
                 id: "link:\(top.transaction.id.uuidString):\(e.id.uuidString)", kind: .link,
                 title: e.details, subtitle: "Looks like “\(top.transaction.details)” — link to de-dupe",
                 icon: "link", acceptLabel: "Link",
-                transactionId: top.transaction.id, expenseId: e.id))
+                transactionId: top.transaction.id, expenseId: e.id, matchScore: top.score))
         }
 
         // 3) Subscriptions — newly detected recurring charges with no rule yet.

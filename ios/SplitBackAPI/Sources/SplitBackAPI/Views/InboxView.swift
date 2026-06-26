@@ -15,6 +15,7 @@ struct InboxView: View {
     @State private var loaded = false
     @State private var errorText: String?
     @State private var budgetPrefill: BudgetPrefill?
+    @State private var linkConfirm: Suggestion?
 
     struct BudgetPrefill: Identifiable { let id = UUID(); let category: String; let amount: Decimal }
 
@@ -46,6 +47,10 @@ struct InboxView: View {
             .sheet(item: $budgetPrefill) { p in
                 GoalEditView(prefillCategory: p.category, prefillAmount: p.amount, prefillShared: true)
             }
+            .sheet(item: $linkConfirm) { s in
+                LinkConfirmSheet(suggestion: s, onConfirm: { accept(s) },
+                                 onExternalChange: { Task { await reload() } })
+            }
             .task { if !loaded { await reload(); loaded = true } }
             .refreshable { await reload() }
             .errorAlert($errorText)
@@ -68,6 +73,9 @@ struct InboxView: View {
                 if let c = s.category { budgetPrefill = .init(category: c, amount: s.amount ?? 0) }
             } label: { cardLabel(s) }
                 .swipeActions { dismissButton(s) }
+        case .link:
+            // Heuristic match — confirm before linking instead of committing on one tap.
+            SuggestionCard(suggestion: s, accept: { linkConfirm = s }, dismiss: { fm in dismiss(s, fm) })
         default:
             SuggestionCard(suggestion: s, accept: { accept(s) }, dismiss: { fm in dismiss(s, fm) })
         }

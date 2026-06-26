@@ -19,6 +19,15 @@ enum TransactionMatcher {
     /// ≥ 0.6) before name/date can contribute. Stops a wildly different amount from matching on name alone.
     private static let minAmountScore = 0.6
 
+    /// Human-readable confidence band for a match score — shared by the link picker and the confirm sheet.
+    static func confidenceLabel(_ score: Double) -> String {
+        switch score {
+        case 0.8...: return "Strong match"
+        case 0.5..<0.8: return "Likely match"
+        default: return "Possible match"
+        }
+    }
+
     /// Words that carry no matching signal (payment plumbing / legal suffixes).
     private static let stopWords: Set<String> = [
         "the", "and", "for", "payment", "pmt", "ach", "autopay", "auto", "bill", "online",

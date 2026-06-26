@@ -31,7 +31,8 @@ struct SuggestionService {
 
         var result = SuggestionEngine.generate(
             transactions: transactions, expenses: expenses, lookup: lookup, sources: sources,
-            templates: templates, rules: rules, decisions: decisions, me: me)
+            templates: templates, rules: rules, decisions: decisions, me: me,
+            linkThreshold: LinkSensitivity.current().threshold)
 
         let partners = Set(((try? await ConnectionRepository(client: client).list()) ?? [])
             .filter { $0.status == "accepted" }.map(\.other_identifier))

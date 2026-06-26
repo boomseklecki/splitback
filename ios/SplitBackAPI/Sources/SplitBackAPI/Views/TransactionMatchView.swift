@@ -42,7 +42,7 @@ struct TransactionMatchView: View {
                         Text("No close matches — pick one below.").foregroundStyle(.secondary)
                     } else {
                         ForEach(Array(model.candidates.enumerated()), id: \.element.id) { index, match in
-                            row(match.transaction, confidence: confidenceLabel(match.score),
+                            row(match.transaction, confidence: TransactionMatcher.confidenceLabel(match.score),
                                 reason: index == 0 ? model.topReason : "")
                         }
                     }
@@ -101,14 +101,6 @@ struct TransactionMatchView: View {
             }
         }
         .disabled(linkingId != nil)
-    }
-
-    private func confidenceLabel(_ score: Double) -> String {
-        switch score {
-        case 0.8...: return "Strong match"
-        case 0.5..<0.8: return "Likely match"
-        default: return "Possible match"
-        }
     }
 
     private func link(_ t: Transaction) {

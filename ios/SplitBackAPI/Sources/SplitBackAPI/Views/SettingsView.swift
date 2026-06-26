@@ -11,6 +11,7 @@ struct SettingsView: View {
 
     @AppStorage(AppLock.enabledKey) private var lockEnabled = false
     @AppStorage("appearance") private var appearanceRaw = AppearanceMode.system.rawValue
+    @AppStorage(LinkSensitivity.storageKey) private var linkSensitivityRaw = LinkSensitivity.strict.rawValue
     @AppStorage("debug.categoryProvenance") private var showCategoryProvenance = false
     @State private var baseURL = ""
     @State private var pendingBaseURL = ""
@@ -70,6 +71,18 @@ struct SettingsView: View {
                     } label: {
                         Label("Customize Tabs", systemImage: "rectangle.3.group")
                     }
+                }
+
+                Section {
+                    Picker("Link sensitivity", selection: $linkSensitivityRaw) {
+                        ForEach(LinkSensitivity.allCases) { Text($0.label).tag($0.rawValue) }
+                    }
+                    .pickerStyle(.segmented)
+                } header: {
+                    Text("Suggestions")
+                } footer: {
+                    Text("How aggressively the Inbox suggests linking a bank charge to an expense. "
+                         + "Looser shows more matches — you’ll still confirm each one before it links.")
                 }
 
                 Section {

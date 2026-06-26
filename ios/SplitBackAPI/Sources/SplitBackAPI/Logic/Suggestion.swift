@@ -24,6 +24,7 @@ struct Suggestion: Identifiable, Equatable {
     var templateMerchantKey: String? = nil
     var merchantKey: String? = nil         // subscription / recurring — basis for "never for this merchant"
     var amount: Decimal? = nil             // subscription amount / suggested budget target
+    var matchScore: Double? = nil          // link → TransactionMatcher confidence 0…1 (drives the confirm sheet)
 
     /// Nudge kinds navigate (or open a prefilled editor) instead of mutating on accept.
     var navigates: Bool {
