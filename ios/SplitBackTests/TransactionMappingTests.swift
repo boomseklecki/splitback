@@ -4,15 +4,15 @@ import SwiftUI
 
 final class TransactionMappingTests: XCTestCase {
     func testMainTabParseIsRobust() {
-        // A valid order is preserved.
-        XCTAssertEqual(MainTab.parse("goals,accounts,splits"), [.goals, .accounts, .splits])
+        // A stored order is preserved, with newer tabs (inbox) forward-filled for existing users.
+        XCTAssertEqual(MainTab.parse("goals,accounts,splits"), [.goals, .accounts, .splits, .inbox])
         // Missing tabs are appended in canonical order; invalid ids and dupes dropped.
-        XCTAssertEqual(MainTab.parse("goals,bogus,goals"), [.goals, .accounts, .splits])
+        XCTAssertEqual(MainTab.parse("goals,bogus,goals"), [.goals, .accounts, .splits, .inbox])
         // Empty falls back to the full canonical order.
         XCTAssertEqual(MainTab.parse(""), MainTab.allCases)
-        // Round-trips through serialize.
+        // Round-trips through serialize (newer tabs still forward-filled).
         XCTAssertEqual(MainTab.parse(MainTab.serialize([.splits, .goals, .accounts])),
-                       [.splits, .goals, .accounts])
+                       [.splits, .goals, .accounts, .inbox])
     }
 
     func testGoalSectionParseIsRobust() {

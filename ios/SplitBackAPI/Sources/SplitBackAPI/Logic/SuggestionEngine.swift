@@ -78,3 +78,73 @@ enum SuggestionEngine {
         return out.filter { !blocked.contains($0.id) && !($0.merchantScopeKey.map(blocked.contains) ?? false) }
     }
 }
+
+extension SuggestionEngine {
+    static let sharedBudgetFloor: Decimal = 50    // min monthly household spend to suggest a shared budget
+    static let settleUpThreshold: Decimal = 5     // min |balance| to nudge a settle-up
+
+    /// The "broad" nudge cards — they navigate/prefill rather than mutate. Computed from goals, household
+    /// spend, and friend balances; filtered by the same dismissal decisions.
+    static func nudges(
+        goals: [Goal], transactions: [Transaction], expenses: [Expense], accounts: [Account],
+        lookup: [String: String], groupMembers: [GroupMember], partners: Set<String>,
+        friendNets: [(identifier: String, name: String, net: Decimal)],
+        decisions: [SuggestionDecision], me: String?, asOf: Date = Date()) -> [Suggestion] {
+        let blocked = Set(decisions.filter { $0.isActive }.map(\.key))
+        let month = SpendingAnalytics.monthStart(asOf)
+        let spendGoals = goals.filter { $0.goalKind == .spend }
+        let sharedGroupIds = me.map {
+            HouseholdBudget.sharedGroupIds(viewer: $0, partners: partners,
+                                           membersByGroup: HouseholdBudget.membership(groupMembers))
+        } ?? []
+        var out: [Suggestion] = []
+
+        // Shared-budget candidate — the household spends in a category but has no shared budget for it.
+        if let me, !partners.isEmpty {
+            let existing = Set(spendGoals.filter { $0.shared }.compactMap { $0.category })
+            let combined = HouseholdBudget.combinedByCategory(
+                month: month, expenses: expenses, sharedGroupIds: sharedGroupIds, viewer: me, partners: partners)
+            for (category, spend) in combined
+            where spend.combined >= sharedBudgetFloor && !existing.contains(category) {
+                out.append(Suggestion(
+                    id: "sharedbudget:\(category)", kind: .sharedBudgetCandidate,
+                    title: "\(category) household budget",
+                    subtitle: "You + partner spent \(spend.combined.formatted(.currency(code: "USD"))) — set a shared budget?",
+                    icon: "person.2", acceptLabel: "Create",
+                    category: category, amount: roundedTarget(spend.combined)))
+            }
+        }
+
+        // Overspend — a spend goal already over its limit this month (own via GoalProgress, shared via household).
+        for goal in spendGoals {
+            guard let category = goal.category else { continue }
+            let spent: Decimal = (goal.shared && me != nil)
+                ? HouseholdBudget.combined(category: category, month: month, expenses: expenses,
+                                           sharedGroupIds: sharedGroupIds, viewer: me!, partners: partners).combined
+                : GoalProgress.spent(for: category, in: month, transactions: transactions,
+                                     accounts: accounts, lookup: lookup, expenses: expenses, me: me)
+            guard spent > goal.targetAmount else { continue }
+            out.append(Suggestion(
+                id: "overspend:\(goal.id.uuidString)", kind: .overspend, title: goal.name,
+                subtitle: "Over budget: \(spent.formatted(.currency(code: "USD"))) of \(goal.targetAmount.formatted(.currency(code: "USD")))",
+                icon: "exclamationmark.triangle", acceptLabel: "View", goalId: goal.id))
+        }
+
+        // Settle up — a friend balance past the threshold.
+        for fn in friendNets where abs(fn.net) >= settleUpThreshold {
+            out.append(Suggestion(
+                id: "settleup:\(fn.identifier)", kind: .settleUp, title: fn.name,
+                subtitle: fn.net > 0 ? "Owes you \(fn.net.formatted(.currency(code: "USD")))"
+                                     : "You owe \((-fn.net).formatted(.currency(code: "USD")))",
+                icon: "arrow.left.arrow.right", acceptLabel: "Settle",
+                friendIdentifier: fn.identifier, amount: fn.net))
+        }
+
+        return out.filter { !blocked.contains($0.id) }
+    }
+
+    /// Rounds a spend figure up to a tidy budget target (nearest 10).
+    private static func roundedTarget(_ amount: Decimal) -> Decimal {
+        Decimal((NSDecimalNumber(decimal: amount).doubleValue / 10).rounded(.up) * 10)
+    }
+}

@@ -121,6 +121,7 @@ private struct MainTabView: View {
                     tabContent(tab)
                         .tabItem { Label(tab.title, systemImage: tab.icon) }
                         .tag(tab.rawValue)
+                        .badge(tab == .inbox ? env.inboxBadge : 0)
                 }
                 SettingsView()
                     .tabItem { Label("Settings", systemImage: "gearshape.fill") }
@@ -138,6 +139,7 @@ private struct MainTabView: View {
             await env.loadRefreshThresholds()
             do { try await env.refreshAll(context) }
             catch { errorMessageText = errorMessage(error) }
+            await env.refreshInboxBadge(context)
         }
     }
 
@@ -147,6 +149,7 @@ private struct MainTabView: View {
         case .accounts: AccountsView()
         case .splits: GroupsListView()
         case .goals: GoalsView()
+        case .inbox: InboxView()
         }
     }
 }

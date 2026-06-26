@@ -15,18 +15,35 @@ struct SuggestionService {
 
     // MARK: Read
 
-    /// The current suggestions, generated from the cached store.
-    func current() throws -> [Suggestion] {
+    /// The current suggestions: actionable cards from the cached store, plus partner/friend-balance nudges
+    /// fetched best-effort (offline just omits them).
+    func current() async throws -> [Suggestion] {
         let transactions = try context.fetch(FetchDescriptor<Transaction>())
         let expenses = try context.fetch(FetchDescriptor<Expense>())
+        let accounts = try context.fetch(FetchDescriptor<Account>())
+        let goals = try context.fetch(FetchDescriptor<Goal>())
+        let groupMembers = try context.fetch(FetchDescriptor<GroupMember>())
         let maps = try context.fetch(FetchDescriptor<CategoryMap>())
         let templates = try context.fetch(FetchDescriptor<SplitTemplate>())
         let rules = try context.fetch(FetchDescriptor<SubscriptionRule>())
         let decisions = try context.fetch(FetchDescriptor<SuggestionDecision>())
-        return SuggestionEngine.generate(
-            transactions: transactions, expenses: expenses,
-            lookup: CategoryMapping.lookup(maps), sources: CategoryMapping.sources(maps),
+        let lookup = CategoryMapping.lookup(maps), sources = CategoryMapping.sources(maps)
+
+        var result = SuggestionEngine.generate(
+            transactions: transactions, expenses: expenses, lookup: lookup, sources: sources,
             templates: templates, rules: rules, decisions: decisions, me: me)
+
+        let partners = Set(((try? await ConnectionRepository(client: client).list()) ?? [])
+            .filter { $0.status == "accepted" }.map(\.other_identifier))
+        let friendNets: [(identifier: String, name: String, net: Decimal)] =
+            ((try? await BalanceRepository(client: client, context: context).friends()) ?? []).compactMap { fb in
+                guard let net = try? Mapping.decimal(fb.net, field: "FriendBalance.net") else { return nil }
+                return (fb.identifier, fb.display_name ?? fb.identifier, net)
+            }
+        result += SuggestionEngine.nudges(
+            goals: goals, transactions: transactions, expenses: expenses, accounts: accounts, lookup: lookup,
+            groupMembers: groupMembers, partners: partners, friendNets: friendNets, decisions: decisions, me: me)
+        return result
     }
 
     // MARK: AI pass
@@ -68,6 +85,8 @@ struct SuggestionService {
             try context.save()
         case .recurringSplit:
             try await acceptRecurringSplit(s)
+        case .sharedBudgetCandidate, .settleUp, .overspend:
+            break  // navigate-only — the inbox view handles these
         }
     }
 
@@ -102,6 +121,7 @@ struct SuggestionService {
             }
         }
         try context.save()
+        pushSync()
     }
 
     // MARK: Templates
@@ -125,6 +145,7 @@ struct SuggestionService {
             }
         }
         try context.save()
+        pushSync()
     }
 
     /// "Remember this split": pins an explicit template from a shared, transaction-linked expense.
@@ -152,10 +173,14 @@ struct SuggestionService {
                                          source: "explicit", displayName: expense.details))
         }
         try context.save()
+        pushSync()
     }
 
     /// Splits `amount` by `fractions`, rounding to cents and giving any remainder to the largest share so
     /// the parts sum exactly to `amount`.
+    /// Best-effort cross-device backup of templates + decisions after a local change.
+    private func pushSync() { Task { await SuggestionSync.pushBestEffort(context, client: client) } }
+
     nonisolated static func distribute(_ amount: Decimal, fractions: [String: Double]) -> [(String, Decimal)] {
         let totalFraction = fractions.values.reduce(0, +)
         guard totalFraction > 0 else { return [] }

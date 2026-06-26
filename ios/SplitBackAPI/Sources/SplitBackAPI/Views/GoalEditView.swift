@@ -23,15 +23,19 @@ struct GoalEditView: View {
     @State private var saving = false
     @State private var errorText: String?
 
-    init(editing: Goal? = nil) {
+    /// `editing` drives an edit; otherwise `prefill*` preset a new (spend) goal — used by the inbox's
+    /// "shared budget candidate" card to land in the editor with the category/amount/shared filled in.
+    init(editing: Goal? = nil, prefillCategory: String? = nil, prefillAmount: Decimal? = nil,
+         prefillShared: Bool = false) {
         self.editing = editing
         _kind = State(initialValue: editing?.goalKind ?? .spend)
         _name = State(initialValue: editing?.name ?? "")
-        _category = State(initialValue: editing?.category)
+        _category = State(initialValue: editing?.category ?? prefillCategory)
         _accountId = State(initialValue: editing?.accountId)
-        _amountString = State(initialValue: editing.map { Mapping.decimalString($0.targetAmount) } ?? "")
+        _amountString = State(initialValue: editing.map { Mapping.decimalString($0.targetAmount) }
+            ?? prefillAmount.map(Mapping.decimalString) ?? "")
         _saveType = State(initialValue: editing?.saveTarget ?? .balance)
-        _shared = State(initialValue: editing?.shared ?? false)
+        _shared = State(initialValue: editing?.shared ?? prefillShared)
     }
 
     private var amount: Decimal { Decimal(string: amountString, locale: Locale(identifier: "en_US_POSIX")) ?? 0 }

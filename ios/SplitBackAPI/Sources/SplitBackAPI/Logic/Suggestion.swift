@@ -3,7 +3,10 @@ import Foundation
 /// One review-queue card: a recommended action over cached data, with a stable `id` so a dismissal sticks.
 /// Pure value type produced by `SuggestionEngine`; `SuggestionService` performs the accept/dismiss.
 struct Suggestion: Identifiable, Equatable {
-    enum Kind: String { case categorize, link, subscription, recurringSplit }
+    enum Kind: String {
+        case categorize, link, subscription, recurringSplit          // actionable (accept mutates)
+        case sharedBudgetCandidate, settleUp, overspend              // nudges (accept navigates/prefills)
+    }
 
     let id: String
     let kind: Kind
@@ -15,10 +18,20 @@ struct Suggestion: Identifiable, Equatable {
     // Targets — set per kind.
     var transactionId: UUID? = nil
     var expenseId: UUID? = nil
-    var category: String? = nil           // suggested category (categorize) / template category
+    var goalId: UUID? = nil                // overspend → GoalDetailView
+    var friendIdentifier: String? = nil    // settleUp → FriendDetailView
+    var category: String? = nil            // suggested category (categorize) / template / budget candidate
     var templateMerchantKey: String? = nil
-    var merchantKey: String? = nil        // subscription / recurring — basis for "never for this merchant"
-    var amount: Decimal? = nil            // subscription latest amount (for the include rule's tolerance)
+    var merchantKey: String? = nil         // subscription / recurring — basis for "never for this merchant"
+    var amount: Decimal? = nil             // subscription amount / suggested budget target
+
+    /// Nudge kinds navigate (or open a prefilled editor) instead of mutating on accept.
+    var navigates: Bool {
+        switch kind {
+        case .sharedBudgetCandidate, .settleUp, .overspend: return true
+        default: return false
+        }
+    }
 
     /// The "never for this merchant" decision key, when the suggestion is merchant-scoped.
     var merchantScopeKey: String? { merchantKey.map { "merchant:\($0)" } }

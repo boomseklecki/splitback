@@ -37,6 +37,8 @@ public final class AppEnvironment {
     /// Whether the configured backend is a public DEMO instance (guest login + sample data). Drives the
     /// gate's "Start Demo" path and the persistent "sample data" banner.
     public private(set) var serverIsDemo = false
+    /// Inbox badge count: actionable suggestions + unread activity. Drives the Inbox tab badge.
+    public private(set) var inboxBadge = 0
     /// A single-use enrollment invite captured from a join link, applied to the next sign-in (then cleared).
     /// Persisted so it survives the install→open hop; drives the gate's "you have an invite" hint.
     public private(set) var pendingInvite: String?
@@ -214,6 +216,18 @@ public final class AppEnvironment {
     var backups: BackupsRepository { .init(client: slowClient) }   // slow client: pg_dump/restore + receipts can run minutes
     var invites: InviteRepository { .init(client: client) }
     var connections: ConnectionRepository { .init(client: client) }
+    var notifications: NotificationRepository { .init(client: client) }
+
+    /// Sets the inbox badge directly (the Inbox view computes it from what it already loaded).
+    func setInboxBadge(_ count: Int) { inboxBadge = count }
+
+    /// Recomputes the inbox badge (actionable suggestions + unread activity). Best-effort; used at launch and
+    /// after refreshes so the badge is current before the user opens the tab.
+    func refreshInboxBadge(_ context: ModelContext) async {
+        let suggestions = (try? await suggestions(context).current().count) ?? 0
+        let unread = (try? await notifications.list().filter { !$0.read }.count) ?? 0
+        inboxBadge = suggestions + unread
+    }
     var serverSettings: ServerSettingsRepository { .init(client: client) }
     func auth(_ context: ModelContext) -> AuthService { .init(client: client, context: context) }
 
@@ -233,6 +247,7 @@ public final class AppEnvironment {
         CategorySeed.ensureBuiltins(context)
         let rows = await Preferences.fetchAll(client)
         CategorySync.applyIfNewer(from: rows, context: context)
+        SuggestionSync.applyIfNewer(from: rows, context: context)
         OrderPreference.tabs.applyIfNewer(from: rows)
         OrderPreference.goals.applyIfNewer(from: rows)
     }
