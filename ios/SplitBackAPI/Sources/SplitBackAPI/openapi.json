@@ -3177,6 +3177,53 @@
         ]
       }
     },
+    "/splitwise/groups/restore": {
+      "post": {
+        "tags": [
+          "splitwise"
+        ],
+        "summary": "Restore Group",
+        "description": "Restore a previously deleted Splitwise group (by its Splitwise id \u2014 it needn't exist locally) and its\nexpenses, then sync the group + expenses back into the local DB and return it.",
+        "operationId": "restore_group_splitwise_groups_restore_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GroupRestoreRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/splitwise/groups/{group_id}/import-local": {
       "post": {
         "tags": [
@@ -4813,6 +4860,14 @@
           "name": {
             "type": "string",
             "title": "Name"
+          },
+          "backend_type": {
+            "$ref": "#/components/schemas/BackendType",
+            "default": "self_hosted"
+          },
+          "group_type": {
+            "type": "string",
+            "title": "Group Type"
           }
         },
         "type": "object",
@@ -4826,12 +4881,21 @@
           "user_identifier": {
             "type": "string",
             "title": "User Identifier"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "first_name": {
+            "type": "string",
+            "title": "First Name"
+          },
+          "last_name": {
+            "type": "string",
+            "title": "Last Name"
           }
         },
         "type": "object",
-        "required": [
-          "user_identifier"
-        ],
         "title": "GroupMemberCreate"
       },
       "GroupMemberResponse": {
@@ -4933,6 +4997,19 @@
           "updated_at"
         ],
         "title": "GroupResponse"
+      },
+      "GroupRestoreRequest": {
+        "properties": {
+          "splitwise_group_id": {
+            "type": "string",
+            "title": "Splitwise Group Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "splitwise_group_id"
+        ],
+        "title": "GroupRestoreRequest"
       },
       "GroupUpdate": {
         "properties": {

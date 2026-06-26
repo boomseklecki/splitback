@@ -70,6 +70,21 @@ async def _resolve_swids(session: AsyncSession, identifiers: list[str]) -> dict[
     return {u.identifier: u.splitwise_user_id for u in rows if u.splitwise_user_id}
 
 
+async def select_token_for_caller(session: AsyncSession, caller: str | None) -> SplitwiseToken:
+    """The token to push a group-level op with (no expense to key on): the authenticated caller's, else the
+    single stored token. Raises NoSplitwiseToken if none usable / ambiguous."""
+    if caller:
+        token = await session.scalar(
+            select(SplitwiseToken).where(SplitwiseToken.user_identifier == caller)
+        )
+        if token is not None:
+            return token
+    tokens = (await session.scalars(select(SplitwiseToken))).all()
+    if len(tokens) == 1:
+        return tokens[0]
+    raise NoSplitwiseToken()
+
+
 async def select_token(session: AsyncSession, expense, caller: str | None = None) -> SplitwiseToken:
     """Prefer the authenticated caller's token (the user pushing), then the payer's token (split with
     paid_share > 0), then the single stored token. Raises NoSplitwiseToken if none usable. The caller

@@ -8,6 +8,13 @@ from app.models.enums import BackendType
 
 class GroupCreate(BaseModel):
     name: str
+    # `splitwise` creates the group on Splitwise (the caller must have a token); default keeps it local.
+    backend_type: BackendType = BackendType.self_hosted
+    group_type: str | None = None  # Splitwise group type (apartment/trip/…), optional
+
+
+class GroupRestoreRequest(BaseModel):
+    splitwise_group_id: str  # a Splitwise group id (the group need not exist locally)
 
 
 class GroupUpdate(BaseModel):

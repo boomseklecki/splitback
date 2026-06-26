@@ -10,6 +10,7 @@ struct GroupDetailView: View {
 
     @Environment(AppEnvironment.self) private var env
     @Environment(\.modelContext) private var context
+    @Environment(\.dismiss) private var dismiss
 
     @Query private var expenses: [Expense]
     @Query private var members: [GroupMember]
@@ -24,6 +25,7 @@ struct GroupDetailView: View {
     @State private var scan = ReceiptScanModel()
     @State private var showingReceiptScanner = false
     @State private var receiptPhoto: PhotosPickerItem?
+    @State private var confirmingDelete = false
 
     init(group: ExpenseGroup) {
         self.group = group
@@ -143,6 +145,10 @@ struct GroupDetailView: View {
                     if group.backendType == .splitwise {
                         Button("Import as Local Group", systemImage: "square.and.arrow.down", action: importLocal)
                     }
+                    Divider()
+                    Button("Delete Group", systemImage: "trash", role: .destructive) {
+                        confirmingDelete = true
+                    }
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
@@ -188,6 +194,13 @@ struct GroupDetailView: View {
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
             }
         }
+        .confirmationDialog("Delete this group?", isPresented: $confirmingDelete, titleVisibility: .visible) {
+            Button("Delete Group", role: .destructive, action: deleteGroup)
+        } message: {
+            Text(group.backendType == .splitwise
+                 ? "This permanently deletes the group on Splitwise for you and everyone in it."
+                 : "This permanently deletes the group and all its expenses.")
+        }
         .alert("Heads up", isPresented: Binding(
             get: { scan.infoMessage != nil }, set: { if !$0 { scan.infoMessage = nil } }
         )) {
@@ -230,6 +243,20 @@ struct GroupDetailView: View {
             do {
                 try await env.groups(context).update(
                     id: id, includeInSpending: includeInSpending, includeInCashFlow: includeInCashFlow)
+            } catch { errorText = errorMessage(error) }
+        }
+    }
+
+    private func deleteGroup() {
+        let id = group.id
+        // Remember Splitwise deletions so they can be one-tap restored (the id is gone once deleted locally).
+        let swId = group.backendType == .splitwise ? group.splitwiseGroupId : nil
+        let name = group.name
+        Task {
+            do {
+                try await env.groups(context).delete(id: id)
+                if let swId { RecentlyDeletedGroups.record(splitwiseGroupId: swId, name: name) }
+                dismiss()
             } catch { errorText = errorMessage(error) }
         }
     }

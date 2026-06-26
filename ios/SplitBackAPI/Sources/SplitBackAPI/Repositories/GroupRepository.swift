@@ -25,8 +25,9 @@ struct GroupRepository {
     // MARK: Writes
 
     @discardableResult
-    func create(name: String) async throws -> UUID {
-        let output = try await client.create_group_groups_post(body: .json(.init(name: name)))
+    func create(name: String, backendType: BackendType = .selfHosted, groupType: String? = nil) async throws -> UUID {
+        let output = try await client.create_group_groups_post(body: .json(.init(
+            name: name, backend_type: Self.apiBackendType(backendType), group_type: groupType)))
         switch output {
         case let .created(created):
             let response = try created.body.json
@@ -87,10 +88,15 @@ struct GroupRepository {
         try upsertMembers(groupId: groupId, try output.ok.body.json)
     }
 
-    func addMember(groupId: UUID, userIdentifier: String) async throws {
+    func addMember(
+        groupId: UUID, userIdentifier: String? = nil,
+        email: String? = nil, firstName: String? = nil, lastName: String? = nil
+    ) async throws {
         let output = try await client.add_member_groups__group_id__members_post(
             path: .init(group_id: groupId.uuidString),
-            body: .json(.init(user_identifier: userIdentifier))
+            body: .json(.init(
+                user_identifier: userIdentifier, email: email,
+                first_name: firstName, last_name: lastName))
         )
         switch output {
         case .created:
@@ -129,6 +135,25 @@ struct GroupRepository {
             let result = try ok.body.json
             try upsert([result.group])
             return try Mapping.uuid(result.group.id, field: "Group.id")
+        case let .unprocessableContent(error):
+            throw BackendError.validation(BackendError.validationMessage(try? error.body.json))
+        case let .undocumented(statusCode, _):
+            throw BackendError.fromUndocumented(statusCode)
+        }
+    }
+
+    /// Restores a deleted Splitwise group (by its Splitwise id) and its expenses, syncing them back. Returns
+    /// the restored local group id.
+    @discardableResult
+    func restore(splitwiseGroupId: String) async throws -> UUID {
+        let output = try await client.restore_group_splitwise_groups_restore_post(
+            body: .json(.init(splitwise_group_id: splitwiseGroupId))
+        )
+        switch output {
+        case let .ok(ok):
+            let response = try ok.body.json
+            try upsert([response])
+            return try Mapping.uuid(response.id, field: "Group.id")
         case let .unprocessableContent(error):
             throw BackendError.validation(BackendError.validationMessage(try? error.body.json))
         case let .undocumented(statusCode, _):

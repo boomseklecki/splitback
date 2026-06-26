@@ -8,14 +8,36 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import require_auth
 from app.auth.scope import assert_group_member
+from app.config import settings
 from app.db import get_session
+from app.integrations.splitwise import client as sw_client
+from app.integrations.splitwise import importer
+from app.integrations.splitwise import writer as sw_writer
 from app.integrations.storage import minio_client
-from app.models import BackendType, Expense, Group, GroupMember, GroupOverride, Receipt
+from app.models import BackendType, Expense, Group, GroupMember, GroupOverride, Receipt, User
 from app.schemas.group import GroupCreate, GroupResponse, GroupUpdate
 from app.schemas.group_member import GroupMemberCreate, GroupMemberResponse
 from app.utils import ensure_utc
 
 router = APIRouter(prefix="/groups", tags=["groups"])
+
+
+async def _push_token(session: AsyncSession, caller: str | None):
+    """The Splitwise token to push a group op with (caller's, else the single token). 409 when none."""
+    try:
+        return await sw_writer.select_token_for_caller(session, caller)
+    except sw_writer.NoSplitwiseToken:
+        raise HTTPException(
+            status_code=409, detail="No Splitwise token stored; authorize via /auth/splitwise/login first"
+        )
+
+
+async def _sync_splitwise_group(session: AsyncSession, token, sw_group_id: str) -> None:
+    """Pull one Splitwise group's metadata + members back into the local DB after a write. Commits."""
+    client = sw_client.make_client(token.access_token)
+    groups = await asyncio.to_thread(sw_client.fetch_groups, client)
+    scoped = [g for g in groups if g["splitwise_id"] == sw_group_id]
+    await importer.sync_groups(session, client, settings.splitwise_user_map, groups=scoped)
 
 
 @router.post("", response_model=GroupResponse, status_code=201)
@@ -24,6 +46,23 @@ async def create_group(
     caller: str | None = Depends(require_auth),
     session: AsyncSession = Depends(get_session),
 ) -> Group:
+    if body.backend_type == BackendType.splitwise:
+        token = await _push_token(session, caller)
+        client = sw_client.make_client(token.access_token)
+        try:
+            created = await asyncio.to_thread(
+                sw_client.create_group, client, body.name, body.group_type
+            )
+        except Exception as exc:  # SDK / upstream Splitwise error
+            raise HTTPException(status_code=502, detail=f"Splitwise rejected the request: {exc}")
+        # Let the sync upsert the group (by splitwise_group_id) + its members (incl. the creator).
+        await _sync_splitwise_group(session, token, created["splitwise_id"])
+        group = await session.scalar(
+            select(Group).where(Group.splitwise_group_id == created["splitwise_id"])
+        )
+        await _attach_group_overrides(session, caller, [group])
+        return group
+
     group = Group(name=body.name, backend_type=BackendType.self_hosted)
     session.add(group)
     await session.flush()
@@ -169,10 +208,15 @@ async def delete_group(
     if group is None:
         raise HTTPException(status_code=404, detail="Group not found")
     await assert_group_member(session, group_id, caller)
-    if group.backend_type != BackendType.self_hosted:
-        raise HTTPException(
-            status_code=409, detail="Only self-hosted groups can be deleted"
-        )
+    if group.backend_type == BackendType.splitwise:
+        if not group.splitwise_group_id:
+            raise HTTPException(status_code=400, detail="Splitwise group is missing splitwise_group_id")
+        token = await _push_token(session, caller)
+        client = sw_client.make_client(token.access_token)
+        try:
+            await asyncio.to_thread(sw_client.delete_group, client, group.splitwise_group_id)
+        except Exception as exc:  # SDK / upstream Splitwise error
+            raise HTTPException(status_code=502, detail=f"Splitwise rejected the request: {exc}")
     await _hard_delete_group(session, group)
 
 
@@ -198,9 +242,17 @@ async def add_member(
     caller: str | None = Depends(require_auth),
     session: AsyncSession = Depends(get_session),
 ) -> GroupMember:
-    if await session.get(Group, group_id) is None:
+    group = await session.get(Group, group_id)
+    if group is None:
         raise HTTPException(status_code=404, detail="Group not found")
     await assert_group_member(session, group_id, caller)
+
+    if group.backend_type == BackendType.splitwise:
+        return await _add_splitwise_member(session, group, body, caller)
+
+    # Self-hosted: local roster only.
+    if not body.user_identifier:
+        raise HTTPException(status_code=422, detail="user_identifier is required")
     existing = await session.scalar(
         select(GroupMember).where(
             GroupMember.group_id == group_id,
@@ -216,6 +268,50 @@ async def add_member(
     return member
 
 
+async def _add_splitwise_member(
+    session: AsyncSession, group: Group, body: GroupMemberCreate, caller: str | None
+) -> GroupMember:
+    """Add a member to a Splitwise group by roster id (resolve their splitwise_user_id) or by email
+    (invite), propagate to Splitwise, then sync the membership back and return the new local row."""
+    if not group.splitwise_group_id:
+        raise HTTPException(status_code=400, detail="Splitwise group is missing splitwise_group_id")
+    token = await _push_token(session, caller)
+    client = sw_client.make_client(token.access_token)
+    kwargs: dict = {}
+    target_identifier = body.user_identifier
+    if body.user_identifier:
+        swid = await session.scalar(
+            select(User.splitwise_user_id).where(User.identifier == body.user_identifier)
+        )
+        if not swid:
+            raise HTTPException(status_code=422, detail="That person has no Splitwise account to add")
+        kwargs = {"user_id": swid}
+    elif body.email:
+        kwargs = {"email": body.email, "first_name": body.first_name, "last_name": body.last_name}
+    else:
+        raise HTTPException(status_code=422, detail="user_identifier or email is required")
+    try:
+        added = await asyncio.to_thread(
+            sw_client.add_user_to_group, client, group.splitwise_group_id, **kwargs
+        )
+    except Exception as exc:  # SDK / upstream Splitwise error
+        raise HTTPException(status_code=502, detail=f"Splitwise rejected the request: {exc}")
+    if target_identifier is None and added is not None:  # invited-by-email → resolve the returned user
+        target_identifier = await importer._resolve_identifier(
+            session, splitwise_user_id=added["splitwise_id"], first_name=added.get("first_name", ""),
+            email=added.get("email"), user_map=settings.splitwise_user_map,
+        )
+    await _sync_splitwise_group(session, token, group.splitwise_group_id)
+    member = await session.scalar(
+        select(GroupMember).where(
+            GroupMember.group_id == group.id, GroupMember.user_identifier == target_identifier
+        )
+    )
+    if member is None:
+        raise HTTPException(status_code=502, detail="Member added on Splitwise but did not sync back")
+    return member
+
+
 @router.delete("/{group_id}/members/{user_identifier}", status_code=204)
 async def remove_member(
     group_id: UUID,
@@ -223,6 +319,9 @@ async def remove_member(
     caller: str | None = Depends(require_auth),
     session: AsyncSession = Depends(get_session),
 ) -> None:
+    group = await session.get(Group, group_id)
+    if group is None:
+        raise HTTPException(status_code=404, detail="Group not found")
     await assert_group_member(session, group_id, caller)
     member = await session.scalar(
         select(GroupMember).where(
@@ -232,5 +331,22 @@ async def remove_member(
     )
     if member is None:
         raise HTTPException(status_code=404, detail="Member not found")
+
+    if group.backend_type == BackendType.splitwise:
+        if not group.splitwise_group_id:
+            raise HTTPException(status_code=400, detail="Splitwise group is missing splitwise_group_id")
+        swid = await session.scalar(
+            select(User.splitwise_user_id).where(User.identifier == user_identifier)
+        )
+        if not swid:
+            raise HTTPException(status_code=422, detail="That member has no Splitwise account")
+        token = await _push_token(session, caller)
+        try:
+            await asyncio.to_thread(
+                sw_client.remove_user_from_group, token.access_token, group.splitwise_group_id, swid
+            )
+        except Exception as exc:  # SDK / upstream Splitwise error
+            raise HTTPException(status_code=502, detail=f"Splitwise rejected the request: {exc}")
+
     await session.delete(member)
     await session.commit()

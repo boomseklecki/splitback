@@ -8,7 +8,9 @@ from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 import requests
 from splitwise import Splitwise
 from splitwise.expense import Expense as SplitwiseExpense
+from splitwise.group import Group as SplitwiseGroup
 from splitwise.user import ExpenseUser
+from splitwise.user import User as SplitwiseUser
 
 from app.config import settings
 
@@ -288,6 +290,96 @@ def delete_expense(client: Splitwise, sw_id: str) -> None:
 
 def fetch_groups(client: Splitwise) -> list[dict]:
     return [_normalize_group(g) for g in client.getGroups()]
+
+
+def fetch_group(client: Splitwise, sw_group_id: str) -> dict | None:
+    """Fetch a single group by id (normalized), or None when missing."""
+    group = client.getGroup(int(sw_group_id))
+    if group is None or _method(group, "getId") is None:
+        return None
+    return _normalize_group(group)
+
+
+def create_group(client: Splitwise, name: str, group_type: str | None = None) -> dict:
+    """Create a group on Splitwise (the authenticated user is added as a member); returns the
+    normalized new group (carries its `splitwise_id`)."""
+    group = SplitwiseGroup()
+    group.setName(name)
+    if group_type:
+        group.setGroupType(group_type)
+    created, errors = client.createGroup(group)
+    if errors:
+        raise RuntimeError(errors.getErrors())
+    return _normalize_group(created)
+
+
+def delete_group(client: Splitwise, sw_group_id: str) -> None:
+    """Delete a group on Splitwise (for everyone in it)."""
+    success, errors = client.deleteGroup(int(sw_group_id))
+    if errors:
+        raise RuntimeError(errors.getErrors())
+
+
+def add_user_to_group(
+    client: Splitwise,
+    sw_group_id: str,
+    *,
+    user_id: str | None = None,
+    first_name: str | None = None,
+    last_name: str | None = None,
+    email: str | None = None,
+) -> dict | None:
+    """Add a member to a Splitwise group — by existing Splitwise `user_id`, or by name/email to invite a
+    new person. Returns the added user (normalized) so the caller can upsert the directory."""
+    user = SplitwiseUser()
+    if user_id is not None:
+        user.setId(int(user_id))
+    if first_name:
+        user.setFirstName(first_name)
+    if last_name:
+        user.setLastName(last_name)
+    if email:
+        user.setEmail(email)
+    success, added, errors = client.addUserToGroup(user, int(sw_group_id))
+    if errors:
+        raise RuntimeError(errors.getErrors())
+    if added is None:
+        return None
+    return {
+        "splitwise_id": _str_or_none(_method(added, "getId")),
+        "first_name": _method(added, "getFirstName") or "",
+        "last_name": _method(added, "getLastName") or "",
+        "email": _method(added, "getEmail"),
+        "picture": _picture_url(added),
+    }
+
+
+def remove_user_from_group(access_token: str, sw_group_id: str, sw_user_id: str) -> None:
+    """Remove a member from a Splitwise group. The SDK doesn't expose this, so call the REST endpoint."""
+    resp = requests.post(
+        f"{_API_BASE}/remove_user_from_group",
+        headers={"Authorization": f"Bearer {access_token}"},
+        json={"group_id": int(sw_group_id), "user_id": int(sw_user_id)},
+        timeout=30,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    if not data.get("success", True):
+        raise RuntimeError(data.get("errors") or "remove_user_from_group failed")
+
+
+def restore_group(access_token: str, sw_group_id: str) -> None:
+    """Restore a previously deleted Splitwise group **and its expenses**. The SDK doesn't expose this, so
+    call the REST `undelete_group` endpoint."""
+    resp = requests.post(
+        f"{_API_BASE}/undelete_group/{int(sw_group_id)}",
+        headers={"Authorization": f"Bearer {access_token}"},
+        timeout=30,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    if not data.get("success", True):
+        raise RuntimeError(data.get("errors") or "undelete_group failed")
 
 
 def fetch_expenses(

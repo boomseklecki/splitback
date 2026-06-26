@@ -42,7 +42,7 @@ struct GroupsListView: View {
     @State private var friendBalances: [Components.Schemas.FriendBalance] = []
 
     @State private var showingNewGroup = false
-    @State private var newGroupName = ""
+    @State private var showingRestoreGroup = false
     @State private var errorText: String?
     @State private var showingNewExpense = false
     @State private var showingReceiptScanner = false
@@ -227,6 +227,11 @@ struct GroupsListView: View {
                             Divider()
                         }
                         Button("Add Group", systemImage: "person.2.badge.plus") { showingNewGroup = true }
+                        if env.splitwiseConnected {
+                            Button("Restore Splitwise Group…", systemImage: "arrow.uturn.backward") {
+                                showingRestoreGroup = true
+                            }
+                        }
                     } label: {
                         Image(systemName: "plus")
                     }
@@ -259,11 +264,8 @@ struct GroupsListView: View {
             .onChange(of: viewModeRaw) { _, _ in
                 if viewMode == .friends { Task { await loadFriends() } }
             }
-            .alert("New Group", isPresented: $showingNewGroup) {
-                TextField("Name", text: $newGroupName)
-                Button("Create", action: createGroup)
-                Button("Cancel", role: .cancel) { newGroupName = "" }
-            }
+            .sheet(isPresented: $showingNewGroup) { NewGroupView() }
+            .sheet(isPresented: $showingRestoreGroup) { RestoreGroupView() }
             .sheet(isPresented: $showingNewExpense) {
                 if let defaultGroup {
                     ExpenseEditView(group: defaultGroup, members: defaultMembers)
@@ -328,13 +330,4 @@ struct GroupsListView: View {
         lastExpense = GroupSummary.lastExpenses(groups, myNets: myNets, includeSettled: showSettled, context: context)
     }
 
-    private func createGroup() {
-        let name = newGroupName.trimmingCharacters(in: .whitespacesAndNewlines)
-        newGroupName = ""
-        guard !name.isEmpty else { return }
-        Task {
-            do { try await env.groups(context).create(name: name) }
-            catch { errorText = errorMessage(error) }
-        }
-    }
 }
