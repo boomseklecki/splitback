@@ -111,7 +111,14 @@ private struct MainTabView: View {
     @State private var didInitialRefresh = false
     @State private var errorMessageText: String?
     @AppStorage("tabOrder") private var tabOrderRaw = MainTab.serialize(MainTab.allCases)
-    @State private var selection = MainTab.accounts.rawValue
+    @State private var selection: String
+
+    /// Open on the first tab in the user's custom order (not always Accounts). Reads the stored order
+    /// directly so the initial `@State` reflects it on a cold launch.
+    init() {
+        let stored = UserDefaults.standard.string(forKey: "tabOrder") ?? MainTab.serialize(MainTab.allCases)
+        _selection = State(initialValue: (MainTab.parse(stored).first ?? .accounts).rawValue)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
