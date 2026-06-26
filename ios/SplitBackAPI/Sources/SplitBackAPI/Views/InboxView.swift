@@ -191,10 +191,27 @@ struct InboxView: View {
         return (try? await env.notifications.list()) ?? activity
     }
 
+    /// Accept a card with a light, synchronous cache recompute — never the full `reload()` (which re-runs the
+    /// slow on-device AI pass + network syncs and made accepting hang). The accept mutation already updates the
+    /// store; we optimistically drop the card, then recompute siblings from the cache.
     private func accept(_ s: Suggestion) {
+        let service = env.suggestions(context)
+        withAnimation { suggestions.removeAll { $0.id == s.id } }
+        updateBadge()
         Task {
-            do { try await env.suggestions(context).accept(s); await reload() }
-            catch { errorText = errorMessage(error) }
+            do {
+                try await service.accept(s)
+                if let refreshed = try? service.current(partners: lastPartners) {
+                    withAnimation { suggestions = refreshed }
+                }
+                updateBadge()
+            } catch {
+                errorText = errorMessage(error)
+                if let restored = try? service.current(partners: lastPartners) {
+                    suggestions = restored  // the mutation failed — bring the card back
+                }
+                updateBadge()
+            }
         }
     }
 
