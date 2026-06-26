@@ -1,5 +1,6 @@
-"""Balance aggregation: per-group and overall (archived excluded)."""
+"""Balance aggregation: per-group and overall (deleted groups excluded)."""
 import json
+import urllib.error
 import urllib.request
 from decimal import Decimal
 
@@ -21,8 +22,11 @@ def _req(method, path, data=None):
         body = json.dumps(data).encode()
         headers["Content-Type"] = "application/json"
     req = urllib.request.Request(API + path, data=body, method=method, headers=headers)
-    resp = urllib.request.urlopen(req)
-    return resp.status, resp.read()
+    try:
+        resp = urllib.request.urlopen(req)
+        return resp.status, resp.read()
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.read()
 
 
 def _create_group(name):
@@ -76,13 +80,12 @@ async def test_group_and_overall_balances():
         overall = _by_identifier(json.loads(_req("GET", "/balances")[1]))
         assert MATT in overall and NIKKI in overall
 
-        # archive the group -> excluded from overall
+        # delete the group -> its expenses are gone, so it drops out of overall
         assert _req("DELETE", f"/groups/{group_id}")[0] == 204
         overall_after = _by_identifier(json.loads(_req("GET", "/balances")[1]))
         assert MATT not in overall_after and NIKKI not in overall_after
-        # but the per-group view still computes
-        still = _by_identifier(json.loads(_req("GET", f"/groups/{group_id}/balances")[1]))
-        assert Decimal(str(still[MATT]["net"])) == Decimal("15.00")
+        # real delete (no soft-archive) -> the group itself is gone, so its balances 404
+        assert _req("GET", f"/groups/{group_id}/balances")[0] == 404
     finally:
         await _cleanup(group_id)
 
