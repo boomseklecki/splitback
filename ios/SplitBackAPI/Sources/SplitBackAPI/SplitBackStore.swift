@@ -25,7 +25,8 @@ public enum SplitBackStore {
             GroupBalance.self,
             SubscriptionRule.self,
             SplitTemplate.self,
-            SuggestionDecision.self
+            SuggestionDecision.self,
+            Friend.self
         ])
     }
 
@@ -67,6 +68,7 @@ public enum SplitBackStore {
         try context.delete(model: SubscriptionRule.self)
         try context.delete(model: SplitTemplate.self)
         try context.delete(model: SuggestionDecision.self)
+        try context.delete(model: Friend.self)
         try context.save()
     }
 

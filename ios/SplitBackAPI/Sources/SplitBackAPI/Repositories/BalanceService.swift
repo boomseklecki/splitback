@@ -29,6 +29,41 @@ struct BalanceRepository {
         try await client.friends_friends_get().ok.body.json
     }
 
+    /// Fetch the pairwise friend balances and cache them as `Friend` rows so the Friends list, friend detail,
+    /// and the Inbox settle-up card render + navigate from the cache (a snapshot of Splitwise's numbers).
+    func refreshFriends() async throws {
+        try BalanceRepository.upsertFriends(try await friends(), into: context)
+    }
+
+    /// Upsert the friend-balance snapshot into the `Friend` cache, pruning friends no longer returned. Pure
+    /// DB work (static, no client) so it's unit-testable on an in-memory context.
+    static func upsertFriends(_ balances: [Components.Schemas.FriendBalance], into context: ModelContext) throws {
+        let keep = Set(balances.map(\.identifier))
+        for stale in try context.fetch(FetchDescriptor<Friend>()) where !keep.contains(stale.identifier) {
+            context.delete(stale)
+        }
+        let now = Date()
+        for fb in balances {
+            guard let net = try? Mapping.decimal(fb.net, field: "FriendBalance.net") else { continue }
+            let groups: [FriendGroupBalanceCache] = (fb.groups ?? []).compactMap { g in
+                guard let gnet = try? Mapping.decimal(g.net, field: "FriendGroupBalance.net") else { return nil }
+                return FriendGroupBalanceCache(splitwiseGroupId: g.splitwise_group_id,
+                                               name: g.name ?? "Group", net: gnet)
+            }
+            let id = fb.identifier
+            if let existing = try context.fetch(
+                FetchDescriptor<Friend>(predicate: #Predicate { $0.identifier == id })
+            ).first {
+                existing.net = net
+                existing.groups = groups
+                existing.updatedAt = now
+            } else {
+                context.insert(Friend(identifier: id, net: net, groups: groups, updatedAt: now))
+            }
+        }
+        try context.save()
+    }
+
     private func replace(groupId: UUID, with balances: [Balance]) throws {
         for stale in try context.fetch(
             FetchDescriptor<GroupBalance>(predicate: #Predicate { $0.groupId == groupId })

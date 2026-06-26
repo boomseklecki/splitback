@@ -22,11 +22,14 @@ struct LinkConfirmSheet: View {
             List {
                 if let expense, let transaction {
                     Section("Expense") {
-                        recordRow(expense.details, expense.amount, expense.currency, expense.date, expense.category)
+                        SuggestionRecordRow(title: expense.details, amount: expense.amount,
+                                            currency: expense.currency, date: expense.date,
+                                            category: expense.category)
                     }
                     Section {
-                        recordRow(transaction.details, transaction.amount, transaction.currency,
-                                  transaction.date, transaction.category)
+                        SuggestionRecordRow(title: transaction.details, amount: transaction.amount,
+                                            currency: transaction.currency, date: transaction.date,
+                                            category: transaction.category)
                     } header: {
                         HStack {
                             Text("Bank transaction")
@@ -60,23 +63,6 @@ struct LinkConfirmSheet: View {
             .sheet(isPresented: $showPicker, onDismiss: pickerDismissed) {
                 if let expense { TransactionMatchView(expense: expense) }
             }
-        }
-    }
-
-    @ViewBuilder
-    private func recordRow(_ title: String, _ amount: Decimal, _ currency: String, _ date: Date,
-                           _ category: String?) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(title).font(.headline).lineLimit(2)
-                Spacer()
-                Text(amount.formatted(.currency(code: currency))).monospacedDigit().foregroundStyle(.secondary)
-            }
-            HStack(spacing: 6) {
-                Text(date.formatted(date: .abbreviated, time: .omitted))
-                if let category { Text("· \(category)") }
-            }
-            .font(.caption).foregroundStyle(.secondary)
         }
     }
 

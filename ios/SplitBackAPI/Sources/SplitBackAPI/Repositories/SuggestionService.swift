@@ -36,10 +36,11 @@ struct SuggestionService {
 
         let partners = Set(((try? await ConnectionRepository(client: client).list()) ?? [])
             .filter { $0.status == "accepted" }.map(\.other_identifier))
+        // Read the cached Friend balances (snapshot from the last /friends sync); names from the directory.
+        let directory = (try? context.fetch(FetchDescriptor<User>())) ?? []
         let friendNets: [(identifier: String, name: String, net: Decimal)] =
-            ((try? await BalanceRepository(client: client, context: context).friends()) ?? []).compactMap { fb in
-                guard let net = try? Mapping.decimal(fb.net, field: "FriendBalance.net") else { return nil }
-                return (fb.identifier, fb.display_name ?? fb.identifier, net)
+            ((try? context.fetch(FetchDescriptor<Friend>())) ?? []).map { f in
+                (f.identifier, directory.displayName(for: f.identifier), f.net)
             }
         result += SuggestionEngine.nudges(
             goals: goals, transactions: transactions, expenses: expenses, accounts: accounts, lookup: lookup,

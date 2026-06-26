@@ -9,6 +9,29 @@ struct FriendRow: Identifiable, Hashable {
     let name: String
     let net: Decimal      // overall: net > 0 => they owe you
     let groups: [FriendGroupRef]
+
+    /// Project a cached `Friend` into a nav row, resolving each cached Splitwise group to a local
+    /// `ExpenseGroup` (when synced) and the name from the user directory.
+    init(friend: Friend, allGroups: [ExpenseGroup], users: [User]) {
+        let bySwId = Dictionary(allGroups.compactMap { g in g.splitwiseGroupId.map { ($0, g) } },
+                                uniquingKeysWith: { first, _ in first })
+        self.id = friend.identifier
+        self.name = users.displayName(for: friend.identifier)
+        self.net = friend.net
+        self.groups = friend.groups.map { g in
+            let local = bySwId[g.splitwiseGroupId]
+            return FriendGroupRef(groupId: local?.id, name: local?.name ?? g.name, net: g.net)
+        }
+    }
+
+    init(id: String, name: String, net: Decimal, groups: [FriendGroupRef]) {
+        self.id = id; self.name = name; self.net = net; self.groups = groups
+    }
+
+    /// All cached friends as nav rows (the Friends list source).
+    static func rows(from friends: [Friend], allGroups: [ExpenseGroup], users: [User]) -> [FriendRow] {
+        friends.map { FriendRow(friend: $0, allGroups: allGroups, users: users) }
+    }
 }
 
 /// The friend's balance with you in one shared group. `groupId` is the local group (nil when not cached).
@@ -143,5 +166,6 @@ struct FriendDetailView: View {
         for gid in friend.groups.compactMap(\.groupId) {
             try await env.expenses(context).reconcileAll(groupId: gid)
         }
+        try? await env.balances(context).refreshFriends()  // refresh the cached net/groups snapshot
     }
 }

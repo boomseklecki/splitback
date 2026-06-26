@@ -37,9 +37,9 @@ struct GroupsListView: View {
     @AppStorage("expenses.sortMode") private var sortModeRaw = SortMode.activity.rawValue
     @AppStorage("expenses.showSettled") private var showSettled = false
     @AppStorage("splits.viewMode") private var viewModeRaw = ViewMode.groups.rawValue
-    /// Server-computed pairwise balances for the Friends view (the local expense cache is incomplete for
-    /// large groups, so this can't be aggregated on-device).
-    @State private var friendBalances: [Components.Schemas.FriendBalance] = []
+    /// Cached pairwise friend balances (server-computed snapshot; the local expense cache is incomplete for
+    /// large groups, so this can't be aggregated on-device). Refreshed via `loadFriends()`.
+    @Query private var friends: [Friend]
 
     @State private var showingNewGroup = false
     @State private var showingRestoreGroup = false
@@ -58,19 +58,7 @@ struct GroupsListView: View {
     /// All friend rows (unfiltered), resolved with names from the user directory and each friend's per-group
     /// balances mapped to local groups for the detail drill-in.
     private var allFriendRows: [FriendRow] {
-        let groupsBySwId = Dictionary(
-            allGroups.compactMap { g in g.splitwiseGroupId.map { ($0, g) } },
-            uniquingKeysWith: { first, _ in first })
-        return friendBalances.compactMap { fb in
-            guard let net = try? Mapping.decimal(fb.net, field: "FriendBalance.net") else { return nil }
-            let groups: [FriendGroupRef] = (fb.groups ?? []).compactMap { g in
-                guard let gnet = try? Mapping.decimal(g.net, field: "FriendGroupBalance.net") else { return nil }
-                let local = groupsBySwId[g.splitwise_group_id]
-                return FriendGroupRef(groupId: local?.id, name: local?.name ?? g.name ?? "Group", net: gnet)
-            }
-            return FriendRow(id: fb.identifier, name: users.displayName(for: fb.identifier),
-                             net: net, groups: groups)
-        }
+        FriendRow.rows(from: friends, allGroups: allGroups, users: users)
     }
 
     /// Friend rows after hiding settled (net 0) and applying the sort (Balance → |net| desc; else by name).
@@ -321,9 +309,10 @@ struct GroupsListView: View {
         await env.balances(context).refreshAll(groups.map(\.id))
     }
 
-    /// Fetch the server-computed pairwise balances for the Friends view (keeps the prior list on failure).
+    /// Refresh the cached pairwise balances for the Friends view (the `@Query` re-renders; prior cache stays
+    /// on failure).
     private func loadFriends() async {
-        friendBalances = (try? await env.balances(context).friends()) ?? friendBalances
+        try? await env.balances(context).refreshFriends()
     }
 
     private func loadLastExpenses() {

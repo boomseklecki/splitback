@@ -32,7 +32,7 @@ enum SuggestionEngine {
                 id: "cat:\(t.id.uuidString):\(suggested)", kind: .categorize,
                 title: t.details, subtitle: "\(res.category ?? "Uncategorized") → \(suggested)",
                 icon: "sparkles", acceptLabel: "Use \(suggested)",
-                transactionId: t.id, category: suggested))
+                transactionId: t.id, category: suggested, currentCategory: res.category))
         }
 
         // 2) Link — an unlinked expense with a high-confidence matching unlinked transaction (de-dupes spend).

@@ -9,6 +9,9 @@ struct InboxView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.modelContext) private var context
     @Query private var goals: [Goal]
+    @Query private var friends: [Friend]
+    @Query private var allGroups: [ExpenseGroup]
+    @Query private var users: [User]
 
     @State private var suggestions: [Suggestion] = []
     @State private var activity: [Components.Schemas.NotificationResponse] = []
@@ -16,6 +19,8 @@ struct InboxView: View {
     @State private var errorText: String?
     @State private var budgetPrefill: BudgetPrefill?
     @State private var linkConfirm: Suggestion?
+    @State private var categorizeConfirm: Suggestion?
+    @State private var subscriptionConfirm: Suggestion?
 
     struct BudgetPrefill: Identifiable { let id = UUID(); let category: String; let amount: Decimal }
 
@@ -51,6 +56,12 @@ struct InboxView: View {
                 LinkConfirmSheet(suggestion: s, onConfirm: { accept(s) },
                                  onExternalChange: { Task { await reload() } })
             }
+            .sheet(item: $categorizeConfirm) { s in
+                CategorizeConfirmSheet(suggestion: s) { accept(s) }
+            }
+            .sheet(item: $subscriptionConfirm) { s in
+                SubscriptionConfirmSheet(suggestion: s) { accept(s) }
+            }
             .task { if !loaded { await reload(); loaded = true } }
             .refreshable { await reload() }
             .errorAlert($errorText)
@@ -61,8 +72,9 @@ struct InboxView: View {
     private func row(_ s: Suggestion) -> some View {
         switch s.kind {
         case .settleUp:
-            NavigationLink(value: FriendRow(id: s.friendIdentifier ?? "", name: s.title,
-                                            net: s.amount ?? 0, groups: [])) { cardLabel(s) }
+            // Navigate with the cached friend (real per-group balances) so the detail isn't empty; fall back
+            // to a minimal row only if the friend hasn't been cached yet.
+            NavigationLink(value: friendRow(for: s)) { cardLabel(s) }
                 .swipeActions { dismissButton(s) }
         case .overspend:
             if let goal = goals.first(where: { $0.id == s.goalId }) {
@@ -76,9 +88,21 @@ struct InboxView: View {
         case .link:
             // Heuristic match — confirm before linking instead of committing on one tap.
             SuggestionCard(suggestion: s, accept: { linkConfirm = s }, dismiss: { fm in dismiss(s, fm) })
-        default:
+        case .categorize:
+            SuggestionCard(suggestion: s, accept: { categorizeConfirm = s }, dismiss: { fm in dismiss(s, fm) })
+        case .subscription:
+            SuggestionCard(suggestion: s, accept: { subscriptionConfirm = s }, dismiss: { fm in dismiss(s, fm) })
+        default:  // .recurringSplit — creates an expense; immediate-accept (confirm deferred)
             SuggestionCard(suggestion: s, accept: { accept(s) }, dismiss: { fm in dismiss(s, fm) })
         }
+    }
+
+    /// The cached `Friend` (real per-group balances) for a settle-up card, or a minimal stub if not yet synced.
+    private func friendRow(for s: Suggestion) -> FriendRow {
+        if let friend = friends.first(where: { $0.identifier == s.friendIdentifier }) {
+            return FriendRow(friend: friend, allGroups: allGroups, users: users)
+        }
+        return FriendRow(id: s.friendIdentifier ?? "", name: s.title, net: s.amount ?? 0, groups: [])
     }
 
     private func cardLabel(_ s: Suggestion) -> some View {
@@ -117,6 +141,7 @@ struct InboxView: View {
         try? service.learnTemplates()
         await service.refreshAI()
         _ = try? await env.splitwise.syncNotifications()
+        try? await env.balances(context).refreshFriends()  // settle-up nudges read the cached Friend balances
         suggestions = (try? await service.current()) ?? []
         activity = (try? await env.notifications.list()) ?? []
         updateBadge()

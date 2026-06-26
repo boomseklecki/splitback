@@ -21,6 +21,7 @@ struct Suggestion: Identifiable, Equatable {
     var goalId: UUID? = nil                // overspend → GoalDetailView
     var friendIdentifier: String? = nil    // settleUp → FriendDetailView
     var category: String? = nil            // suggested category (categorize) / template / budget candidate
+    var currentCategory: String? = nil     // categorize → the resolved category being replaced (for the confirm)
     var templateMerchantKey: String? = nil
     var merchantKey: String? = nil         // subscription / recurring — basis for "never for this merchant"
     var amount: Decimal? = nil             // subscription amount / suggested budget target
