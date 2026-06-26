@@ -54,17 +54,20 @@ struct GroupDetailView: View {
         // Cached server balances render instantly (a @Query); `reload` refreshes them in the background.
         let balances = balanceRows
         return List {
-            if group.avatarURL != nil || group.groupType != nil {
-                Section {
-                    HStack(spacing: 12) {
+            Section {
+                HStack(spacing: 12) {
+                    if group.avatarURL != nil || group.groupType != nil {
                         AvatarView(url: group.avatarURL, name: group.name, size: 48,
                                    systemImage: group.typeSymbol)
-                        VStack(alignment: .leading, spacing: 2) {
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        if group.avatarURL != nil || group.groupType != nil {
                             Text(group.name).font(.headline)
                             if let type = group.groupType, !type.isEmpty {
                                 Text(type.capitalized).font(.caption).foregroundStyle(.secondary)
                             }
                         }
+                        UpdatedAgo(date: group.updatedAt)
                     }
                 }
             }

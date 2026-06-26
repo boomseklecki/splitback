@@ -79,6 +79,7 @@ async def _upsert_transaction(
         for k in ("account_id", "description", "amount", "currency", "date", "category",
                   "pending", "owner_identifier")
     }
+    update_cols["updated_at"] = func.now()  # on_conflict bypasses onupdate; track last sync (see _upsert_account)
     stmt = (
         pg_insert(Transaction)
         .values(**values)

@@ -65,6 +65,8 @@ struct FriendDetailView: View {
                                     .foregroundStyle(phrase.color).monospacedDigit()
                             }
                         }
+                        UpdatedAgo(date: friend.groups.compactMap(\.groupId)
+                            .compactMap { groupsById[$0]?.updatedAt }.max())
                     }
                 }
             }

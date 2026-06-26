@@ -53,6 +53,7 @@ struct AccountEditView: View {
                             }
                         }
                     }
+                    LabeledContent("Updated", value: account.updatedAt.relativeUpdated)
                 }
             }
 

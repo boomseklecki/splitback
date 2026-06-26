@@ -135,6 +135,8 @@ async def _upsert_user(
                 (is_splitwise, func.coalesce(stmt.excluded.registration_status, User.registration_status)),
                 else_=User.registration_status,
             ),
+            # on_conflict bypasses onupdate; bump so updated_at tracks the last sync (see _upsert_account).
+            "updated_at": func.now(),
         },
     )
     await session.execute(stmt)
@@ -176,7 +178,8 @@ async def _upsert_expense(session: AsyncSession, mapped: dict, group_id: UUID) -
         .values(splitwise_expense_id=mapped["splitwise_expense_id"], **fields)
         .on_conflict_do_update(
             index_elements=[Expense.splitwise_expense_id],
-            set_=fields,
+            # on_conflict bypasses onupdate; bump so updated_at tracks the last sync (see _upsert_account).
+            set_={**fields, "updated_at": func.now()},
         )
         .returning(Expense.id)
     )

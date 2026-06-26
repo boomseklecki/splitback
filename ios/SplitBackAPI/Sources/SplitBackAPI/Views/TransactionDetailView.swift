@@ -73,6 +73,7 @@ struct TransactionDetailView: View {
                 LabeledContent("Status", value: transaction.pending ? "Pending" : "Posted")
                 LabeledContent("Source", value: transaction.source == .plaid ? "Bank" : "Manual")
                 if let rawLabel { LabeledContent("Bank category", value: rawLabel) }
+                LabeledContent("Updated", value: transaction.updatedAt.relativeUpdated)
             }
 
             Section("Category") {

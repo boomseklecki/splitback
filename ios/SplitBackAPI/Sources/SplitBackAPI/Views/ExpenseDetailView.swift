@@ -98,7 +98,10 @@ struct ExpenseDetailView: View {
 
     var body: some View {
         List {
-            Section { header }
+            Section {
+                header
+                LabeledContent("Updated", value: expense.updatedAt.relativeUpdated)
+            }
 
             if isReimbursement, let recipient = reimbursementRecipient {
                 Section("Reimbursement") {

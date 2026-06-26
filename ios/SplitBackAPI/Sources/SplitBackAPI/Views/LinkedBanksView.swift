@@ -42,6 +42,7 @@ struct LinkedBanksView: View {
                                     Text(account.displayLabel)
                                     Text(account.kind.label + (account.maskLabel.map { " · \($0)" } ?? ""))
                                         .font(.caption).foregroundStyle(.secondary)
+                                    UpdatedAgo(date: account.updatedAt)
                                 }
                                 Spacer()
                                 Text(account.balance.formatted(.currency(code: account.currency)))
