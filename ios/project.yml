@@ -5,6 +5,14 @@ options:
   deploymentTarget:
     iOS: "26.0"
 
+# Pinned here (not in the gitignored .xcodeproj) so automatic signing survives `xcodegen generate`.
+# Xcode auto-creates the App IDs + provisioning profiles (incl. the extension's) for this team on first
+# device build.
+settings:
+  base:
+    DEVELOPMENT_TEAM: 6FXV23JT6K
+    CODE_SIGN_STYLE: Automatic
+
 packages:
   SplitBackAPI:
     path: SplitBackAPI

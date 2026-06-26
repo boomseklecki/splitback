@@ -5,6 +5,10 @@
 .env.demo
 .env.relay
 .env.*.local
+# APNs auth keys / private keys — never commit (the relay reads APNS_AUTH_KEY as base64 in .env.relay)
+*.p8
+*.pem
+*.key
 
 # Local Claude Code settings (machine-local permissions)
 .claude/settings.local.json
