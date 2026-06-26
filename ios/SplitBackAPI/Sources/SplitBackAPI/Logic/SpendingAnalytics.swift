@@ -70,19 +70,26 @@ enum SpendingAnalytics {
     /// owed share — your true cost on a split bill (e.g. a $2000 mortgage paid from your bank, linked to a
     /// $1000 Splitwise half, counts as $1000, not $2000 + $1000). Unshared expenses net to the same amount.
     static func spendEvents(transactions: [Transaction], accounts: [Account], lookup: [String: String],
-                            expenses: [Expense] = [], me: String? = nil) -> [SpendEvent] {
+                            expenses: [Expense] = [], groups: [ExpenseGroup] = [],
+                            me: String? = nil) -> [SpendEvent] {
         resolvedEvents(transactions: transactions, accounts: accounts, lookup: lookup,
-                       expenses: expenses, me: me).map(\.event)
+                       expenses: expenses, groups: groups, me: me).map(\.event)
     }
 
     /// The unified stream with source identity retained (see `ResolvedSpendEvent`). `spendEvents` is this
     /// projected to `\.event`, so every analytics total is provably consistent with the drill-through rows.
+    ///
+    /// Per-user budget overrides (`includeInSpending`/`includeInCashFlow`) layer most-specific-first: a
+    /// transaction's own flag, else its account's; an expense's own flag, else its group's, else included.
+    /// Excluded events still emit (so drill-throughs are complete) but with their `countsIn*` set false.
     static func resolvedEvents(transactions: [Transaction], accounts: [Account], lookup: [String: String],
-                               expenses: [Expense] = [], me: String? = nil) -> [ResolvedSpendEvent] {
+                               expenses: [Expense] = [], groups: [ExpenseGroup] = [],
+                               me: String? = nil) -> [ResolvedSpendEvent] {
         let byId = Dictionary(accounts.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        // Transactions that a (non-archived) expense links to: their gross side is dropped in favor of the
-        // expense's owed share, so a shared bill paid from your bank isn't double-counted.
-        let linkedTxnIds = Set(expenses.lazy.filter { $0.archivedAt == nil }.compactMap(\.transactionId))
+        let groupById = Dictionary(groups.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        // Transactions an expense links to: their gross side is dropped in favor of the expense's owed
+        // share, so a shared bill paid from your bank isn't double-counted.
+        let linkedTxnIds = Set(expenses.lazy.compactMap(\.transactionId))
         var events: [ResolvedSpendEvent] = []
 
         for t in transactions where t.source == .plaid || t.source == .manual {
@@ -91,8 +98,9 @@ enum SpendingAnalytics {
             // Plaid transactions always belong to an account; skip if it's missing. Manual transactions
             // may be cash with no account — those always count; on an account, honor its flags.
             if t.source == .plaid && account == nil { continue }
-            let inSpending = account?.countsInSpending ?? true
-            let inCashFlow = account?.countsInCashFlow ?? true
+            // Per-transaction override wins over the account's classification flag.
+            let inSpending = t.includeInSpending ?? account?.countsInSpending ?? true
+            let inCashFlow = t.includeInCashFlow ?? account?.countsInCashFlow ?? true
             // Itemized outflow: attribute each line item to its own category (keeping its id for the
             // drill-through), with the remainder under the transaction's category. Income/refund rows
             // (amount <= 0) and flat transactions emit a single event.
@@ -116,11 +124,14 @@ enum SpendingAnalytics {
         }
 
         if let me {
-            // All non-archived expenses count at your owed share, including ones linked to a transaction
-            // (whose gross side was dropped above).
-            for e in expenses where e.archivedAt == nil {
+            // Every expense counts at your owed share, including ones linked to a transaction (whose gross
+            // side was dropped above). The per-user include flags (expense, else its group) gate spend/cash.
+            for e in expenses {
                 guard let category = e.category.flatMap({ CategoryMapping.canonical($0, lookup: lookup) }),
                       !CanonicalCategory.neutral.contains(category) else { continue }  // settle-up/transfer
+                let group = groupById[e.groupId]
+                let incSpend = e.includeInSpending ?? group?.includeInSpending ?? true
+                let incCash = e.includeInCashFlow ?? group?.includeInCashFlow ?? true
                 let mySplit = e.splits.first { $0.userIdentifier == me }
                 let amount: Decimal
                 if CanonicalCategory.incomeLike.contains(category) {
@@ -137,7 +148,7 @@ enum SpendingAnalytics {
                         events.append(ResolvedSpendEvent(
                             event: SpendEvent(
                                 id: e.id, date: e.date, label: e.details, category: c.category,
-                                amount: c.amount, countsInSpending: true, countsInCashFlow: true),
+                                amount: c.amount, countsInSpending: incSpend, countsInCashFlow: incCash),
                             source: .expense(e), itemId: c.itemId))
                     }
                     continue
@@ -149,7 +160,7 @@ enum SpendingAnalytics {
                 events.append(ResolvedSpendEvent(
                     event: SpendEvent(
                         id: e.id, date: e.date, label: e.details, category: category,
-                        amount: amount, countsInSpending: true, countsInCashFlow: true),
+                        amount: amount, countsInSpending: incSpend, countsInCashFlow: incCash),
                     source: .expense(e), itemId: nil))
             }
         }
@@ -166,11 +177,11 @@ enum SpendingAnalytics {
     /// Spend by canonical category in the given month, descending.
     static func byCategory(in month: Date, transactions: [Transaction], accounts: [Account],
                            lookup: [String: String], expenses: [Expense] = [],
-                           me: String? = nil) -> [CategorySpend] {
+                           groups: [ExpenseGroup] = [], me: String? = nil) -> [CategorySpend] {
         let cal = calendar
         let target = monthStart(month, cal)
         let events = spendEvents(transactions: transactions, accounts: accounts, lookup: lookup,
-                                 expenses: expenses, me: me)
+                                 expenses: expenses, groups: groups, me: me)
         var totals: [String: Decimal] = [:]
         for e in events where monthStart(e.date, cal) == target && isSpend(e) {
             if let category = e.category { totals[category, default: 0] += e.amount }
@@ -183,12 +194,12 @@ enum SpendingAnalytics {
     /// descending. `start == end` matches a single month (same result as `byCategory(in:)`).
     static func byCategory(from start: Date, to end: Date, transactions: [Transaction],
                            accounts: [Account], lookup: [String: String], expenses: [Expense] = [],
-                           me: String? = nil) -> [CategorySpend] {
+                           groups: [ExpenseGroup] = [], me: String? = nil) -> [CategorySpend] {
         let cal = calendar
         let lo = monthStart(start, cal)
         let hi = monthStart(end, cal)
         let events = spendEvents(transactions: transactions, accounts: accounts, lookup: lookup,
-                                 expenses: expenses, me: me)
+                                 expenses: expenses, groups: groups, me: me)
         var totals: [String: Decimal] = [:]
         for e in events where isSpend(e) {
             let m = monthStart(e.date, cal)
@@ -202,10 +213,11 @@ enum SpendingAnalytics {
     /// Total monthly spend for the last `months` months (oldest → newest), zero-filled.
     static func monthlySpending(transactions: [Transaction], accounts: [Account],
                                 lookup: [String: String], months: Int, ending: Date = .now,
-                                expenses: [Expense] = [], me: String? = nil) -> [MonthlyValue] {
+                                expenses: [Expense] = [], groups: [ExpenseGroup] = [],
+                                me: String? = nil) -> [MonthlyValue] {
         let cal = calendar
         let events = spendEvents(transactions: transactions, accounts: accounts, lookup: lookup,
-                                 expenses: expenses, me: me)
+                                 expenses: expenses, groups: groups, me: me)
         var totals: [Date: Decimal] = [:]
         for e in events where isSpend(e) {
             totals[monthStart(e.date, cal), default: 0] += e.amount
@@ -219,10 +231,11 @@ enum SpendingAnalytics {
     /// oldest → newest, zero-filled.
     static func monthlyNetIncome(transactions: [Transaction], accounts: [Account],
                                  lookup: [String: String], months: Int, ending: Date = .now,
-                                 expenses: [Expense] = [], me: String? = nil) -> [MonthlyValue] {
+                                 expenses: [Expense] = [], groups: [ExpenseGroup] = [],
+                                 me: String? = nil) -> [MonthlyValue] {
         let cal = calendar
         let events = spendEvents(transactions: transactions, accounts: accounts, lookup: lookup,
-                                 expenses: expenses, me: me)
+                                 expenses: expenses, groups: groups, me: me)
         var totals: [Date: Decimal] = [:]
         for e in events where e.countsInCashFlow {
             if let c = e.category, CanonicalCategory.neutral.contains(c) { continue }  // settle-up/transfer

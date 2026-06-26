@@ -260,6 +260,20 @@ struct ExpenseDetailView: View {
             }
 
             Section {
+                Toggle("Include in spending", isOn: Binding(
+                    get: { expense.includeInSpending ?? group?.includeInSpending ?? true },
+                    set: { setFlags(includeInSpending: $0) }))
+                Toggle("Include in cash flow", isOn: Binding(
+                    get: { expense.includeInCashFlow ?? group?.includeInCashFlow ?? true },
+                    set: { setFlags(includeInCashFlow: $0) }))
+            } header: {
+                Text("Budget")
+            } footer: {
+                Text("Turn off to keep your share of this expense out of spending / cash flow and Trends. "
+                     + "Doesn't change any balances.")
+            }
+
+            Section {
                 Button("Delete Expense", role: .destructive) { confirmingDelete = true }
             }
         }
@@ -297,6 +311,10 @@ struct ExpenseDetailView: View {
         }
         .confirmationDialog("Delete this expense?", isPresented: $confirmingDelete, titleVisibility: .visible) {
             Button("Delete", role: .destructive, action: delete)
+        } message: {
+            Text(expense.splitwiseExpenseId != nil
+                 ? "This permanently deletes the expense here and on Splitwise."
+                 : "This permanently deletes the expense.")
         }
         .sheet(isPresented: $showingScanner) {
             DocumentScannerView(
@@ -441,6 +459,16 @@ struct ExpenseDetailView: View {
             do {
                 try await env.expenses(context).delete(id: id)
                 dismiss()
+            } catch { errorText = errorMessage(error) }
+        }
+    }
+
+    private func setFlags(includeInSpending: Bool? = nil, includeInCashFlow: Bool? = nil) {
+        let id = expense.id
+        Task {
+            do {
+                try await env.expenses(context).setFlags(
+                    id: id, includeInSpending: includeInSpending, includeInCashFlow: includeInCashFlow)
             } catch { errorText = errorMessage(error) }
         }
     }

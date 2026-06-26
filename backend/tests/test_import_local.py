@@ -1,12 +1,12 @@
 """POST /splitwise/groups/{id}/import-local: clone a Splitwise group into a new
-self-hosted group (native copies) and archive the source (no double-count)."""
+self-hosted group (native copies) and mark the source superseded (no double-count)."""
 import json
 import urllib.error
 import urllib.request
-from datetime import date, datetime, timezone
+from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
 from app.db import async_session
 from app.models import BackendType, Expense, ExpenseItem, Group, GroupMember, Split
@@ -51,13 +51,6 @@ async def _seed_source():
         ]
         session.add(e2)
 
-        # archived expense -> must NOT be copied
-        e3 = Expense(group_id=group.id, description="Old", amount=Decimal("5.00"), currency="USD",
-                     date=date(2023, 1, 3), splitwise_expense_id="sw-il-3",
-                     archived_at=datetime.now(timezone.utc))
-        e3.splits = [Split(user_identifier="il-matt", paid_share=Decimal("5"), owed_share=Decimal("5"))]
-        session.add(e3)
-
         session.add(GroupMember(group_id=group.id, user_identifier="il-matt"))
         session.add(GroupMember(group_id=group.id, user_identifier="il-nikki"))
         await session.commit()
@@ -74,7 +67,7 @@ async def test_import_splitwise_group_to_local():
         new_id = result["group"]["id"]
         assert result["group"]["backend_type"] == "self_hosted"
         assert result["group"]["name"] == "Trip (local)"
-        assert result["expenses_copied"] == 2  # archived one skipped
+        assert result["expenses_copied"] == 2
 
         exps = json.loads(_req("GET", f"/expenses?group_id={new_id}")[1])
         assert len(exps) == 2
@@ -85,12 +78,15 @@ async def test_import_splitwise_group_to_local():
         members = json.loads(_req("GET", f"/groups/{new_id}/members")[1])
         assert {m["user_identifier"] for m in members} == {"il-matt", "il-nikki"}
 
-        # source archived: hidden from default list, present with include_archived
+        # source superseded: hidden from the list, and its column is stamped
         assert not any(g["id"] == source_id for g in json.loads(_req("GET", "/groups")[1]))
-        archived = json.loads(_req("GET", "/groups?include_archived=true")[1])
-        assert next(g for g in archived if g["id"] == source_id)["archived_at"] is not None
+        async with async_session() as session:
+            superseded = await session.scalar(
+                select(Group.superseded_at).where(Group.id == source_id)
+            )
+            assert superseded is not None
 
-        # balances NOT double-counted: source archived -> overall reflects only the new group
+        # balances NOT double-counted: source superseded -> overall reflects only the new group
         overall = {e["identifier"]: Decimal(str(e["net"])) for e in json.loads(_req("GET", "/balances")[1])}
         assert overall.get("il-matt") == Decimal("15.00")
         assert overall.get("il-nikki") == Decimal("-15.00")

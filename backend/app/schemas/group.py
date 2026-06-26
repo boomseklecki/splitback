@@ -12,7 +12,11 @@ class GroupCreate(BaseModel):
 
 class GroupUpdate(BaseModel):
     name: str | None = None
+    # Per-user overrides (in `group_overrides`): `hidden` (reserved/future), plus budget inclusion. Only
+    # provided fields change; null clears that field.
     hidden: bool | None = None
+    include_in_spending: bool | None = None
+    include_in_cash_flow: bool | None = None
 
 
 class GroupResponse(BaseModel):
@@ -26,6 +30,9 @@ class GroupResponse(BaseModel):
     avatar_url: str | None
     cover_photo_url: str | None
     hidden: bool
-    archived_at: datetime | None
+    # The caller's per-user budget overrides (from `group_overrides`); the router attaches them. null = default.
+    include_in_spending: bool | None = None
+    include_in_cash_flow: bool | None = None
+    superseded_at: datetime | None
     created_at: datetime
     updated_at: datetime

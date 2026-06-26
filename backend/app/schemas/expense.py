@@ -57,6 +57,13 @@ class ExpenseTransactionLink(BaseModel):
     transaction_id: UUID | None = None
 
 
+class ExpenseOverrideUpdate(BaseModel):
+    # The caller's per-user budget overrides (in `expense_overrides`). Only provided fields change; null
+    # clears that field (revert to the default = included). Never touches balances or other users.
+    include_in_spending: bool | None = None
+    include_in_cash_flow: bool | None = None
+
+
 class SplitResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -104,7 +111,9 @@ class ExpenseResponse(BaseModel):
     expense_bundle_id: str | None
     splitwise_receipt_url: str | None
     repayments: list | None
-    archived_at: datetime | None
+    # The caller's per-user budget overrides (from `expense_overrides`); the router attaches them. null = default.
+    include_in_spending: bool | None = None
+    include_in_cash_flow: bool | None = None
     created_at: datetime
     updated_at: datetime
     splits: list[SplitResponse] = []

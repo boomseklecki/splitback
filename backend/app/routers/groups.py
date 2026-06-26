@@ -1,12 +1,11 @@
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import server_settings
 from app.auth import require_auth
 from app.auth.scope import assert_group_member
 from app.db import get_session
@@ -36,12 +35,16 @@ async def create_group(
     return group
 
 
+# Override columns persisted per (owner, group). `hidden` defaults to False; include flags default null.
+_GROUP_OVERRIDE_FIELDS = ("hidden", "include_in_spending", "include_in_cash_flow")
+
+
 async def _attach_group_overrides(
     session: AsyncSession, caller: str | None, groups: list[Group]
 ) -> None:
-    """Populate each group's per-user `hidden` flag from the caller's `group_overrides` row (none in open
-    mode → default False). The column moved to `group_overrides`; this sets a transient attribute the response
-    serializes via `from_attributes`."""
+    """Populate each group's per-user override fields (`hidden`, `include_in_spending`,
+    `include_in_cash_flow`) from the caller's `group_overrides` row (none in open mode → defaults). Sets
+    transient attributes the response serializes via `from_attributes`."""
     by_id: dict = {}
     ids = [g.id for g in groups]
     if caller is not None and ids:
@@ -54,12 +57,13 @@ async def _attach_group_overrides(
     for g in groups:
         override = by_id.get(g.id)
         g.hidden = bool(override.hidden) if override is not None and override.hidden is not None else False
+        g.include_in_spending = override.include_in_spending if override is not None else None
+        g.include_in_cash_flow = override.include_in_cash_flow if override is not None else None
 
 
 @router.get("", response_model=list[GroupResponse])
 async def list_groups(
     backend_type: BackendType | None = None,
-    include_archived: bool = False,
     include_hidden: bool = False,
     updated_since: datetime | None = None,
     caller: str | None = Depends(require_auth),
@@ -72,8 +76,8 @@ async def list_groups(
         )
     if backend_type is not None:
         stmt = stmt.where(Group.backend_type == backend_type)
-    if not include_archived:
-        stmt = stmt.where(Group.archived_at.is_(None))
+    # Always exclude a group superseded by a local import (its expenses live on the self-hosted clone).
+    stmt = stmt.where(Group.superseded_at.is_(None))
     if caller is not None and not include_hidden:  # exclude groups the caller has hidden (open mode hides none)
         stmt = stmt.where(
             Group.id.notin_(
@@ -116,19 +120,24 @@ async def update_group(
     await assert_group_member(session, group_id, caller)
     if body.name is not None:  # name is shared/sourced — stays on the group row
         group.name = body.name
-    if body.hidden is not None and caller is not None:  # `hidden` is the caller's per-user override
-        override = await session.scalar(
-            select(GroupOverride).where(
-                GroupOverride.owner_identifier == caller, GroupOverride.group_id == group_id
+    if caller is not None:  # the rest are the caller's per-user overrides
+        fields = body.model_dump(exclude_unset=True)
+        fields.pop("name", None)
+        if fields.get("hidden") is False:  # hidden False = the default (shown) → clear
+            fields["hidden"] = None
+        if fields:
+            override = await session.scalar(
+                select(GroupOverride).where(
+                    GroupOverride.owner_identifier == caller, GroupOverride.group_id == group_id
+                )
             )
-        )
-        if body.hidden:  # set the caller's override
             if override is None:
-                session.add(GroupOverride(owner_identifier=caller, group_id=group_id, hidden=True))
-            else:
-                override.hidden = True
-        elif override is not None:  # hidden=False is the default → drop the row
-            await session.delete(override)
+                override = GroupOverride(owner_identifier=caller, group_id=group_id)
+                session.add(override)
+            for field, value in fields.items():
+                setattr(override, field, value)
+            if all(getattr(override, field) is None for field in _GROUP_OVERRIDE_FIELDS):
+                await session.delete(override)
     await session.commit()
     await session.refresh(group)
     await _attach_group_overrides(session, caller, [group])
@@ -162,13 +171,9 @@ async def delete_group(
     await assert_group_member(session, group_id, caller)
     if group.backend_type != BackendType.self_hosted:
         raise HTTPException(
-            status_code=409, detail="Only self-hosted groups can be archived or deleted"
+            status_code=409, detail="Only self-hosted groups can be deleted"
         )
-    if await server_settings.get(session, "groups_hard_delete_enabled"):
-        await _hard_delete_group(session, group)
-    else:
-        group.archived_at = datetime.now(timezone.utc)
-        await session.commit()
+    await _hard_delete_group(session, group)
 
 
 @router.get("/{group_id}/members", response_model=list[GroupMemberResponse])

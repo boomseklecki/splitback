@@ -1,6 +1,6 @@
 """Incremental Splitwise expense sync for every stored token (for cron / scheduled runs).
 
-Pulls only what changed since each token's cursor (expenses_synced_at), archives expenses
+Pulls only what changed since each token's cursor (expenses_synced_at), deletes expenses
 Splitwise has deleted, and advances the cursor. The first run (no cursor) does a full pull.
 
 Usage (inside the api container):

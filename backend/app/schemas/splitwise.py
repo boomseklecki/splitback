@@ -58,7 +58,7 @@ class SyncResult(BaseModel):
     expenses_fetched: int | None = None
     imported: int | None = None
     skipped_deleted: int | None = None
-    archived_deleted: int | None = None
+    deleted: int | None = None
     settle_ups: int | None = None
     cursor: datetime | None = None  # new expenses_synced_at after an /sync/expenses run
     dry_run: bool = False

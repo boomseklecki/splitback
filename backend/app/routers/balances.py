@@ -30,14 +30,13 @@ async def _compute(
     stmt = (
         select(Split.user_identifier, paid, owed)
         .join(Expense, Split.expense_id == Expense.id)
-        .where(Expense.archived_at.is_(None))  # exclude archived expenses
         .group_by(Split.user_identifier)
     )
     if group_id is not None:
         stmt = stmt.where(Expense.group_id == group_id)
     else:
-        # Overall: exclude archived groups, and (when scoped) only the caller's groups.
-        stmt = stmt.join(Group, Expense.group_id == Group.id).where(Group.archived_at.is_(None))
+        # Overall: exclude groups superseded by a local import, and (when scoped) only the caller's groups.
+        stmt = stmt.join(Group, Expense.group_id == Group.id).where(Group.superseded_at.is_(None))
         if caller is not None:
             stmt = stmt.where(
                 Expense.group_id.in_(
@@ -143,7 +142,7 @@ async def friends(
     expenses = (
         await session.scalars(
             select(Expense)
-            .where(Expense.archived_at.is_(None))
+            .where(Expense.group_id.notin_(select(Group.id).where(Group.superseded_at.is_not(None))))
             .where(
                 Expense.group_id.in_(
                     select(GroupMember.group_id).where(GroupMember.user_identifier == caller)

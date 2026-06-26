@@ -44,12 +44,12 @@ struct SplitwiseService {
     /// Incremental expense sync (since the server-side cursor): new/edited/settled expenses, and
     /// archives expenses Splitwise deleted. Returns (imported, archived) counts.
     @discardableResult
-    func syncExpenses() async throws -> (imported: Int, archived: Int) {
+    func syncExpenses() async throws -> (imported: Int, deleted: Int) {
         let output = try await client.sync_expenses_splitwise_sync_expenses_post(body: .json(.init()))
         switch output {
         case let .ok(ok):
             let json = try ok.body.json
-            return (json.imported ?? 0, json.archived_deleted ?? 0)
+            return (json.imported ?? 0, json.deleted ?? 0)
         case let .unprocessableContent(error):
             throw BackendError.validation(BackendError.validationMessage(try? error.body.json))
         case let .undocumented(statusCode, _):

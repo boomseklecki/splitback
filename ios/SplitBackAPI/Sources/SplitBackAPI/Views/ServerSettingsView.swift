@@ -11,8 +11,6 @@ struct ServerSettingsView: View {
 
     @State private var serverName = ""
     @State private var invitesOpenToMembers = false
-    @State private var groupsHardDelete = false
-    @State private var expensesHardDelete = false
     @State private var splitwiseReceiptDownload = false
     @State private var syncIntervalHours = 0
     @State private var backupIntervalHours = 0
@@ -39,15 +37,6 @@ struct ServerSettingsView: View {
                 Text("Invites")
             } footer: {
                 Text("Off: only admins can create invite links. On: any enrolled member can.")
-            }
-
-            Section {
-                Toggle("Hard-delete groups", isOn: $groupsHardDelete)
-                Toggle("Hard-delete expenses", isOn: $expensesHardDelete)
-            } header: {
-                Text("Delete behavior")
-            } footer: {
-                Text("Off (default) archives instead of permanently deleting.")
             }
 
             Section("Splitwise") {
@@ -111,8 +100,6 @@ struct ServerSettingsView: View {
     private func apply(_ s: Components.Schemas.ServerSettingsResponse) {
         serverName = s.public_hostname
         invitesOpenToMembers = s.invites_open_to_members
-        groupsHardDelete = s.groups_hard_delete_enabled
-        expensesHardDelete = s.expenses_hard_delete_enabled
         splitwiseReceiptDownload = s.splitwise_receipt_download_enabled
         syncIntervalHours = s.sync_interval_hours
         backupIntervalHours = s.backup_interval_hours
@@ -137,8 +124,6 @@ struct ServerSettingsView: View {
                 let updated = try await env.serverSettings.update(.init(
                     invites_open_to_members: invitesOpenToMembers,
                     public_hostname: serverName,
-                    groups_hard_delete_enabled: groupsHardDelete,
-                    expenses_hard_delete_enabled: expensesHardDelete,
                     splitwise_receipt_download_enabled: splitwiseReceiptDownload,
                     sync_interval_hours: syncIntervalHours,
                     backup_interval_hours: backupIntervalHours,

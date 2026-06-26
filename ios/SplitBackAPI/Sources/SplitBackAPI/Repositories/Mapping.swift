@@ -122,7 +122,9 @@ enum Mapping {
             avatarURL: r.avatar_url,
             coverPhotoURL: r.cover_photo_url,
             hidden: r.hidden,
-            archivedAt: r.archived_at,
+            includeInSpending: r.include_in_spending,
+            includeInCashFlow: r.include_in_cash_flow,
+            supersededAt: r.superseded_at,
             createdAt: r.created_at,
             updatedAt: r.updated_at
         )
@@ -182,6 +184,8 @@ enum Mapping {
             date: try dateOnly(r.date, field: "Transaction.date"),
             category: r.category,
             categoryOverride: r.category_override,
+            includeInSpending: r.include_in_spending,
+            includeInCashFlow: r.include_in_cash_flow,
             pending: r.pending,
             createdAt: r.created_at,
             updatedAt: r.updated_at
@@ -258,7 +262,8 @@ enum Mapping {
             expenseBundleId: r.expense_bundle_id,
             splitwiseReceiptURL: r.splitwise_receipt_url,
             splitwiseRepayments: jsonString(r.repayments),
-            archivedAt: r.archived_at,
+            includeInSpending: r.include_in_spending,
+            includeInCashFlow: r.include_in_cash_flow,
             createdAt: r.created_at,
             updatedAt: r.updated_at,
             splits: try (r.splits ?? []).map(split),

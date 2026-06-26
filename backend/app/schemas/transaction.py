@@ -45,6 +45,13 @@ class TransactionUpdate(BaseModel):
     category_override: str | None = None
 
 
+class TransactionOverrideUpdate(BaseModel):
+    # The caller's per-user budget overrides (in `transaction_overrides`). Only provided fields change; null
+    # clears that field (revert to the account default). Toggles, never touch balances.
+    include_in_spending: bool | None = None
+    include_in_cash_flow: bool | None = None
+
+
 class TransactionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -57,8 +64,10 @@ class TransactionResponse(BaseModel):
     currency: str
     date: date_type
     category: str | None
-    # The caller's per-user override (from `transaction_category_overrides`); the router attaches it.
+    # The caller's per-user overrides (from `transaction_overrides`); the router attaches them. null = default.
     category_override: str | None = None
+    include_in_spending: bool | None = None
+    include_in_cash_flow: bool | None = None
     pending: bool
     items: list[TransactionItemResponse] = []
     created_at: datetime

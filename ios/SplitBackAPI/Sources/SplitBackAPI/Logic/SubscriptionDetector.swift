@@ -127,7 +127,7 @@ enum SubscriptionDetector {
         -> (subscriptions: [Subscription], candidates: [SubscriptionCandidate]) {
         // A shared subscription is represented by its expense share, so skip the linked gross transaction
         // (mirrors SpendingAnalytics' dedupe).
-        let linkedTxnIds = Set(expenses.lazy.filter { $0.archivedAt == nil }.compactMap(\.transactionId))
+        let linkedTxnIds = Set(expenses.lazy.compactMap(\.transactionId))
         var byKey: [String: [Event]] = [:]
 
         for t in transactions where t.source == .plaid || t.source == .manual {
@@ -142,7 +142,7 @@ enum SubscriptionDetector {
         }
 
         if let me {
-            for e in expenses where e.archivedAt == nil {
+            for e in expenses {
                 guard let cat = e.category.flatMap({ CategoryMapping.canonical($0, lookup: lookup) }),
                       !CanonicalCategory.neutral.contains(cat),
                       !CanonicalCategory.incomeLike.contains(cat) else { continue }

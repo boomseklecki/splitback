@@ -6,12 +6,14 @@ async DB session.
 import asyncio
 from uuid import UUID
 
-from sqlalchemy import case, delete, func, select, text, update
+from sqlalchemy import case, delete, func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.integrations.splitwise import client as sw_client
 from app.integrations.splitwise import mapper
+from app.integrations.storage import minio_client
 from app.models import (
     BackendType,
     Expense,
@@ -200,17 +202,23 @@ async def _upsert_expense(session: AsyncSession, mapped: dict, group_id: UUID) -
         await session.execute(pg_insert(Split).values(expense_id=expense_id, **split))
 
 
-async def _archive_deleted(session: AsyncSession, splitwise_expense_id: str) -> int:
-    """Archive a locally-stored expense that Splitwise has deleted. Returns rows affected (0/1)."""
-    result = await session.execute(
-        update(Expense)
-        .where(
-            Expense.splitwise_expense_id == splitwise_expense_id,
-            Expense.archived_at.is_(None),
-        )
-        .values(archived_at=func.now())
+async def _delete_by_swid(session: AsyncSession, splitwise_expense_id: str) -> int:
+    """Hard-delete a locally-stored expense that Splitwise has deleted (cascades splits/items/receipt rows;
+    best-effort MinIO cleanup for any uploaded receipts). Returns rows affected (0/1)."""
+    expense = await session.scalar(
+        select(Expense)
+        .where(Expense.splitwise_expense_id == splitwise_expense_id)
+        .options(selectinload(Expense.receipts))
     )
-    return result.rowcount or 0
+    if expense is None:
+        return 0
+    for receipt in expense.receipts:
+        try:
+            await asyncio.to_thread(minio_client.remove, receipt.object_key)
+        except Exception:
+            pass  # best-effort storage cleanup
+    await session.delete(expense)
+    return 1
 
 
 async def _ensure_group(session: AsyncSession, group_key: str, cache: dict[str, UUID]) -> UUID:
@@ -351,7 +359,7 @@ async def sync_expenses(
 ) -> dict:
     """Upsert expenses in a window. `updated_after` = incremental (deltas + deletions); `dated_*` =
     backfill by date. `group_id`/`friend_id` scope the pull to one group/friend (drill-in). Expenses
-    Splitwise has deleted are archived locally. Commits."""
+    Splitwise has deleted are hard-deleted locally. Commits."""
     expenses = await asyncio.to_thread(
         sw_client.fetch_expenses, client,
         dated_after=dated_after, dated_before=dated_before,
@@ -365,14 +373,14 @@ async def sync_expenses(
         "imported": len(importable),
         "skipped_deleted": len(deleted),
         "settle_ups": sum(1 for e in importable if e.get("payment")),
-        "archived_deleted": 0,
+        "deleted": 0,
     }
     if dry_run:
         return stats
 
-    archived = 0
+    deleted_count = 0
     for expense in deleted:
-        archived += await _archive_deleted(session, expense["splitwise_id"])
+        deleted_count += await _delete_by_swid(session, expense["splitwise_id"])
 
     seen_users: set[str] = set()
     group_cache: dict[str, UUID] = {}
@@ -387,7 +395,7 @@ async def sync_expenses(
         )
 
     await session.commit()
-    stats["archived_deleted"] = archived
+    stats["deleted"] = deleted_count
     stats["users"] = len(seen_users)
     return stats
 
@@ -395,16 +403,16 @@ async def sync_expenses(
 async def sync_one_expense(
     session: AsyncSession, client, user_map: dict[str, str], splitwise_expense_id: str
 ) -> dict:
-    """Refresh a single expense by id (drill-in scoped sync): upsert it, or archive it locally when
+    """Refresh a single expense by id (drill-in scoped sync): upsert it, or hard-delete it locally when
     Splitwise has deleted it. Does NOT advance the token cursor. Commits."""
     expense = await asyncio.to_thread(sw_client.fetch_expense, client, splitwise_expense_id)
-    stats = {"expenses_fetched": 0, "imported": 0, "archived_deleted": 0, "settle_ups": 0, "users": 0}
+    stats = {"expenses_fetched": 0, "imported": 0, "deleted": 0, "settle_ups": 0, "users": 0}
     if expense is None:
         await session.commit()
         return stats
     stats["expenses_fetched"] = 1
     if not mapper.is_importable(expense):
-        stats["archived_deleted"] = await _archive_deleted(session, expense["splitwise_id"])
+        stats["deleted"] = await _delete_by_swid(session, expense["splitwise_id"])
         await session.commit()
         return stats
     seen_users: set[str] = set()

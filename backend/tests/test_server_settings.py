@@ -52,7 +52,7 @@ async def test_patch_admin_gate_and_subset_update():
             User(identifier=f"{PREFIX}-member", display_name="M", source=UserSource.app, enrolled=True),
         ])
         await s.commit()
-        original = await server_settings.get(s, "groups_hard_delete_enabled")
+        original = await server_settings.get(s, "splitwise_receipt_download_enabled")
     try:
         # require_admin forbids a non-admin member.
         async with async_session() as s:
@@ -64,13 +64,14 @@ async def test_patch_admin_gate_and_subset_update():
         # An admin PATCH updates only the provided key; a reader reflects it.
         async with async_session() as s:
             resp = await update_server_settings(
-                ServerSettingsUpdate(groups_hard_delete_enabled=True), caller=f"{PREFIX}-admin", session=s)
-            assert resp.groups_hard_delete_enabled is True
+                ServerSettingsUpdate(splitwise_receipt_download_enabled=True),
+                caller=f"{PREFIX}-admin", session=s)
+            assert resp.splitwise_receipt_download_enabled is True
         async with async_session() as s:
-            assert await server_settings.get(s, "groups_hard_delete_enabled") is True
+            assert await server_settings.get(s, "splitwise_receipt_download_enabled") is True
     finally:
         async with async_session() as s:
-            await server_settings.set_value(s, "groups_hard_delete_enabled", original)
+            await server_settings.set_value(s, "splitwise_receipt_download_enabled", original)
             await s.commit()
         await _purge()
 

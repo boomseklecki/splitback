@@ -28,6 +28,7 @@ struct SpendContributorsView: View {
     @Query private var transactions: [Transaction]
     @Query private var accounts: [Account]
     @Query private var expenses: [Expense]
+    @Query private var groups: [ExpenseGroup]
     @Query private var categoryMaps: [CategoryMap]
 
     private var lookup: [String: String] { CategoryMapping.lookup(categoryMaps) }
@@ -35,7 +36,7 @@ struct SpendContributorsView: View {
 
     private var rows: [SpendContributor] {
         SpendContributors.of(scope: scope, from: start, to: end, transactions: transactions,
-                             accounts: accounts, expenses: expenses, lookup: lookup, me: me)
+                             accounts: accounts, expenses: expenses, groups: groups, lookup: lookup, me: me)
     }
     /// Signed total: spend totals for category/spending, net (inflows − outflows) for cash flow.
     private var total: Decimal { rows.reduce(0) { $0 + $1.amount } }

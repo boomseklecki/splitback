@@ -12,6 +12,7 @@ struct TrendsView: View {
     @Query private var accounts: [Account]
     @Query(sort: \Transaction.date, order: .reverse) private var transactions: [Transaction]
     @Query private var expenses: [Expense]
+    @Query private var groups: [ExpenseGroup]
     @Query private var categoryMaps: [CategoryMap]
 
     @AppStorage("trends.period") private var periodRaw = SpendPeriod.last6.rawValue
@@ -23,11 +24,13 @@ struct TrendsView: View {
     private var me: String? { env.currentUser?.identifier }
     private var spending: [MonthlyValue] {
         SpendingAnalytics.monthlySpending(transactions: transactions, accounts: accounts, lookup: lookup,
-                                          months: window.months, ending: window.end, expenses: expenses, me: me)
+                                          months: window.months, ending: window.end, expenses: expenses,
+                                          groups: groups, me: me)
     }
     private var netIncome: [MonthlyValue] {
         SpendingAnalytics.monthlyNetIncome(transactions: transactions, accounts: accounts, lookup: lookup,
-                                           months: window.months, ending: window.end, expenses: expenses, me: me)
+                                           months: window.months, ending: window.end, expenses: expenses,
+                                           groups: groups, me: me)
     }
     private var rangeLabel: String {
         guard let first = spending.first?.month, let last = spending.last?.month else { return "" }

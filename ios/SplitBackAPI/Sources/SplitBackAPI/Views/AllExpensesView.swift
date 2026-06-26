@@ -5,8 +5,7 @@ import SwiftData
 /// the group detail (stacked date, category icon, your share) with the group name in the subtitle.
 struct AllExpensesView: View {
     @Environment(AppEnvironment.self) private var env
-    @Query(filter: #Predicate<Expense> { $0.archivedAt == nil },
-           sort: \Expense.date, order: .reverse)
+    @Query(sort: \Expense.date, order: .reverse)
     private var expenses: [Expense]
     @Query private var groups: [ExpenseGroup]
     @Query private var users: [User]

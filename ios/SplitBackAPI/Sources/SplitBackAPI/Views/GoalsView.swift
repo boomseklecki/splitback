@@ -13,6 +13,7 @@ struct GoalsView: View {
     @Query private var accounts: [Account]
     @Query(sort: \Transaction.date, order: .reverse) private var transactions: [Transaction]
     @Query private var expenses: [Expense]
+    @Query private var groups: [ExpenseGroup]
     @Query private var categoryMaps: [CategoryMap]
 
     @State private var month: Date = SpendingAnalytics.monthStart(Date())
@@ -32,7 +33,7 @@ struct GoalsView: View {
     }
     private var categorySpend: [CategorySpend] {
         SpendingAnalytics.byCategory(in: month, transactions: transactions, accounts: accounts,
-                                     lookup: lookup, expenses: expenses, me: me)
+                                     lookup: lookup, expenses: expenses, groups: groups, me: me)
     }
     private var monthTotal: Decimal { categorySpend.reduce(0) { $0 + $1.total } }
 

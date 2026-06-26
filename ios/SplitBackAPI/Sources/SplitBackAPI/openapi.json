@@ -434,16 +434,6 @@
             }
           },
           {
-            "name": "include_archived",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean",
-              "default": false,
-              "title": "Include Archived"
-            }
-          },
-          {
             "name": "include_hidden",
             "in": "query",
             "required": false,
@@ -891,16 +881,6 @@
             }
           },
           {
-            "name": "include_archived",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean",
-              "default": false,
-              "title": "Include Archived"
-            }
-          },
-          {
             "name": "limit",
             "in": "query",
             "required": false,
@@ -1060,6 +1040,7 @@
           "expenses"
         ],
         "summary": "Delete Expense",
+        "description": "Permanently delete the expense (hard delete + receipt cleanup). For a Splitwise-linked expense in an\nactive group it also deletes it on Splitwise (so balances stay in parity); `propagate=false` keeps the\nSplitwise copy. To exclude an expense from your budget without deleting it, use the per-user override.",
         "operationId": "delete_expense_expenses__expense_id__delete",
         "security": [
           {
@@ -1135,6 +1116,65 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/ExpenseTransactionLink"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExpenseResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/expenses/{expense_id}/override": {
+      "patch": {
+        "tags": [
+          "expenses"
+        ],
+        "summary": "Update Expense Override",
+        "description": "Set the caller's per-user budget overrides (include in spending / cash flow) in `expense_overrides`,\nkeyed by owner + expense. Only provided fields change (exclude_unset); null clears that field, and the row\nis dropped once every field is null. Never propagates to Splitwise and never touches balances.",
+        "operationId": "update_expense_override_expenses__expense_id__override_patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "expense_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Expense Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExpenseOverrideUpdate"
               }
             }
           }
@@ -1966,7 +2006,7 @@
           "accounts"
         ],
         "summary": "Update Transaction",
-        "description": "Set (or clear, with null) the caller's per-user category override (in `transaction_category_overrides`,\nkeyed by owner + transaction). Plaid sync only touches description/amount/currency/date/category/pending,\nso this survives a re-sync.",
+        "description": "Set (or clear, with null) the caller's per-user category override in `transaction_overrides`, keyed by\nowner + transaction. The row also carries budget-inclusion flags (set via /override) and is dropped only\nonce every field is null. Plaid sync only touches description/amount/currency/date/category/pending, so\nthis survives a re-sync.",
         "operationId": "update_transaction_transactions__transaction_id__patch",
         "security": [
           {
@@ -2044,6 +2084,65 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/transactions/{transaction_id}/override": {
+      "patch": {
+        "tags": [
+          "accounts"
+        ],
+        "summary": "Update Transaction Override",
+        "description": "Set the caller's per-user budget overrides (include in spending / cash flow) on the transaction,\nkeyed by owner + transaction. Only provided fields change (exclude_unset); coexists with the category\noverride and never touches balances.",
+        "operationId": "update_transaction_override_transactions__transaction_id__override_patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "transaction_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Transaction Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransactionOverrideUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionResponse"
+                }
+              }
+            }
           },
           "422": {
             "description": "Validation Error",
@@ -2738,7 +2837,7 @@
           "splitwise"
         ],
         "summary": "Sync Expenses",
-        "description": "Pull-to-refresh expenses: incremental pull since the stored cursor (or `since` override).\nCatches edits/settle-ups and archives expenses Splitwise has deleted.",
+        "description": "Pull-to-refresh expenses: incremental pull since the stored cursor (or `since` override).\nCatches edits/settle-ups and hard-deletes expenses Splitwise has deleted.",
         "operationId": "sync_expenses_splitwise_sync_expenses_post",
         "requestBody": {
           "content": {
@@ -2901,7 +3000,7 @@
           "splitwise"
         ],
         "summary": "Sync Expense",
-        "description": "Drill-in: refresh a single expense (upsert, or archive when Splitwise has deleted it).",
+        "description": "Drill-in: refresh a single expense (upsert, or delete when Splitwise has deleted it).",
         "operationId": "sync_expense_splitwise_sync_expense__splitwise_expense_id__post",
         "security": [
           {
@@ -3084,7 +3183,7 @@
           "splitwise"
         ],
         "summary": "Import Group Local",
-        "description": "Clone a Splitwise-linked group into a new self-hosted group (native, full-featured copies of\nexpenses incl. provenance, splits, items, and receipts), then archive the source so balances don't\ndouble-count. With SPLITWISE_RECEIPT_DOWNLOAD_ENABLED, each Splitwise receipt's original image is\ndownloaded into MinIO so the local copy is self-contained.",
+        "description": "Clone a Splitwise-linked group into a new self-hosted group (native, full-featured copies of\nexpenses incl. provenance, splits, items, and receipts), then mark the source superseded so balances don't\ndouble-count. With SPLITWISE_RECEIPT_DOWNLOAD_ENABLED, each Splitwise receipt's original image is\ndownloaded into MinIO so the local copy is self-contained.",
         "operationId": "import_group_local_splitwise_groups__group_id__import_local_post",
         "security": [
           {
@@ -4225,6 +4324,20 @@
         ],
         "title": "ExpenseCreate"
       },
+      "ExpenseOverrideUpdate": {
+        "properties": {
+          "include_in_spending": {
+            "type": "boolean",
+            "title": "Include In Spending"
+          },
+          "include_in_cash_flow": {
+            "type": "boolean",
+            "title": "Include In Cash Flow"
+          }
+        },
+        "type": "object",
+        "title": "ExpenseOverrideUpdate"
+      },
       "ExpenseResponse": {
         "properties": {
           "id": {
@@ -4315,10 +4428,13 @@
             "type": "array",
             "title": "Repayments"
           },
-          "archived_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Archived At"
+          "include_in_spending": {
+            "type": "boolean",
+            "title": "Include In Spending"
+          },
+          "include_in_cash_flow": {
+            "type": "boolean",
+            "title": "Include In Cash Flow"
           },
           "created_at": {
             "type": "string",
@@ -4783,10 +4899,18 @@
             "type": "boolean",
             "title": "Hidden"
           },
-          "archived_at": {
+          "include_in_spending": {
+            "type": "boolean",
+            "title": "Include In Spending"
+          },
+          "include_in_cash_flow": {
+            "type": "boolean",
+            "title": "Include In Cash Flow"
+          },
+          "superseded_at": {
             "type": "string",
             "format": "date-time",
-            "title": "Archived At"
+            "title": "Superseded At"
           },
           "created_at": {
             "type": "string",
@@ -4819,6 +4943,14 @@
           "hidden": {
             "type": "boolean",
             "title": "Hidden"
+          },
+          "include_in_spending": {
+            "type": "boolean",
+            "title": "Include In Spending"
+          },
+          "include_in_cash_flow": {
+            "type": "boolean",
+            "title": "Include In Cash Flow"
           }
         },
         "type": "object",
@@ -5350,14 +5482,6 @@
             "type": "string",
             "title": "Public Hostname"
           },
-          "groups_hard_delete_enabled": {
-            "type": "boolean",
-            "title": "Groups Hard Delete Enabled"
-          },
-          "expenses_hard_delete_enabled": {
-            "type": "boolean",
-            "title": "Expenses Hard Delete Enabled"
-          },
           "splitwise_receipt_download_enabled": {
             "type": "boolean",
             "title": "Splitwise Receipt Download Enabled"
@@ -5395,8 +5519,6 @@
         "required": [
           "invites_open_to_members",
           "public_hostname",
-          "groups_hard_delete_enabled",
-          "expenses_hard_delete_enabled",
           "splitwise_receipt_download_enabled",
           "sync_interval_hours",
           "backup_interval_hours",
@@ -5418,14 +5540,6 @@
           "public_hostname": {
             "type": "string",
             "title": "Public Hostname"
-          },
-          "groups_hard_delete_enabled": {
-            "type": "boolean",
-            "title": "Groups Hard Delete Enabled"
-          },
-          "expenses_hard_delete_enabled": {
-            "type": "boolean",
-            "title": "Expenses Hard Delete Enabled"
           },
           "splitwise_receipt_download_enabled": {
             "type": "boolean",
@@ -5682,9 +5796,9 @@
             "type": "integer",
             "title": "Skipped Deleted"
           },
-          "archived_deleted": {
+          "deleted": {
             "type": "integer",
-            "title": "Archived Deleted"
+            "title": "Deleted"
           },
           "settle_ups": {
             "type": "integer",
@@ -5836,6 +5950,20 @@
         ],
         "title": "TransactionItemResponse"
       },
+      "TransactionOverrideUpdate": {
+        "properties": {
+          "include_in_spending": {
+            "type": "boolean",
+            "title": "Include In Spending"
+          },
+          "include_in_cash_flow": {
+            "type": "boolean",
+            "title": "Include In Cash Flow"
+          }
+        },
+        "type": "object",
+        "title": "TransactionOverrideUpdate"
+      },
       "TransactionResponse": {
         "properties": {
           "id": {
@@ -5880,6 +6008,14 @@
           "category_override": {
             "type": "string",
             "title": "Category Override"
+          },
+          "include_in_spending": {
+            "type": "boolean",
+            "title": "Include In Spending"
+          },
+          "include_in_cash_flow": {
+            "type": "boolean",
+            "title": "Include In Cash Flow"
           },
           "pending": {
             "type": "boolean",

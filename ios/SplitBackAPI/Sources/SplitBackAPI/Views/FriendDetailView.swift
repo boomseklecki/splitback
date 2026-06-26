@@ -37,7 +37,7 @@ struct FriendDetailView: View {
         self.friend = friend
         let ids = friend.groups.compactMap(\.groupId)
         _expenses = Query(
-            filter: #Predicate<Expense> { ids.contains($0.groupId) && $0.archivedAt == nil },
+            filter: #Predicate<Expense> { ids.contains($0.groupId) },
             sort: \Expense.date, order: .reverse
         )
     }

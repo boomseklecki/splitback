@@ -45,8 +45,6 @@ class Expense(UUIDMixin, TimestampMixin, Base):
     # Splitwise receipt image URL (remote, not our proxied bytes) + simplified repayments, both from import.
     splitwise_receipt_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     repayments: Mapped[list | None] = mapped_column(JSONB, nullable=True)
-    # Soft-delete marker; null = active (DELETE archives unless hard-delete is enabled)
-    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     group: Mapped["Group"] = relationship(back_populates="expenses")  # noqa: F821
     items: Mapped[list["ExpenseItem"]] = relationship(  # noqa: F821

@@ -11,12 +11,13 @@ from app.auth import require_auth
 from app.auth.scope import assert_owner
 from app.config import settings
 from app.db import get_session
-from app.models import Account, AccountOverride, Transaction, TransactionCategoryOverride, TransactionItem
+from app.models import Account, AccountOverride, Transaction, TransactionItem, TransactionOverride
 from app.models.enums import TransactionSource
 from app.schemas.account import ACCOUNT_KINDS, AccountCreate, AccountResponse, AccountUpdate
 from app.schemas.transaction import (
     TransactionCreate,
     TransactionItemInput,
+    TransactionOverrideUpdate,
     TransactionResponse,
     TransactionUpdate,
 )
@@ -168,24 +169,31 @@ async def list_transactions(
     return rows
 
 
+# Override columns -> response. `category` surfaces as `category_override`; include flags pass through.
+_TXN_OVERRIDE_FIELDS = ("category", "include_in_spending", "include_in_cash_flow")
+
+
 async def _attach_overrides(
     session: AsyncSession, caller: str | None, transactions: list[Transaction]
 ) -> None:
-    """Populate each transaction's `category_override` from the caller's per-user override row (none in open
-    mode). The column was moved to `transaction_category_overrides`; this sets a transient attribute the
-    response serializes via `from_attributes`."""
+    """Populate each transaction's per-user override fields (`category_override`, `include_in_spending`,
+    `include_in_cash_flow`) from the caller's `transaction_overrides` row (none in open mode); sets transient
+    attributes the response serializes via `from_attributes`."""
     ids = [t.id for t in transactions]
-    overrides: dict[UUID, str] = {}
+    by_id: dict[UUID, TransactionOverride] = {}
     if caller is not None and ids:
-        rows = await session.execute(
-            select(TransactionCategoryOverride.transaction_id, TransactionCategoryOverride.category).where(
-                TransactionCategoryOverride.owner_identifier == caller,
-                TransactionCategoryOverride.transaction_id.in_(ids),
+        rows = await session.scalars(
+            select(TransactionOverride).where(
+                TransactionOverride.owner_identifier == caller,
+                TransactionOverride.transaction_id.in_(ids),
             )
         )
-        overrides = {tid: category for tid, category in rows}
+        by_id = {o.transaction_id: o for o in rows}
     for t in transactions:
-        t.category_override = overrides.get(t.id)
+        o = by_id.get(t.id)
+        t.category_override = o.category if o is not None else None
+        t.include_in_spending = o.include_in_spending if o is not None else None
+        t.include_in_cash_flow = o.include_in_cash_flow if o is not None else None
 
 
 async def _load_transaction(
@@ -224,31 +232,63 @@ async def update_transaction(
     caller: str | None = Depends(require_auth),
     session: AsyncSession = Depends(get_session),
 ) -> Transaction:
-    """Set (or clear, with null) the caller's per-user category override (in `transaction_category_overrides`,
-    keyed by owner + transaction). Plaid sync only touches description/amount/currency/date/category/pending,
-    so this survives a re-sync."""
+    """Set (or clear, with null) the caller's per-user category override in `transaction_overrides`, keyed by
+    owner + transaction. The row also carries budget-inclusion flags (set via /override) and is dropped only
+    once every field is null. Plaid sync only touches description/amount/currency/date/category/pending, so
+    this survives a re-sync."""
     transaction = await session.get(Transaction, transaction_id)
     if transaction is None:
         raise HTTPException(status_code=404, detail="Transaction not found")
     assert_owner(transaction.owner_identifier, caller)
     if caller is not None:  # open mode has no per-user override to key on
-        row = await session.scalar(
-            select(TransactionCategoryOverride).where(
-                TransactionCategoryOverride.owner_identifier == caller,
-                TransactionCategoryOverride.transaction_id == transaction_id,
-            )
-        )
-        # An omitted field (the generated client drops nil) clears the override → delete the row.
-        if body.category_override is None:
-            if row is not None:
-                await session.delete(row)
-        elif row is None:
-            session.add(TransactionCategoryOverride(
-                owner_identifier=caller, transaction_id=transaction_id, category=body.category_override))
-        else:
-            row.category = body.category_override
+        await _apply_txn_override(session, caller, transaction_id, category=body.category_override,
+                                  set_category=True)
         await session.commit()
     return await _load_transaction(session, transaction_id, caller)
+
+
+@router.patch("/transactions/{transaction_id}/override", response_model=TransactionResponse)
+async def update_transaction_override(
+    transaction_id: UUID,
+    body: TransactionOverrideUpdate,
+    caller: str | None = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
+) -> Transaction:
+    """Set the caller's per-user budget overrides (include in spending / cash flow) on the transaction,
+    keyed by owner + transaction. Only provided fields change (exclude_unset); coexists with the category
+    override and never touches balances."""
+    transaction = await session.get(Transaction, transaction_id)
+    if transaction is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    assert_owner(transaction.owner_identifier, caller)
+    if caller is not None:
+        await _apply_txn_override(session, caller, transaction_id, **body.model_dump(exclude_unset=True))
+        await session.commit()
+    return await _load_transaction(session, transaction_id, caller)
+
+
+async def _apply_txn_override(
+    session: AsyncSession, caller: str, transaction_id: UUID, *, set_category: bool = False, **fields
+) -> None:
+    """Upsert the caller's (owner, transaction) override row with the provided fields (`category` is only
+    written when `set_category` so the include-flag endpoint doesn't clear it), then drop the row once every
+    field is null."""
+    override = await session.scalar(
+        select(TransactionOverride).where(
+            TransactionOverride.owner_identifier == caller,
+            TransactionOverride.transaction_id == transaction_id,
+        )
+    )
+    if override is None:
+        override = TransactionOverride(owner_identifier=caller, transaction_id=transaction_id)
+        session.add(override)
+    if set_category:
+        override.category = fields.get("category")
+    for field in ("include_in_spending", "include_in_cash_flow"):
+        if field in fields:
+            setattr(override, field, fields[field])
+    if all(getattr(override, field) is None for field in _TXN_OVERRIDE_FIELDS):
+        await session.delete(override)
 
 
 def _apply_transaction_items(

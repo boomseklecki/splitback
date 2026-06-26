@@ -80,26 +80,26 @@ async def test_incremental_upsert_is_idempotent():
         await _purge()
 
 
-async def test_deletion_archives_locally():
+async def test_deletion_removes_locally():
     await _purge()
     original = c.fetch_expenses
     try:
         c.fetch_expenses = lambda client, **kw: [_expense(EXP_KEY)]
         async with async_session() as session:
             await importer.sync_expenses(session, object(), {}, updated_after=None)
-        # Splitwise now reports the expense deleted -> archive the local row
+        # Splitwise now reports the expense deleted -> hard-delete the local row
         c.fetch_expenses = lambda client, **kw: [_expense(EXP_KEY, deleted=True)]
         async with async_session() as session:
             stats = await importer.sync_expenses(
                 session, object(), {}, updated_after="2023-02-01T00:00:00Z"
             )
-            assert stats["archived_deleted"] == 1
+            assert stats["deleted"] == 1
             assert stats["imported"] == 0
         async with async_session() as session:
-            archived_at = await session.scalar(
-                select(Expense.archived_at).where(Expense.splitwise_expense_id == EXP_KEY)
+            row = await session.scalar(
+                select(Expense.id).where(Expense.splitwise_expense_id == EXP_KEY)
             )
-            assert archived_at is not None
+            assert row is None  # gone, not archived
     finally:
         c.fetch_expenses = original
         await _purge()

@@ -19,8 +19,6 @@ from app.models import ServerSetting
 REGISTRY: dict[str, tuple[type, object]] = {
     "invites_open_to_members": (bool, False),
     "public_hostname": (str, ""),
-    "groups_hard_delete_enabled": (bool, False),
-    "expenses_hard_delete_enabled": (bool, False),
     "splitwise_receipt_download_enabled": (bool, False),
     "sync_interval_hours": (int, 0),
     "backup_interval_hours": (int, 0),

@@ -1,13 +1,14 @@
-"""Per-(owner, transaction) category override: set/clear via PATCH, scoped to the caller. DB-backed."""
+"""Per-(owner, transaction) overrides (category + budget inclusion): set/clear via PATCH, scoped to the
+caller, coexisting in one row. DB-backed."""
 import uuid
 from datetime import date
 
 from sqlalchemy import delete, select
 
 from app.db import async_session
-from app.models import Transaction, TransactionCategoryOverride
-from app.routers.accounts import _load_transaction, update_transaction
-from app.schemas.transaction import TransactionUpdate
+from app.models import Transaction, TransactionOverride
+from app.routers.accounts import _load_transaction, update_transaction, update_transaction_override
+from app.schemas.transaction import TransactionOverrideUpdate, TransactionUpdate
 
 
 async def _make_txn(session, owner: str) -> uuid.UUID:
@@ -22,7 +23,7 @@ async def _make_txn(session, owner: str) -> uuid.UUID:
 
 async def _cleanup(session, txn_id):
     await session.execute(
-        delete(TransactionCategoryOverride).where(TransactionCategoryOverride.transaction_id == txn_id)
+        delete(TransactionOverride).where(TransactionOverride.transaction_id == txn_id)
     )
     await session.execute(delete(Transaction).where(Transaction.id == txn_id))
     await session.commit()
@@ -44,8 +45,36 @@ async def test_set_then_clear_override():
             await update_transaction(txn_id, TransactionUpdate(category_override=None),
                                      caller="alice", session=s)
             assert (await _load_transaction(s, txn_id, "alice")).category_override is None
-            assert (await s.scalar(select(TransactionCategoryOverride).where(
-                TransactionCategoryOverride.transaction_id == txn_id))) is None
+            assert (await s.scalar(select(TransactionOverride).where(
+                TransactionOverride.transaction_id == txn_id))) is None
+        finally:
+            await _cleanup(s, txn_id)
+
+
+async def test_include_flag_coexists_with_category():
+    async with async_session() as s:
+        txn_id = await _make_txn(s, "alice")
+        try:
+            # Exclude from spending (via the override endpoint); the row appears with the flag.
+            await update_transaction_override(txn_id, TransactionOverrideUpdate(include_in_spending=False),
+                                              caller="alice", session=s)
+            t = await _load_transaction(s, txn_id, "alice")
+            assert t.include_in_spending is False and t.category_override is None
+            # Add a category override (separate endpoint) — both persist on the one row.
+            await update_transaction(txn_id, TransactionUpdate(category_override="Dining"),
+                                     caller="alice", session=s)
+            t = await _load_transaction(s, txn_id, "alice")
+            assert t.include_in_spending is False and t.category_override == "Dining"
+            # Clear the category; the row stays because the flag is still set.
+            await update_transaction(txn_id, TransactionUpdate(category_override=None),
+                                     caller="alice", session=s)
+            assert (await s.scalar(select(TransactionOverride).where(
+                TransactionOverride.transaction_id == txn_id))) is not None
+            # Clear the flag too → row deleted.
+            await update_transaction_override(txn_id, TransactionOverrideUpdate(include_in_spending=None),
+                                              caller="alice", session=s)
+            assert (await s.scalar(select(TransactionOverride).where(
+                TransactionOverride.transaction_id == txn_id))) is None
         finally:
             await _cleanup(s, txn_id)
 

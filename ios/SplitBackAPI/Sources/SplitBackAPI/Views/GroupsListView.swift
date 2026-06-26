@@ -23,7 +23,7 @@ struct GroupsListView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.modelContext) private var context
 
-    @Query(filter: #Predicate<ExpenseGroup> { $0.archivedAt == nil && $0.hidden == false },
+    @Query(filter: #Predicate<ExpenseGroup> { $0.supersededAt == nil && $0.hidden == false },
            sort: \ExpenseGroup.name)
     private var groups: [ExpenseGroup]
     @Query private var members: [GroupMember]

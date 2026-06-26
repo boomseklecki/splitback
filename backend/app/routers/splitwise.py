@@ -151,7 +151,7 @@ async def sync_expenses(
     session: AsyncSession = Depends(get_session),
 ) -> SyncResult:
     """Pull-to-refresh expenses: incremental pull since the stored cursor (or `since` override).
-    Catches edits/settle-ups and archives expenses Splitwise has deleted."""
+    Catches edits/settle-ups and hard-deletes expenses Splitwise has deleted."""
     token = await _select_token(session, caller or body.as_user)
     client = sw_client.make_client(token.access_token)
     updated_after = body.since or (
@@ -224,7 +224,7 @@ async def sync_expense(
     caller: str | None = Depends(require_auth),
     session: AsyncSession = Depends(get_session),
 ) -> SyncResult:
-    """Drill-in: refresh a single expense (upsert, or archive when Splitwise has deleted it)."""
+    """Drill-in: refresh a single expense (upsert, or delete when Splitwise has deleted it)."""
     token = await _select_token(session, caller or body.as_user)
     client = sw_client.make_client(token.access_token)
     stats = await importer.sync_one_expense(
@@ -300,7 +300,7 @@ async def import_group_local(
     group_id: UUID, body: LocalImportRequest, session: AsyncSession = Depends(get_session)
 ) -> LocalImportResult:
     """Clone a Splitwise-linked group into a new self-hosted group (native, full-featured copies of
-    expenses incl. provenance, splits, items, and receipts), then archive the source so balances don't
+    expenses incl. provenance, splits, items, and receipts), then mark the source superseded so balances don't
     double-count. With SPLITWISE_RECEIPT_DOWNLOAD_ENABLED, each Splitwise receipt's original image is
     downloaded into MinIO so the local copy is self-contained."""
     source = await session.get(Group, group_id)
@@ -312,7 +312,7 @@ async def import_group_local(
     expenses = (
         await session.scalars(
             select(Expense)
-            .where(Expense.group_id == source.id, Expense.archived_at.is_(None))
+            .where(Expense.group_id == source.id)
             .options(
                 selectinload(Expense.splits),
                 selectinload(Expense.items),
@@ -373,10 +373,12 @@ async def import_group_local(
     for member in members:
         session.add(GroupMember(group_id=new_group.id, user_identifier=member.user_identifier))
 
-    source.archived_at = datetime.now(timezone.utc)
+    source.superseded_at = datetime.now(timezone.utc)
     await session.commit()
     await session.refresh(new_group)
     new_group.hidden = False  # per-user `hidden` lives in group_overrides; a fresh import has none
+    new_group.include_in_spending = None
+    new_group.include_in_cash_flow = None
     return LocalImportResult(
         group=GroupResponse.model_validate(new_group),
         expenses_copied=len(expenses),
@@ -401,7 +403,6 @@ async def download_group_receipts(
             select(Expense)
             .where(
                 Expense.group_id == group_id,
-                Expense.archived_at.is_(None),
                 Expense.splitwise_receipt_url.is_not(None),
             )
             .options(selectinload(Expense.receipts))

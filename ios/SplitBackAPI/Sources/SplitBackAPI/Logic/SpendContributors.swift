@@ -24,21 +24,23 @@ enum SpendContributors {
 
     /// The contributing rows for `scope` in `month`, outflows first (largest spend), then inflows.
     static func of(scope: Scope, month: Date, transactions: [Transaction], accounts: [Account],
-                   expenses: [Expense] = [], lookup: [String: String], me: String?) -> [SpendContributor] {
+                   expenses: [Expense] = [], groups: [ExpenseGroup] = [], lookup: [String: String],
+                   me: String?) -> [SpendContributor] {
         let m = SpendingAnalytics.monthStart(month)
         return of(scope: scope, from: m, to: m, transactions: transactions, accounts: accounts,
-                  expenses: expenses, lookup: lookup, me: me)
+                  expenses: expenses, groups: groups, lookup: lookup, me: me)
     }
 
     /// The contributing rows for `scope` across an inclusive month range `start...end` (both first-of-month),
     /// outflows first (largest spend), then inflows.
     static func of(scope: Scope, from start: Date, to end: Date, transactions: [Transaction],
-                   accounts: [Account], expenses: [Expense] = [], lookup: [String: String],
-                   me: String?) -> [SpendContributor] {
+                   accounts: [Account], expenses: [Expense] = [], groups: [ExpenseGroup] = [],
+                   lookup: [String: String], me: String?) -> [SpendContributor] {
         let lo = SpendingAnalytics.monthStart(start)
         let hi = SpendingAnalytics.monthStart(end)
         let resolved = SpendingAnalytics.resolvedEvents(transactions: transactions, accounts: accounts,
-                                                        lookup: lookup, expenses: expenses, me: me)
+                                                        lookup: lookup, expenses: expenses, groups: groups,
+                                                        me: me)
         let rows = resolved
             .filter {
                 let m = SpendingAnalytics.monthStart($0.event.date)

@@ -94,6 +94,20 @@ struct TransactionDetailView: View {
             }
 
             Section {
+                Toggle("Include in spending", isOn: Binding(
+                    get: { transaction.includeInSpending ?? account?.countsInSpending ?? true },
+                    set: { setFlags(includeInSpending: $0) }))
+                Toggle("Include in cash flow", isOn: Binding(
+                    get: { transaction.includeInCashFlow ?? account?.countsInCashFlow ?? true },
+                    set: { setFlags(includeInCashFlow: $0) }))
+            } header: {
+                Text("Budget")
+            } footer: {
+                Text("Turn off to keep this transaction out of spending / cash flow and Trends. Doesn't change "
+                     + "any balances.")
+            }
+
+            Section {
                 NavigationLink {
                     DescriptionDetailView(seedDescription: transaction.details, seedCategory: effectiveCategory)
                 } label: {
@@ -257,6 +271,16 @@ struct TransactionDetailView: View {
         Task {
             do { try await env.accounts(context).setCategoryOverride(id: id, category: category) }
             catch { errorText = errorMessage(error) }
+        }
+    }
+
+    private func setFlags(includeInSpending: Bool? = nil, includeInCashFlow: Bool? = nil) {
+        let id = transaction.id
+        Task {
+            do {
+                try await env.accounts(context).setTransactionFlags(
+                    id: id, includeInSpending: includeInSpending, includeInCashFlow: includeInCashFlow)
+            } catch { errorText = errorMessage(error) }
         }
     }
 

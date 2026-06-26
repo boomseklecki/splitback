@@ -20,6 +20,10 @@ final class Transaction {
     /// Explicit per-transaction canonical category (manual pick or on-device AI on this one row).
     /// Backend-synced and independent of the label-wide category map — wins over it in `effectiveCategory`.
     var categoryOverride: String?
+    /// The caller's per-user budget overrides (from `transaction_overrides`); nil = the default (derive from
+    /// the account). Excludes this transaction from spending / cash-flow analytics.
+    var includeInSpending: Bool?
+    var includeInCashFlow: Bool?
     var pending: Bool
     /// On-device (Apple Intelligence) category refinement from the merchant description, for rows whose
     /// Plaid category is vague ("Other"/uncategorized). Client-only and derived — not synced, and the
@@ -43,6 +47,8 @@ final class Transaction {
         date: Date,
         category: String? = nil,
         categoryOverride: String? = nil,
+        includeInSpending: Bool? = nil,
+        includeInCashFlow: Bool? = nil,
         pending: Bool = false,
         refinedCategory: String? = nil,
         items: [TransactionItem] = [],
@@ -59,6 +65,8 @@ final class Transaction {
         self.date = date
         self.category = category
         self.categoryOverride = categoryOverride
+        self.includeInSpending = includeInSpending
+        self.includeInCashFlow = includeInCashFlow
         self.pending = pending
         self.refinedCategory = refinedCategory
         self.items = items

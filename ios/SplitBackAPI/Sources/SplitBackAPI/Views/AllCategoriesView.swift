@@ -15,6 +15,7 @@ struct AllCategoriesView: View {
     @Query(sort: \Transaction.date, order: .reverse) private var transactions: [Transaction]
     @Query private var accounts: [Account]
     @Query private var expenses: [Expense]
+    @Query private var groups: [ExpenseGroup]
     @Query private var categoryMaps: [CategoryMap]
 
     @AppStorage("allCategories.period") private var periodRaw = SpendPeriod.month.rawValue
@@ -28,7 +29,7 @@ struct AllCategoriesView: View {
         let window = period.resolve(anchor: month)
         let slices = SpendingAnalytics.byCategory(
             from: window.start, to: window.end, transactions: transactions, accounts: accounts,
-            lookup: lookup, expenses: expenses, me: me)
+            lookup: lookup, expenses: expenses, groups: groups, me: me)
         let total = slices.reduce(Decimal(0)) { $0 + $1.total }
 
         return List {

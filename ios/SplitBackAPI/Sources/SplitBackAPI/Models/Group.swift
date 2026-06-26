@@ -18,7 +18,11 @@ final class Group {
     var avatarURL: String?
     var coverPhotoURL: String?
     var hidden: Bool
-    var archivedAt: Date?
+    /// The caller's per-user budget overrides (from `group_overrides`); nil = the default (included).
+    var includeInSpending: Bool?
+    var includeInCashFlow: Bool?
+    /// Internal "superseded by a local import" marker (nil = active); such groups are hidden everywhere.
+    var supersededAt: Date?
     var createdAt: Date
     var updatedAt: Date
 
@@ -31,7 +35,9 @@ final class Group {
         avatarURL: String? = nil,
         coverPhotoURL: String? = nil,
         hidden: Bool = false,
-        archivedAt: Date? = nil,
+        includeInSpending: Bool? = nil,
+        includeInCashFlow: Bool? = nil,
+        supersededAt: Date? = nil,
         createdAt: Date,
         updatedAt: Date
     ) {
@@ -43,7 +49,9 @@ final class Group {
         self.avatarURL = avatarURL
         self.coverPhotoURL = coverPhotoURL
         self.hidden = hidden
-        self.archivedAt = archivedAt
+        self.includeInSpending = includeInSpending
+        self.includeInCashFlow = includeInCashFlow
+        self.supersededAt = supersededAt
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }

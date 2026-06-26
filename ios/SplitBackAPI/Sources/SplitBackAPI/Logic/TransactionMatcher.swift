@@ -27,9 +27,9 @@ enum TransactionMatcher {
 
     static func candidates(for expense: Expense, transactions: [Transaction], expenses: [Expense],
                            me: String?, limit: Int = 8, windowDays: Int = 21) -> [TransactionMatch] {
-        // Exclude transactions already linked to another (non-archived) expense.
+        // Exclude transactions already linked to another expense.
         var linked = Set<UUID>()
-        for e in expenses where e.archivedAt == nil && e.id != expense.id {
+        for e in expenses where e.id != expense.id {
             if let tid = e.transactionId { linked.insert(tid) }
         }
 
@@ -64,7 +64,7 @@ enum TransactionMatcher {
         let amount = nsDouble(transaction.amount)
         let txnTokens = tokens(transaction.details)
         var scored: [(Expense, Double)] = []
-        for e in expenses where e.transactionId == nil && e.archivedAt == nil {
+        for e in expenses where e.transactionId == nil {
             if let c = e.category, CanonicalCategory.neutral.contains(c) { continue }  // settle-up/transfer
             let days = abs(daysBetween(transaction.date, e.date))
             guard days <= windowDays else { continue }

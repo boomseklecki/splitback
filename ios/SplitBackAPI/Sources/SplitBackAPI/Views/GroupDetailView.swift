@@ -29,7 +29,7 @@ struct GroupDetailView: View {
         self.group = group
         let gid = group.id
         _expenses = Query(
-            filter: #Predicate<Expense> { $0.groupId == gid && $0.archivedAt == nil },
+            filter: #Predicate<Expense> { $0.groupId == gid },
             sort: \Expense.date, order: .reverse
         )
         _members = Query(
@@ -132,6 +132,14 @@ struct GroupDetailView: View {
                         }
                     }
                     Button("Members", systemImage: "person.2") { showingMembers = true }
+                    Section("Budget") {
+                        Toggle("Include in spending", isOn: Binding(
+                            get: { group.includeInSpending ?? true },
+                            set: { setFlags(includeInSpending: $0) }))
+                        Toggle("Include in cash flow", isOn: Binding(
+                            get: { group.includeInCashFlow ?? true },
+                            set: { setFlags(includeInCashFlow: $0) }))
+                    }
                     if group.backendType == .splitwise {
                         Button("Import as Local Group", systemImage: "square.and.arrow.down", action: importLocal)
                     }
@@ -212,6 +220,16 @@ struct GroupDetailView: View {
             do {
                 try await env.groups(context).importLocal(groupId: group.id)
                 try await env.expenses(context).reconcileAll()
+            } catch { errorText = errorMessage(error) }
+        }
+    }
+
+    private func setFlags(includeInSpending: Bool? = nil, includeInCashFlow: Bool? = nil) {
+        let id = group.id
+        Task {
+            do {
+                try await env.groups(context).update(
+                    id: id, includeInSpending: includeInSpending, includeInCashFlow: includeInCashFlow)
             } catch { errorText = errorMessage(error) }
         }
     }

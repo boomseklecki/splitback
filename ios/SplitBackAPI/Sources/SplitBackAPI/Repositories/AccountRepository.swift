@@ -72,6 +72,19 @@ struct AccountRepository {
         }
     }
 
+    /// Sets the per-transaction budget overrides (include in spending / cash flow) and caches the response.
+    func setTransactionFlags(id: UUID, includeInSpending: Bool? = nil, includeInCashFlow: Bool? = nil) async throws {
+        let output = try await client.update_transaction_override_transactions__transaction_id__override_patch(
+            path: .init(transaction_id: id.uuidString),
+            body: .json(.init(include_in_spending: includeInSpending, include_in_cash_flow: includeInCashFlow))
+        )
+        switch output {
+        case let .ok(ok): try upsertTransactions([try ok.body.json])
+        case let .unprocessableContent(error): throw BackendError.validation(BackendError.validationMessage(try? error.body.json))
+        case let .undocumented(statusCode, _): throw BackendError.fromUndocumented(statusCode)
+        }
+    }
+
     /// Replaces a transaction's line items (receipt itemization) and caches the response.
     func setItems(id: UUID, items: [ItemDraft]) async throws {
         let output = try await client.set_transaction_items_transactions__transaction_id__items_put(

@@ -14,6 +14,7 @@ struct GoalDetailView: View {
     @Query private var accounts: [Account]
     @Query(sort: \Transaction.date, order: .reverse) private var transactions: [Transaction]
     @Query private var expenses: [Expense]
+    @Query private var groups: [ExpenseGroup]
     @Query private var categoryMaps: [CategoryMap]
 
     @State private var showingEdit = false
@@ -60,7 +61,7 @@ struct GoalDetailView: View {
     /// The transactions, expenses, and items feeding this month's budget standing — each navigable.
     private var thisMonthSpend: [SpendContributor] {
         SpendContributors.of(scope: .category(goal.category ?? ""), month: month, transactions: transactions,
-                             accounts: accounts, expenses: expenses, lookup: lookup, me: me)
+                             accounts: accounts, expenses: expenses, groups: groups, lookup: lookup, me: me)
     }
 
     @ViewBuilder private var budgetContent: some View {

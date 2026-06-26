@@ -23,7 +23,7 @@ struct ExpenseEditView: View {
     @Environment(\.dismiss) private var dismiss
 
     @Query private var users: [User]
-    @Query(filter: #Predicate<ExpenseGroup> { $0.archivedAt == nil && $0.hidden == false },
+    @Query(filter: #Predicate<ExpenseGroup> { $0.supersededAt == nil && $0.hidden == false },
            sort: \ExpenseGroup.name)
     private var groups: [ExpenseGroup]
     @Query private var allMembers: [GroupMember]

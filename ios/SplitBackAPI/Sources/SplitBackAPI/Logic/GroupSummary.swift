@@ -26,7 +26,7 @@ enum GroupSummary {
             if !includeSettled, let net = myNets[group.id], net == 0 { continue }
             let gid = group.id
             var descriptor = FetchDescriptor<Expense>(
-                predicate: #Predicate { $0.groupId == gid && $0.archivedAt == nil },
+                predicate: #Predicate { $0.groupId == gid },
                 sortBy: [SortDescriptor(\.date, order: .reverse)]
             )
             descriptor.fetchLimit = 1

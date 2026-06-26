@@ -14,7 +14,6 @@ struct ExpenseRepository {
         since: Date? = nil,
         until: Date? = nil,
         updatedSince: Date? = nil,
-        includeArchived: Bool = false,
         limit: Int = 100,
         offset: Int = 0
     ) async throws {
@@ -23,7 +22,6 @@ struct ExpenseRepository {
             since: since.map(Mapping.dateOnlyFormatter.string(from:)),
             until: until.map(Mapping.dateOnlyFormatter.string(from:)),
             updated_since: updatedSince,
-            include_archived: includeArchived,
             limit: limit,
             offset: offset
         ))
@@ -127,6 +125,22 @@ struct ExpenseRepository {
         }
     }
 
+    /// Sets the caller's per-user budget overrides (include in spending / cash flow) on an expense and caches
+    /// the response. Never propagates to Splitwise; never touches balances.
+    func setFlags(id: UUID, includeInSpending: Bool? = nil, includeInCashFlow: Bool? = nil) async throws {
+        let output = try await client.update_expense_override_expenses__expense_id__override_patch(
+            path: .init(expense_id: id.uuidString),
+            body: .json(.init(include_in_spending: includeInSpending, include_in_cash_flow: includeInCashFlow))
+        )
+        switch output {
+        case let .ok(ok): try upsert([try ok.body.json])
+        case let .unprocessableContent(error):
+            throw BackendError.validation(BackendError.validationMessage(try? error.body.json))
+        case let .undocumented(statusCode, _):
+            throw BackendError.fromUndocumented(statusCode)
+        }
+    }
+
     /// Fetches a single expense's full detail and upserts it.
     func refreshDetail(id: UUID) async throws {
         let output = try await client.get_expense_expenses__expense_id__get(
@@ -135,11 +149,11 @@ struct ExpenseRepository {
         try upsert([try output.ok.body.json])
     }
 
-    /// Full fetch (incl. archived) that also deletes local expenses the server no longer has, so
-    /// cached deletes (which `updated_since` doesn't report) are reconciled. Optionally group-scoped.
+    /// Full fetch that also deletes local expenses the server no longer has, so cached deletes (which
+    /// `updated_since` doesn't report) are reconciled. Optionally group-scoped.
     func reconcileAll(groupId: UUID? = nil) async throws {
         let responses = try await client.list_expenses_expenses_get(query: .init(
-            group_id: groupId?.uuidString, include_archived: true, limit: 500
+            group_id: groupId?.uuidString, limit: 500
         )).ok.body.json
         try upsert(responses)
         let keep = Set(try responses.map { try Mapping.uuid($0.id, field: "Expense.id") })
@@ -185,7 +199,8 @@ struct ExpenseRepository {
             existing.expenseBundleId = mapped.expenseBundleId
             existing.splitwiseReceiptURL = mapped.splitwiseReceiptURL
             existing.splitwiseRepayments = mapped.splitwiseRepayments
-            existing.archivedAt = mapped.archivedAt
+            existing.includeInSpending = mapped.includeInSpending
+            existing.includeInCashFlow = mapped.includeInCashFlow
             existing.createdAt = mapped.createdAt
             existing.updatedAt = mapped.updatedAt
             reconcileSplits(existing, mapped.splits)

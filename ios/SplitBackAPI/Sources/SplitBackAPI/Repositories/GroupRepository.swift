@@ -8,16 +8,14 @@ struct GroupRepository {
     let client: Client
     let context: ModelContext
 
-    /// Fetches groups (defaults exclude archived + hidden, matching the API) and upserts them.
+    /// Fetches groups (defaults exclude hidden, matching the API; superseded are always excluded) and upserts.
     func refresh(
         backendType: BackendType? = nil,
-        includeArchived: Bool = false,
         includeHidden: Bool = false,
         updatedSince: Date? = nil
     ) async throws {
         let output = try await client.list_groups_groups_get(query: .init(
             backend_type: backendType.map(Self.apiBackendType),
-            include_archived: includeArchived,
             include_hidden: includeHidden,
             updated_since: updatedSince
         ))
@@ -41,10 +39,16 @@ struct GroupRepository {
         }
     }
 
-    func update(id: UUID, name: String? = nil, hidden: Bool? = nil) async throws {
+    func update(
+        id: UUID, name: String? = nil, hidden: Bool? = nil,
+        includeInSpending: Bool? = nil, includeInCashFlow: Bool? = nil
+    ) async throws {
         let output = try await client.update_group_groups__group_id__patch(
             path: .init(group_id: id.uuidString),
-            body: .json(.init(name: name, hidden: hidden))
+            body: .json(.init(
+                name: name, hidden: hidden,
+                include_in_spending: includeInSpending, include_in_cash_flow: includeInCashFlow
+            ))
         )
         switch output {
         case let .ok(ok):
@@ -56,14 +60,17 @@ struct GroupRepository {
         }
     }
 
-    /// Archives (soft-deletes) a self-hosted group; the backend 409s for Splitwise groups.
-    func archive(id: UUID) async throws {
+    /// Permanently deletes a self-hosted group (and its expenses); the backend 409s for Splitwise groups.
+    func delete(id: UUID) async throws {
         let output = try await client.delete_group_groups__group_id__delete(
             path: .init(group_id: id.uuidString)
         )
         switch output {
         case .noContent:
-            try await refresh(includeArchived: true)  // reflect the new archived_at
+            for local in try context.fetch(
+                FetchDescriptor<Group>(predicate: #Predicate { $0.id == id })
+            ) { context.delete(local) }
+            try context.save()
         case let .unprocessableContent(error):
             throw BackendError.validation(BackendError.validationMessage(try? error.body.json))
         case let .undocumented(statusCode, _):
@@ -142,7 +149,7 @@ struct GroupRepository {
     /// `updated_since` only reports creates/updates, so this is how cached deletes are reconciled.
     func reconcileAll() async throws {
         let responses = try await client.list_groups_groups_get(query: .init(
-            include_archived: true, include_hidden: true
+            include_hidden: true
         )).ok.body.json
         try upsert(responses)
         let keep = Set(try responses.map { try Mapping.uuid($0.id, field: "Group.id") })
@@ -166,7 +173,9 @@ struct GroupRepository {
                 existing.avatarURL = r.avatar_url
                 existing.coverPhotoURL = r.cover_photo_url
                 existing.hidden = r.hidden
-                existing.archivedAt = r.archived_at
+                existing.includeInSpending = r.include_in_spending
+                existing.includeInCashFlow = r.include_in_cash_flow
+                existing.supersededAt = r.superseded_at
                 existing.createdAt = r.created_at
                 existing.updatedAt = r.updated_at
             } else {

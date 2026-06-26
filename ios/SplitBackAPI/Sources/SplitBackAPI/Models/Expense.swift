@@ -29,9 +29,10 @@ final class Expense {
     /// Splitwise receipt image URL (remote) + the simplified repayments as a raw JSON string, from import.
     var splitwiseReceiptURL: String?
     var splitwiseRepayments: String?
-    /// Soft-delete marker; null = active. Archived expenses are excluded from the list endpoint
-    /// and from balances, but still fetchable by id.
-    var archivedAt: Date?
+    /// The caller's per-user budget overrides (from `expense_overrides`); null = the default (included).
+    /// Excludes this expense's owed-share from spending / cash-flow analytics without changing balances.
+    var includeInSpending: Bool?
+    var includeInCashFlow: Bool?
     var createdAt: Date
     var updatedAt: Date
 
@@ -63,7 +64,8 @@ final class Expense {
         expenseBundleId: String? = nil,
         splitwiseReceiptURL: String? = nil,
         splitwiseRepayments: String? = nil,
-        archivedAt: Date? = nil,
+        includeInSpending: Bool? = nil,
+        includeInCashFlow: Bool? = nil,
         createdAt: Date,
         updatedAt: Date,
         splits: [Split] = [],
@@ -90,7 +92,8 @@ final class Expense {
         self.expenseBundleId = expenseBundleId
         self.splitwiseReceiptURL = splitwiseReceiptURL
         self.splitwiseRepayments = splitwiseRepayments
-        self.archivedAt = archivedAt
+        self.includeInSpending = includeInSpending
+        self.includeInCashFlow = includeInCashFlow
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.splits = splits

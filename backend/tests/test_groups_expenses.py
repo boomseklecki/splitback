@@ -66,22 +66,18 @@ def _balanced_splits():
     ]
 
 
-async def test_group_lifecycle_and_archive():
+async def test_group_lifecycle_and_delete():
     gid = _create_group("lifecycle")
     try:
         status, body = _req("GET", "/groups")
         assert status == 200
         assert any(g["id"] == gid for g in json.loads(body))
 
-        # soft-delete (archive)
+        # hard-delete (self-hosted) — gone for good
         status, _ = _req("DELETE", f"/groups/{gid}")
         assert status == 204
-
-        # hidden from default list, visible with include_archived
         assert not any(g["id"] == gid for g in json.loads(_req("GET", "/groups")[1]))
-        shown = json.loads(_req("GET", "/groups?include_archived=true")[1])
-        archived = next(g for g in shown if g["id"] == gid)
-        assert archived["archived_at"] is not None
+        assert _req("GET", f"/groups/{gid}")[0] == 404
     finally:
         await _purge(gid)
 
@@ -147,7 +143,7 @@ async def test_expense_validation():
         await _purge(gid, sw_id)
 
 
-async def test_expense_detail_patch_and_archived_hidden():
+async def test_expense_detail_patch_override_and_delete():
     gid = _create_group("detail")
     try:
         status, body = _req(
@@ -177,14 +173,14 @@ async def test_expense_detail_patch_and_archived_hidden():
         assert len(patched["splits"]) == 1
         assert patched["splits"][0]["user_identifier"] == "matt"
 
-        # archived group's expenses drop out of the default list
-        assert _req("DELETE", f"/groups/{gid}")[0] == 204
-        listed = json.loads(_req("GET", f"/expenses?group_id={gid}")[1])
-        assert listed == []
-        with_archived = json.loads(
-            _req("GET", f"/expenses?group_id={gid}&include_archived=true")[1]
-        )
-        assert any(e["id"] == eid for e in with_archived)
+        # per-user budget override (open mode: no caller, so it round-trips as null but the route works)
+        status, body = _req("PATCH", f"/expenses/{eid}/override", {"include_in_spending": False})
+        assert status == 200
+
+        # hard delete removes it
+        assert _req("DELETE", f"/expenses/{eid}")[0] == 204
+        assert _req("GET", f"/expenses/{eid}")[0] == 404
+        assert json.loads(_req("GET", f"/expenses?group_id={gid}")[1]) == []
     finally:
         await _purge(gid)
 
