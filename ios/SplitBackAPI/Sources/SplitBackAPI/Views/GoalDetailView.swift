@@ -15,11 +15,14 @@ struct GoalDetailView: View {
     @Query(sort: \Transaction.date, order: .reverse) private var transactions: [Transaction]
     @Query private var expenses: [Expense]
     @Query private var groups: [ExpenseGroup]
+    @Query private var groupMembers: [GroupMember]
     @Query private var categoryMaps: [CategoryMap]
 
     @State private var showingEdit = false
     @State private var confirmingDelete = false
     @State private var errorText: String?
+    /// Accepted partners (identifier → display name), for a shared budget's combined household figures.
+    @State private var partners: [String: String] = [:]
 
     private let months = 6
     private var lookup: [String: String] { CategoryMapping.lookup(categoryMaps) }
@@ -42,7 +45,43 @@ struct GoalDetailView: View {
         .confirmationDialog("Delete this goal?", isPresented: $confirmingDelete, titleVisibility: .visible) {
             Button("Delete", role: .destructive) { delete() }
         }
+        .task { await loadPartners() }
         .errorAlert($errorText)
+    }
+
+    private func loadPartners() async {
+        guard goal.shared, let conns = try? await env.connections.list() else { return }
+        partners = Dictionary(conns.filter { $0.status == "accepted" }
+            .map { ($0.other_identifier, $0.other_display_name) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    // MARK: Combined household (shared spend goals)
+
+    private var partnerIds: Set<String> { Set(partners.keys) }
+    private var household: [HouseholdBudget.Member] {
+        guard let me else { return [] }
+        return [HouseholdBudget.Member(identifier: me, label: "You", isViewer: true)]
+            + partners.map { HouseholdBudget.Member(identifier: $0.key, label: $0.value, isViewer: false) }
+    }
+    private var sharedGroupIds: Set<UUID> {
+        guard let me else { return [] }
+        return HouseholdBudget.sharedGroupIds(viewer: me, partners: partnerIds,
+                                              membersByGroup: HouseholdBudget.membership(groupMembers))
+    }
+    private var soloPartnerName: String? { partners.count == 1 ? partners.first?.value : nil }
+    private func combined(_ month: Date) -> HouseholdBudget.Spend {
+        guard let me else { return .init() }
+        return HouseholdBudget.combined(category: goal.category ?? "", month: month, expenses: expenses,
+                                        sharedGroupIds: sharedGroupIds, viewer: me, partners: partnerIds)
+    }
+    private var combinedThisMonth: HouseholdBudget.Spend { combined(month) }
+    private var combinedMonthly: [MonthlyValue] {
+        SpendingAnalytics.monthRange(months: months, ending: Date(), cal: .current)
+            .map { MonthlyValue(month: $0, value: combined($0).combined) }
+    }
+    private var combinedContributors: [HouseholdBudget.Contributor] {
+        HouseholdBudget.contributors(category: goal.category ?? "", from: month, to: month,
+                                     expenses: expenses, sharedGroupIds: sharedGroupIds, household: household)
     }
 
     // MARK: Budget
@@ -66,11 +105,17 @@ struct GoalDetailView: View {
 
     @ViewBuilder private var budgetContent: some View {
         Section {
-            BudgetRow(goal: goal, spent: spentThisMonth)
+            if goal.shared {
+                HouseholdBudgetRow(name: goal.name, category: goal.category, target: goal.targetAmount,
+                                   currency: goal.currency, spend: combinedThisMonth,
+                                   partnerName: soloPartnerName, sharedByLabel: nil)
+            } else {
+                BudgetRow(goal: goal, spent: spentThisMonth)
+            }
         }
         Section("Last \(months) Months") {
             Chart {
-                ForEach(monthlyCategorySpend) { point in
+                ForEach(goal.shared ? combinedMonthly : monthlyCategorySpend) { point in
                     BarMark(
                         x: .value("Month", point.month, unit: .month),
                         y: .value("Spent", NSDecimalNumber(decimal: point.value).doubleValue)
@@ -91,7 +136,15 @@ struct GoalDetailView: View {
             .frame(height: 180)
         }
         Section("This Month") {
-            if thisMonthSpend.isEmpty {
+            if goal.shared {
+                if combinedContributors.isEmpty {
+                    Text("Nothing shared in this category yet.").font(.caption).foregroundStyle(.secondary)
+                } else {
+                    ForEach(combinedContributors) {
+                        HouseholdContributorRow(row: $0, category: goal.category ?? "")
+                    }
+                }
+            } else if thisMonthSpend.isEmpty {
                 Text("No spending in this category yet.").font(.caption).foregroundStyle(.secondary)
             } else {
                 ForEach(thisMonthSpend) { ContributorRow(row: $0) }

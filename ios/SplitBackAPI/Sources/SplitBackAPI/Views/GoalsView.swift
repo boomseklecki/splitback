@@ -14,6 +14,7 @@ struct GoalsView: View {
     @Query(sort: \Transaction.date, order: .reverse) private var transactions: [Transaction]
     @Query private var expenses: [Expense]
     @Query private var groups: [ExpenseGroup]
+    @Query private var groupMembers: [GroupMember]
     @Query private var categoryMaps: [CategoryMap]
 
     @State private var month: Date = SpendingAnalytics.monthStart(Date())
@@ -26,6 +27,8 @@ struct GoalsView: View {
     /// read-only; a shared save goal's progress is computable only when its account is also shared.
     @State private var sharedGoals: [Components.Schemas.GoalResponse] = []
     @State private var sharedAccountBalances: [String: Decimal] = [:]
+    /// Accepted partner connections (identifier → display name), for combined household budgets.
+    @State private var partners: [String: String] = [:]
     @AppStorage("goalsOrder") private var goalsOrderRaw = GoalSection.serialize(GoalSection.allCases)
 
     private var lookup: [String: String] { CategoryMapping.lookup(categoryMaps) }
@@ -46,6 +49,30 @@ struct GoalsView: View {
                                      lookup: lookup, expenses: expenses, groups: groups, me: me)
     }
     private var monthTotal: Decimal { categorySpend.reduce(0) { $0 + $1.total } }
+
+    // MARK: Combined household budgets (shared spend goals)
+
+    private var partnerIds: Set<String> { Set(partners.keys) }
+    /// Groups whose cached membership contains both the viewer and a partner — their expenses are "shared".
+    private var sharedGroupIds: Set<UUID> {
+        guard let me else { return [] }
+        return HouseholdBudget.sharedGroupIds(viewer: me, partners: partnerIds,
+                                              membersByGroup: HouseholdBudget.membership(groupMembers))
+    }
+    /// The viewer + each connected partner (for drill-through attribution).
+    private var householdMembers: [HouseholdBudget.Member] {
+        guard let me else { return [] }
+        return [HouseholdBudget.Member(identifier: me, label: "You", isViewer: true)]
+            + partners.map { HouseholdBudget.Member(identifier: $0.key, label: $0.value, isViewer: false) }
+    }
+    /// Combined household spend per category for the selected month — built once per render (not per row).
+    private func householdSpend() -> [String: HouseholdBudget.Spend] {
+        guard let me else { return [:] }
+        return HouseholdBudget.combinedByCategory(month: month, expenses: expenses,
+                                                  sharedGroupIds: sharedGroupIds, viewer: me, partners: partnerIds)
+    }
+    /// The single partner's display name when there's exactly one (drives the "· Name $Y" breakdown).
+    private var soloPartnerName: String? { partners.count == 1 ? partners.first?.value : nil }
 
     var body: some View {
         NavigationStack {
@@ -141,15 +168,40 @@ struct GoalsView: View {
                 }
             }
         case .budgets:
+            // Combined spend per category, built once per render (not per row) — see [[swiftui-derived-dict-per-row]].
+            let household = householdSpend()
+            let ownSharedCategories = Set(spendGoals.filter { $0.shared }.compactMap { $0.category })
             Section("Budgets") {
-                ForEach(spendGoals) { goal in
+                // Personal (non-shared) budgets — your spend only.
+                ForEach(spendGoals.filter { !$0.shared }) { goal in
                     NavigationLink(value: goal) {
                         BudgetRow(goal: goal, spent: GoalProgress.spent(
                             for: goal.category ?? "", in: month, transactions: transactions,
                             accounts: accounts, lookup: lookup, expenses: expenses, me: me))
                     }
                 }
-                ForEach(sharedSpendGoals, id: \.id) { SharedGoalRow(goal: $0, currentBalance: nil) }
+                // Your shared budgets → combined household, navigable to the goal detail.
+                ForEach(spendGoals.filter { $0.shared }) { goal in
+                    NavigationLink(value: goal) {
+                        HouseholdBudgetRow(
+                            name: goal.name, category: goal.category, target: goal.targetAmount,
+                            currency: goal.currency, spend: household[goal.category ?? ""] ?? .init(),
+                            partnerName: soloPartnerName, sharedByLabel: nil)
+                    }
+                }
+                // A partner's shared budget (category not already covered by one you own) → drill to contributors.
+                ForEach(sharedSpendGoals.filter { !ownSharedCategories.contains($0.category ?? "") }, id: \.id) { goal in
+                    NavigationLink {
+                        HouseholdContributorsView(title: goal.name, category: goal.category ?? "",
+                                                  month: month, partners: partners)
+                    } label: {
+                        HouseholdBudgetRow(
+                            name: goal.name, category: goal.category,
+                            target: (try? Mapping.decimal(goal.target_amount, field: "target")) ?? 0,
+                            currency: goal.currency, spend: household[goal.category ?? ""] ?? .init(),
+                            partnerName: goal.shared_by, sharedByLabel: goal.shared_by)
+                    }
+                }
                 if spendGoals.isEmpty && sharedSpendGoals.isEmpty {
                     Text("Add a budget to track a category's monthly spend.")
                         .font(.caption).foregroundStyle(.secondary)
@@ -205,6 +257,11 @@ struct GoalsView: View {
         // Partner-shared goals (read-only) + the partner accounts that back any shared save goal, so its
         // progress can be shown. Best-effort: a failure here leaves the prior shared lists untouched.
         sharedGoals = (try? await env.goals(context).sharedInGoals()) ?? sharedGoals
+        // Accepted partners drive the combined household budgets (their owed share of shared-group expenses).
+        if let conns = try? await env.connections.list() {
+            partners = Dictionary(conns.filter { $0.status == "accepted" }
+                .map { ($0.other_identifier, $0.other_display_name) }, uniquingKeysWith: { first, _ in first })
+        }
         if let shared = try? await env.accounts(context).sharedInAccounts() {
             sharedAccountBalances = Dictionary(
                 shared.compactMap { acct in
@@ -344,6 +401,57 @@ struct BudgetRow: View {
                 .tint(color)
             Text("\(spent.formatted(.currency(code: "USD"))) of \(goal.targetAmount.formatted(.currency(code: "USD")))")
                 .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+        }
+        .padding(.vertical, 2)
+    }
+}
+
+/// A combined household-budget row: one limit, both partners' shared-group spend toward it, with a status
+/// bar and a "You $X · Partner $Y" breakdown. Used for shared spend goals (yours or a partner's).
+struct HouseholdBudgetRow: View {
+    let name: String
+    let category: String?
+    let target: Decimal
+    let currency: String
+    let spend: HouseholdBudget.Spend
+    /// The partner's display name for the breakdown (nil → "Partner" when there are several).
+    var partnerName: String? = nil
+    /// "Shared by …" for a partner-owned budget; nil = you own it (badge reads "Shared").
+    var sharedByLabel: String? = nil
+
+    private var combined: Decimal { spend.combined }
+    private var status: BudgetStatus { GoalProgress.budgetStatus(spent: combined, target: target) }
+    private var color: Color {
+        switch status { case .under: return .green; case .nearing: return .orange; case .over: return .red }
+    }
+    private var remaining: Decimal { target - combined }
+    private var breakdown: String {
+        "You \(spend.mine.formatted(.currency(code: currency))) · "
+            + "\(partnerName ?? "Partner") \(spend.partnerTotal.formatted(.currency(code: currency)))"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Image(systemName: categorySymbol(category)).foregroundStyle(color).frame(width: 22)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(name)
+                    Label(sharedByLabel.map { "Shared by \($0)" } ?? "Shared", systemImage: "person.2")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text(remaining >= 0
+                     ? "\(remaining.formatted(.currency(code: currency))) left"
+                     : "\((-remaining).formatted(.currency(code: currency))) over")
+                    .font(.subheadline).foregroundStyle(color).monospacedDigit()
+            }
+            ProgressView(value: GoalProgress.budgetFraction(spent: combined, target: target)).tint(color)
+            HStack {
+                Text("\(combined.formatted(.currency(code: currency))) of \(target.formatted(.currency(code: currency)))")
+                Spacer()
+                Text(breakdown)
+            }
+            .font(.caption).foregroundStyle(.secondary).monospacedDigit()
         }
         .padding(.vertical, 2)
     }
