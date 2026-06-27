@@ -26,6 +26,7 @@ from app.routers import (
     public,
     receipts,
     server_settings,
+    statements,
     splitwise,
     splitwise_auth,
     users,
@@ -77,6 +78,7 @@ app.include_router(expenses.router, dependencies=_protected)
 app.include_router(receipts.router, dependencies=_protected)
 app.include_router(plaid.router, dependencies=_protected)
 app.include_router(accounts.router, dependencies=_protected)
+app.include_router(statements.router, dependencies=_protected)
 app.include_router(users.router, dependencies=_protected)
 app.include_router(balances.router, dependencies=_protected)
 app.include_router(splitwise.router, dependencies=_protected)

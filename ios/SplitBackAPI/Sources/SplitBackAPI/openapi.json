@@ -2300,6 +2300,43 @@
         }
       }
     },
+    "/statements/import": {
+      "post": {
+        "tags": [
+          "statements"
+        ],
+        "summary": "Import Statement",
+        "operationId": "import_statement_statements_import_post",
+        "requestBody": {
+          "content": {
+            "application/x-ofx": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatementImportResult"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/me": {
       "get": {
         "tags": [
@@ -6272,6 +6309,40 @@
           "users"
         ],
         "title": "SplitwiseStatus"
+      },
+      "StatementImportResult": {
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "account_name": {
+            "type": "string",
+            "title": "Account Name"
+          },
+          "imported": {
+            "type": "integer",
+            "title": "Imported"
+          },
+          "skipped": {
+            "type": "integer",
+            "title": "Skipped"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "account_id",
+          "account_name",
+          "imported",
+          "skipped",
+          "total"
+        ],
+        "title": "StatementImportResult"
       },
       "SyncResponse": {
         "properties": {

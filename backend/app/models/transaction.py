@@ -21,6 +21,9 @@ class Transaction(UUIDMixin, TimestampMixin, Base):
     plaid_transaction_id: Mapped[str | None] = mapped_column(
         String(128), unique=True, nullable=True
     )
+    # Dedup key for imported-statement rows (e.g. an OFX FITID); unique per (account_id, external_transaction_id)
+    # via a partial index (FITIDs are unique per account, not globally). Null for Plaid/manual entries.
+    external_transaction_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     source: Mapped[TransactionSource] = mapped_column(
         Enum(TransactionSource, name="transaction_source"), nullable=False
     )
