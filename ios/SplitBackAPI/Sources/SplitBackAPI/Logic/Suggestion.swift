@@ -17,6 +17,7 @@ struct Suggestion: Identifiable, Equatable {
 
     // Targets — set per kind.
     var transactionId: UUID? = nil
+    var transactionIds: [UUID] = []        // categorize → all merchant-matched transactions the accept applies to
     var expenseId: UUID? = nil
     var goalId: UUID? = nil                // overspend → GoalDetailView
     var friendIdentifier: String? = nil    // settleUp → FriendDetailView

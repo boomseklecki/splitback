@@ -67,14 +67,29 @@ struct SuggestionService {
         guard CategoryMapper.isAvailable else { return }
         let pending = (try? context.fetch(FetchDescriptor<Transaction>()))?
             .filter { $0.amount > 0 && $0.aiSuggestedCategory == nil }
-            .sorted { $0.date > $1.date }
-            .prefix(Self.aiBatch) ?? []
+            .sorted { $0.date > $1.date } ?? []
         guard !pending.isEmpty else { return }
-        let items = pending.map {
-            CategoryMapper.Item(id: $0.id, description: $0.details, rawCategory: $0.category)
+
+        // Suggest from the user's own categories (not just canonical), and classify each unique description
+        // ONCE — many imported rows share a merchant, so this covers far more transactions per run and avoids
+        // re-classifying identical descriptions.
+        let allowed = (try? context.fetch(FetchDescriptor<SpendCategory>()))?.map(\.name) ?? CanonicalCategory.all
+        var byDescription: [String: [Transaction]] = [:]
+        var order: [String] = []
+        for t in pending {
+            let key = t.details.lowercased()
+            if byDescription[key] == nil { order.append(key) }
+            byDescription[key, default: []].append(t)
         }
-        let result = await CategoryMapper.refine(Array(items))
-        for t in pending { t.aiSuggestedCategory = result[t.id] ?? "" }
+        let batchKeys = order.prefix(Self.aiBatch)
+        let items = batchKeys.compactMap { key -> CategoryMapper.Item? in
+            byDescription[key]?.first.map { .init(id: $0.id, description: $0.details, rawCategory: $0.category) }
+        }
+        let result = await CategoryMapper.refine(items, allowed: allowed)
+        for key in batchKeys {
+            let suggestion = (byDescription[key]?.first).flatMap { result[$0.id] } ?? ""
+            for t in byDescription[key] ?? [] { t.aiSuggestedCategory = suggestion }  // apply to all with this merchant
+        }
         try? context.save()
     }
 
@@ -83,9 +98,10 @@ struct SuggestionService {
     func accept(_ s: Suggestion) async throws {
         switch s.kind {
         case .categorize:
-            guard let id = s.transactionId, let category = s.category else { return }
-            try await AccountRepository(client: client, context: context)
-                .setCategoryOverride(id: id, category: category)
+            guard let category = s.category else { return }
+            let ids = s.transactionIds.isEmpty ? [s.transactionId].compactMap { $0 } : s.transactionIds
+            let accounts = AccountRepository(client: client, context: context)
+            for id in ids { try await accounts.setCategoryOverride(id: id, category: category) }
         case .link:
             guard let expenseId = s.expenseId, let txnId = s.transactionId else { return }
             try await ExpenseRepository(client: client, context: context)

@@ -22,17 +22,31 @@ enum SuggestionEngine {
 
         var out: [Suggestion] = []
 
-        // 1) Recategorize — AI disagrees with the current category, and no human/AI-map chose it.
+        // 1) Recategorize — AI disagrees with the current category (and no human/AI-map chose it). Aggregate
+        // by (description, suggested) so dozens of identical merchant rows become one accept-all card.
+        struct CatGroup { let title: String; let suggested: String; let current: String?; var ids: [UUID] }
+        var catGroups: [String: CatGroup] = [:]
+        var catOrder: [String] = []
         for t in transactions {
             guard let suggested = t.aiSuggestedCategory, !suggested.isEmpty else { continue }
             let res = CategoryMapping.resolve(for: t, lookup: lookup, sources: sources)
             guard res.source == .deterministic || res.source == .raw else { continue }
             guard suggested != res.category else { continue }
+            let key = "\(t.details.lowercased())|\(suggested)"
+            if catGroups[key] == nil {
+                catGroups[key] = CatGroup(title: t.details, suggested: suggested, current: res.category, ids: [])
+                catOrder.append(key)
+            }
+            catGroups[key]?.ids.append(t.id)
+        }
+        for g in catOrder.compactMap({ catGroups[$0] }) {
+            let suffix = g.ids.count > 1 ? " · \(g.ids.count) transactions" : ""
             out.append(Suggestion(
-                id: "cat:\(t.id.uuidString):\(suggested)", kind: .categorize,
-                title: t.details, subtitle: "\(res.category ?? "Uncategorized") → \(suggested)",
-                icon: "sparkles", acceptLabel: "Use \(suggested)",
-                transactionId: t.id, category: suggested, currentCategory: res.category))
+                id: "cat:\(g.title.lowercased()):\(g.suggested)", kind: .categorize,
+                title: g.title, subtitle: "\(g.current ?? "Uncategorized") → \(g.suggested)\(suffix)",
+                icon: "sparkles", acceptLabel: "Use \(g.suggested)",
+                transactionId: g.ids.first, transactionIds: g.ids,
+                category: g.suggested, currentCategory: g.current))
         }
 
         // 2) Link — an unlinked expense with a high-confidence matching unlinked transaction (de-dupes spend).

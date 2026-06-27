@@ -112,10 +112,28 @@ final class SuggestionEngineTests: XCTestCase {
     }
 
     func testDismissalSuppresses() {
+        // The categorize card is keyed by merchant (lowercased details) + suggestion, so a dismissal sticks.
         let t = txn("Store", 10, category: "GENERAL_SERVICES", ai: "Shopping")
-        let decision = SuggestionDecision(key: "cat:\(t.id.uuidString):Shopping", decision: "dismissed")
+        let decision = SuggestionDecision(key: "cat:store:Shopping", decision: "dismissed")
         let cards = generate(transactions: [t], decisions: [decision])
         XCTAssertTrue(cards.filter { $0.kind == .categorize }.isEmpty)
+    }
+
+    func testCategorizeAggregatesByDescription() {
+        // Same merchant + same AI suggestion → one accept-all card; a different merchant → its own.
+        let cards = generate(transactions: [
+            txn("BURRITO PALACE", 12, category: "GENERAL_SERVICES", ai: "Dining"),
+            txn("BURRITO PALACE", 9, category: "GENERAL_SERVICES", ai: "Dining"),
+            txn("ACME FUEL", 40, category: "GENERAL_SERVICES", ai: "Fuel"),
+        ]).filter { $0.kind == .categorize }
+        XCTAssertEqual(cards.count, 2)
+        let burrito = cards.first { $0.title == "BURRITO PALACE" }
+        XCTAssertEqual(burrito?.transactionIds.count, 2)
+        XCTAssertEqual(burrito?.category, "Dining")
+        XCTAssertTrue(burrito?.subtitle.contains("2 transactions") ?? false)
+        let fuel = cards.first { $0.title == "ACME FUEL" }
+        XCTAssertEqual(fuel?.transactionIds.count, 1)
+        XCTAssertFalse(fuel?.subtitle.contains("transactions") ?? true)  // no count suffix for a single txn
     }
 
     func testDistributeRoundsToExactTotal() {

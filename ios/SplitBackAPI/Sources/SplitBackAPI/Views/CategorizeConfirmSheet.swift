@@ -10,16 +10,12 @@ struct CategorizeConfirmSheet: View {
 
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
-    @State private var transaction: Transaction?
+    @State private var transactions: [Transaction] = []
 
     var body: some View {
         NavigationStack {
             List {
-                if let transaction {
-                    Section("Transaction") {
-                        SuggestionRecordRow(title: transaction.details, amount: transaction.amount,
-                                            currency: transaction.currency, date: transaction.date)
-                    }
+                if !transactions.isEmpty {
                     Section {
                         LabeledContent("Current", value: suggestion.currentCategory ?? "Uncategorized")
                         LabeledContent("Suggested") {
@@ -28,10 +24,17 @@ struct CategorizeConfirmSheet: View {
                     } header: {
                         Text("Category")
                     } footer: {
-                        Text("Sets a category override on this transaction.")
+                        Text(transactions.count == 1 ? "Sets the category on this transaction."
+                             : "Sets the category on \(transactions.count) transactions.")
+                    }
+                    Section("Transactions (\(transactions.count))") {
+                        ForEach(transactions) { t in
+                            SuggestionRecordRow(title: t.details, amount: t.amount,
+                                                currency: t.currency, date: t.date)
+                        }
                     }
                 } else {
-                    ContentUnavailableView("Couldn’t load the transaction", systemImage: "questionmark.circle")
+                    ContentUnavailableView("Couldn’t load the transactions", systemImage: "questionmark.circle")
                 }
             }
             .navigationTitle("Confirm Category")
@@ -39,7 +42,7 @@ struct CategorizeConfirmSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(suggestion.acceptLabel) { onConfirm(); dismiss() }.disabled(transaction == nil)
+                    Button(suggestion.acceptLabel) { onConfirm(); dismiss() }.disabled(transactions.isEmpty)
                 }
             }
             .task { resolve() }
@@ -47,8 +50,12 @@ struct CategorizeConfirmSheet: View {
     }
 
     private func resolve() {
-        guard let tid = suggestion.transactionId else { return }
-        transaction = try? context.fetch(
-            FetchDescriptor<Transaction>(predicate: #Predicate { $0.id == tid })).first
+        let ids = suggestion.transactionIds.isEmpty
+            ? [suggestion.transactionId].compactMap { $0 } : suggestion.transactionIds
+        let idSet = Set(ids)
+        let fetched = (try? context.fetch(
+            FetchDescriptor<Transaction>(predicate: #Predicate { idSet.contains($0.id) }))) ?? []
+        // Preserve the suggestion's order (newest-first from the engine).
+        transactions = ids.compactMap { id in fetched.first { $0.id == id } }
     }
 }
