@@ -110,6 +110,8 @@ targets:
     info:
       path: SplitBackNotificationService/Info.plist
       properties:
+        # Required for app extensions — a device install (installd) rejects an .appex without it.
+        CFBundleDisplayName: SplitBack
         NSExtension:
           NSExtensionPointIdentifier: com.apple.usernotifications.service
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).NotificationService
@@ -139,6 +141,8 @@ targets:
     info:
       path: SplitBackShareExtension/Info.plist
       properties:
+        # Required for app extensions (installd rejects an .appex without it); also the share-sheet label.
+        CFBundleDisplayName: SplitBack
         NSExtension:
           NSExtensionPointIdentifier: com.apple.share-services
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
