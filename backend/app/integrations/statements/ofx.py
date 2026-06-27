@@ -8,6 +8,8 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 
 _STMTTRN = re.compile(r"<STMTTRN>(.*?)</STMTTRN>", re.I | re.S)
+_LEDGERBAL = re.compile(r"<LEDGERBAL>(.*?)</LEDGERBAL>", re.I | re.S)
+_AVAILBAL = re.compile(r"<AVAILBAL>(.*?)</AVAILBAL>", re.I | re.S)
 
 
 @dataclass
@@ -23,6 +25,9 @@ class ParsedStatement:
     org: str | None
     acctid: str | None
     currency: str
+    ledger_balance: Decimal | None = None      # OFX <LEDGERBAL><BALAMT> (negative-when-owed; caller flips)
+    available_balance: Decimal | None = None   # OFX <AVAILBAL><BALAMT> (available credit; positive)
+    ledger_as_of: date | None = None           # <LEDGERBAL><DTASOF> — the date the balances reflect
     transactions: list[ParsedTxn] = field(default_factory=list)
 
 
@@ -45,11 +50,29 @@ def _parse_date(value: str | None) -> date | None:
         return None
 
 
+def _decimal(value: str | None) -> Decimal | None:
+    if value is None:
+        return None
+    try:
+        return Decimal(value)
+    except InvalidOperation:
+        return None
+
+
 def parse(content: bytes | str) -> ParsedStatement:
     text = content.decode("utf-8", "ignore") if isinstance(content, bytes) else content
     org = _leaf("ORG", text)
     acctid = _leaf("ACCTID", text)
     currency = (_leaf("CURDEF", text) or "USD").upper()[:3]
+
+    # Balances — scope BALAMT to its own aggregate so LEDGERBAL and AVAILBAL don't collide.
+    ledger_balance = ledger_as_of = available_balance = None
+    if (m := _LEDGERBAL.search(text)):
+        ledger_balance = _decimal(_leaf("BALAMT", m.group(1)))
+        ledger_as_of = _parse_date(_leaf("DTASOF", m.group(1)))
+    if (m := _AVAILBAL.search(text)):
+        available_balance = _decimal(_leaf("BALAMT", m.group(1)))
+
     txns: list[ParsedTxn] = []
     for block in _STMTTRN.findall(text):
         fitid = _leaf("FITID", block)
@@ -63,4 +86,5 @@ def parse(content: bytes | str) -> ParsedStatement:
         except InvalidOperation:
             continue
         txns.append(ParsedTxn(fitid=fitid, date=when, amount=amount, description=name[:512]))
-    return ParsedStatement(org=org, acctid=acctid, currency=currency, transactions=txns)
+    return ParsedStatement(org=org, acctid=acctid, currency=currency, ledger_balance=ledger_balance,
+                           available_balance=available_balance, ledger_as_of=ledger_as_of, transactions=txns)

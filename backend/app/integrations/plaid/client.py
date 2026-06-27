@@ -72,6 +72,7 @@ def _normalize_account(account: dict) -> dict:
         "name": account.get("name") or account.get("official_name"),
         "type": str(account.get("subtype") or account.get("type") or "") or None,
         "balance": balances.get("current"),
+        "available_balance": balances.get("available"),  # available credit (cards) / funds (depository)
         "currency": balances.get("iso_currency_code") or "USD",
         # Account number's last few digits — persisted and shown on each account row.
         "mask": account.get("mask"),

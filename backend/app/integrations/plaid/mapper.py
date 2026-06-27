@@ -22,6 +22,8 @@ def map_account(account: dict) -> dict:
         "name": account.get("name") or "Account",
         "type": account.get("type"),
         "balance": Decimal(str(account.get("balance") if account.get("balance") is not None else "0")),
+        "available_balance": (Decimal(str(account["available_balance"]))
+                              if account.get("available_balance") is not None else None),
         "currency": account.get("currency") or "USD",
         "mask": account.get("mask"),
     }

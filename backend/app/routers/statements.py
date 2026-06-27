@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import require_auth
 from app.db import get_session
 from app.integrations.statements import ofx
+from app.integrations.statements.institutions import resolve_domain
 from app.models import Account, Transaction
 from app.models.enums import TransactionSource
 from app.schemas.statement import StatementImportResult
@@ -42,15 +43,34 @@ async def import_ofx(session: AsyncSession, caller: str | None, data: bytes) -> 
     if not parsed.transactions and not parsed.acctid:
         raise HTTPException(status_code=422, detail="Not a recognizable OFX statement")
 
-    # Find-or-create the manual account this statement belongs to (per caller, by display name).
+    # Find-or-create the manual account this statement belongs to — keyed on the stable OFX account id
+    # (ACCTID) when present, else the institution name (older exports without an id).
     name = (parsed.org or "Imported Card").strip()[:255] or "Imported Card"
-    account = await session.scalar(select(Account).where(
-        Account.owner_identifier == caller, Account.name == name, Account.plaid_account_id.is_(None)))
+    if parsed.acctid:
+        account = await session.scalar(select(Account).where(
+            Account.owner_identifier == caller, Account.external_account_id == parsed.acctid))
+    else:
+        account = await session.scalar(select(Account).where(
+            Account.owner_identifier == caller, Account.name == name, Account.plaid_account_id.is_(None)))
     if account is None:
         account = Account(name=name, type="credit", owner_identifier=caller, currency=parsed.currency,
-                          balance=Decimal(0), mask=((parsed.acctid or "")[-4:] or None))
+                          balance=Decimal(0), external_account_id=parsed.acctid)
         session.add(account)
         await session.flush()
+    # Refresh institution branding from the statement each import.
+    account.name = name
+    account.institution_name = parsed.org
+    account.institution_domain = resolve_domain(parsed.org)
+
+    # Balances reflect the statement's as-of date — only adopt them when this statement is newer (so importing
+    # an older statement later can't regress the balance). LEDGERBAL is negative-when-owed → flip to
+    # SplitBack's positive-owed convention; AVAILBAL (available credit) is positive → stored as-is.
+    if parsed.ledger_as_of and (account.balance_as_of is None or parsed.ledger_as_of > account.balance_as_of):
+        if parsed.ledger_balance is not None:
+            account.balance = -parsed.ledger_balance
+        if parsed.available_balance is not None:
+            account.available_balance = parsed.available_balance
+        account.balance_as_of = parsed.ledger_as_of
 
     # Upsert by FITID: only insert transactions not already present for this account.
     fitids = [t.fitid for t in parsed.transactions]

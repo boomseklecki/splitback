@@ -1,5 +1,6 @@
-"""OFX statement import: find-or-creates a manual account, inserts transactions, and de-dups by FITID on
-re-import. DB-backed, calling the import function directly."""
+"""OFX statement import: find-or-creates a manual account (keyed on ACCTID), maps institution + balances, and
+de-dups transactions by FITID on re-import. Balances follow the newest DTASOF. DB-backed."""
+from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import delete, select
@@ -10,6 +11,11 @@ from app.routers.statements import import_ofx
 from tests.test_ofx_parser import SAMPLE
 
 OWNER = "stmt-owner"
+
+
+def _variant(dtasof: str, ledger: str) -> bytes:
+    """SAMPLE with a different statement DTASOF + LEDGERBAL (same ACCTID → same account)."""
+    return SAMPLE.replace("20260626120000", dtasof + "120000").replace("-621.28", ledger).encode()
 
 
 async def _purge():
@@ -30,7 +36,12 @@ async def test_import_creates_account_and_transactions():
         assert result.account_name == "Apple Card"
         async with async_session() as s:
             acct = await s.get(Account, result.account_id)
-            assert acct.owner_identifier == OWNER and acct.plaid_account_id is None and acct.mask == "4321"
+            assert acct.owner_identifier == OWNER and acct.plaid_account_id is None
+            assert acct.external_account_id == "xxxxxxxxxxxx4321"   # find-or-create key (ACCTID)
+            assert acct.institution_name == "Apple Card" and acct.institution_domain == "apple.com"
+            assert acct.balance == Decimal("621.28")               # LEDGERBAL -621.28 flipped → positive owed
+            assert acct.available_balance == Decimal("7878.72")    # AVAILBAL as-is
+            assert acct.balance_as_of == date(2026, 6, 26)
             txns = (await s.scalars(select(Transaction).where(Transaction.account_id == acct.id))).all()
             assert len(txns) == 3
             byid = {t.external_transaction_id: t for t in txns}
@@ -55,6 +66,25 @@ async def test_reimport_dedups_by_fitid():
             count = len((await s.scalars(
                 select(Transaction).where(Transaction.account_id == first.account_id))).all())
         assert count == 3                                        # no duplicates
+    finally:
+        await _purge()
+
+
+async def test_balance_follows_newest_statement():
+    await _purge()
+    try:
+        async with async_session() as s:
+            r = await import_ofx(s, OWNER, SAMPLE.encode())                 # DTASOF 06-26 → balance 621.28
+        async with async_session() as s:
+            await import_ofx(s, OWNER, _variant("20260526", "-999.99"))     # OLDER → must not regress
+        async with async_session() as s:
+            acct = await s.get(Account, r.account_id)
+            assert acct.balance == Decimal("621.28") and acct.balance_as_of == date(2026, 6, 26)
+        async with async_session() as s:
+            await import_ofx(s, OWNER, _variant("20260726", "-100.00"))     # NEWER → adopted
+        async with async_session() as s:
+            acct = await s.get(Account, r.account_id)
+            assert acct.balance == Decimal("100.00") and acct.balance_as_of == date(2026, 7, 26)
     finally:
         await _purge()
 

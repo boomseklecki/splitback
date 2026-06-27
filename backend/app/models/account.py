@@ -1,7 +1,8 @@
 import uuid
+from datetime import date as date_type
 from decimal import Decimal
 
-from sqlalchemy import Enum, ForeignKey, Numeric, String
+from sqlalchemy import Date, Enum, ForeignKey, Numeric, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -28,7 +29,13 @@ class Account(UUIDMixin, TimestampMixin, Base):
         UUID(as_uuid=True), ForeignKey("plaid_items.id", ondelete="CASCADE"), nullable=True
     )
     balance: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
+    # Available balance / credit (Plaid `balances.available`; OFX `<AVAILBAL>`). Null when unknown.
+    available_balance: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD")
+    # Stable account id from an imported statement (OFX `<ACCTID>`) — the find-or-create / dedup key for
+    # statement imports. Null for Plaid/manual accounts. The statement date the cached balance reflects.
+    external_account_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    balance_as_of: Mapped[date_type | None] = mapped_column(Date, nullable=True)
     # The local identifier this account belongs to (per-caller scoping). For Plaid accounts this is the
     # linker (plaid_items.user_identifier); for manual accounts, the creator. Null = legacy/unowned.
     owner_identifier: Mapped[str | None] = mapped_column(String(128), nullable=True)

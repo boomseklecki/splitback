@@ -20,6 +20,8 @@ VERSION:102
 <STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20260603<TRNAMT>-9.99<FITID>AC-2<NAME>STREAMING CO<MEMO>monthly</STMTTRN>
 <STMTTRN><TRNTYPE>CREDIT<DTPOSTED>20260610<TRNAMT>200.00<FITID>AC-3<NAME>PAYMENT THANK YOU</STMTTRN>
 </BANKTRANLIST>
+<LEDGERBAL><BALAMT>-621.28<DTASOF>20260626120000</LEDGERBAL>
+<AVAILBAL><BALAMT>7878.72<DTASOF>20260626120000</AVAILBAL>
 </CCSTMTRS></CCSTMTTRNRS></CREDITCARDMSGSRSV1>
 </OFX>
 """
@@ -31,6 +33,21 @@ def test_parses_meta_and_transactions():
     assert s.acctid == "xxxxxxxxxxxx4321"
     assert s.currency == "USD"
     assert len(s.transactions) == 3
+
+
+def test_parses_balances_and_as_of():
+    s = ofx.parse(SAMPLE)
+    assert s.ledger_balance == Decimal("-621.28")      # raw OFX (negative-when-owed); router flips
+    assert s.available_balance == Decimal("7878.72")   # available credit (positive), stored as-is
+    assert s.ledger_as_of == date(2026, 6, 26)
+
+
+def test_resolve_domain():
+    from app.integrations.statements.institutions import resolve_domain
+    assert resolve_domain("Apple Card") == "apple.com"
+    assert resolve_domain("apple card") == "apple.com"
+    assert resolve_domain("Unknown Bank") is None
+    assert resolve_domain(None) is None
 
 
 def test_amount_sign_flips_to_outflow_positive():

@@ -44,8 +44,8 @@ async def _upsert_account(
     values = {**fields, "plaid_item_id": item_id, "owner_identifier": owner_identifier, **inst}
     update_cols = {
         k: values[k]
-        for k in ("name", "type", "mask", "balance", "currency", "plaid_item_id", "owner_identifier",
-                  *_INSTITUTION_FIELDS)
+        for k in ("name", "type", "mask", "balance", "available_balance", "currency", "plaid_item_id",
+                  "owner_identifier", *_INSTITUTION_FIELDS)
     }
     # on_conflict_do_update bypasses SQLAlchemy's onupdate, so bump updated_at explicitly — this is what the
     # app's "Updated … ago" reads, so it should track the last sync.

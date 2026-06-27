@@ -40,6 +40,7 @@ class AccountResponse(BaseModel):
     mask: str | None
     plaid_account_id: str | None
     balance: Decimal
+    available_balance: Decimal | None = None
     currency: str
     include_in_spending: bool | None = None
     include_in_cash_flow: bool | None = None
