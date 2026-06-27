@@ -7,6 +7,7 @@ from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 import requests
 from splitwise import Splitwise
+from splitwise.category import Category as SplitwiseCategory
 from splitwise.expense import Expense as SplitwiseExpense
 from splitwise.group import Group as SplitwiseGroup
 from splitwise.user import ExpenseUser
@@ -246,6 +247,25 @@ def _normalize_expense(expense) -> dict:
     }
 
 
+_category_cache: dict[str, int] | None = None
+
+
+def category_name_to_id(client: Splitwise) -> dict[str, int]:
+    """Splitwise's global category taxonomy flattened to `{name.lower(): id}` (subcategory wins on a name
+    collision). Cached for the process — the taxonomy is global and static."""
+    global _category_cache
+    if _category_cache is None:
+        mapping: dict[str, int] = {}
+        for parent in client.getCategories():
+            if parent.getName():
+                mapping.setdefault(parent.getName().strip().lower(), parent.getId())
+            for sub in parent.getSubcategories() or []:
+                if sub.getName():
+                    mapping[sub.getName().strip().lower()] = sub.getId()  # subcategory overrides parent
+        _category_cache = mapping
+    return _category_cache
+
+
 def _build_sw_expense(payload: dict, sw_id: str | None = None) -> SplitwiseExpense:
     expense = SplitwiseExpense()
     if sw_id is not None:
@@ -255,6 +275,10 @@ def _build_sw_expense(payload: dict, sw_id: str | None = None) -> SplitwiseExpen
     expense.setCurrencyCode(payload["currency_code"])
     expense.setDate(payload["date"])
     expense.setGroupId(payload["group_id"])
+    if payload.get("category_id"):
+        category = SplitwiseCategory()
+        category.setId(int(payload["category_id"]))
+        expense.setCategory(category)
     if payload.get("payment"):
         expense.setPayment(True)
     for member in payload["users"]:

@@ -18,7 +18,8 @@ class NoSplitwiseToken(Exception):
     """Raised when no usable Splitwise token is stored for a push."""
 
 
-def build_payload(expense: dict, splitwise_group_id: str, id_to_swid: dict[str, str]) -> dict:
+def build_payload(expense: dict, splitwise_group_id: str, id_to_swid: dict[str, str],
+                  category_id: int | None = None) -> dict:
     """Raises KeyError(identifier) if a participant has no Splitwise user id."""
     users = []
     for split in expense["splits"]:
@@ -40,6 +41,8 @@ def build_payload(expense: dict, splitwise_group_id: str, id_to_swid: dict[str, 
         "date": expense["date"],
         "group_id": int(splitwise_group_id),
         "users": users,
+        # Splitwise category_id resolved from our category (None → Splitwise default); settle-ups omit it.
+        "category_id": category_id,
         # Settle-ups push as Splitwise *payments* (so they settle balances rather than add a cost).
         "payment": expense.get("category") == mapper.SETTLEUP_CATEGORY,
     }
@@ -109,20 +112,30 @@ async def select_token(session: AsyncSession, expense, caller: str | None = None
     raise NoSplitwiseToken()
 
 
-async def _payload_for(session: AsyncSession, expense, group) -> dict:
+async def _category_id(client, category: str | None) -> int | None:
+    """Resolve our category to a Splitwise category_id (best-effort — never block a push on it)."""
+    try:
+        name_to_id = await asyncio.to_thread(sw_client.category_name_to_id, client)
+    except Exception:
+        return None
+    return mapper.resolve_category_id(category, name_to_id)
+
+
+async def _payload_for(session: AsyncSession, expense, group, client) -> dict:
     id_to_swid = await _resolve_swids(session, [s.user_identifier for s in expense.splits])
-    return build_payload(_expense_to_dict(expense), group.splitwise_group_id, id_to_swid)
+    category_id = await _category_id(client, expense.category)
+    return build_payload(_expense_to_dict(expense), group.splitwise_group_id, id_to_swid, category_id)
 
 
 async def push_create(session: AsyncSession, expense, group, client) -> str:
-    payload = await _payload_for(session, expense, group)
+    payload = await _payload_for(session, expense, group, client)
     sw_id = await asyncio.to_thread(sw_client.create_expense, client, payload)
     expense.splitwise_expense_id = sw_id
     return sw_id
 
 
 async def push_update(session: AsyncSession, expense, group, client) -> str:
-    payload = await _payload_for(session, expense, group)
+    payload = await _payload_for(session, expense, group, client)
     return await asyncio.to_thread(
         sw_client.update_expense, client, expense.splitwise_expense_id, payload
     )

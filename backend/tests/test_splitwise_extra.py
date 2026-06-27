@@ -53,6 +53,34 @@ def test_build_payload():
     assert {u["user_id"] for u in payload["users"]} == {"11", "22"}
 
 
+def test_resolve_category_id():
+    from app.integrations.splitwise import mapper
+    name_to_id = {"groceries": 12, "dining out": 13, "gas/fuel": 30, "entertainment": 1}
+    assert mapper.resolve_category_id("Groceries", name_to_id) == 12     # direct match
+    assert mapper.resolve_category_id("Dining", name_to_id) == 13        # alias → "dining out"
+    assert mapper.resolve_category_id("Fuel", name_to_id) == 30          # alias → "gas/fuel"
+    assert mapper.resolve_category_id("Entertainment", name_to_id) == 1  # direct (parent name)
+    assert mapper.resolve_category_id("Settle-up", name_to_id) is None   # settle-ups push as payment
+    assert mapper.resolve_category_id("Nonexistent", name_to_id) is None
+    assert mapper.resolve_category_id(None, name_to_id) is None
+
+
+def test_build_payload_carries_category_id():
+    swids = {"matt": "11"}
+    splits = [{"user_identifier": "matt", "paid_share": Decimal("40.00"), "owed_share": Decimal("40.00")}]
+    assert writer.build_payload(_expense_dict(splits), "1", swids, category_id=13)["category_id"] == 13
+    assert writer.build_payload(_expense_dict(splits), "1", swids)["category_id"] is None  # default
+
+
+def test_build_sw_expense_sets_category():
+    payload = {"cost": "40.00", "description": "Dinner", "currency_code": "USD", "date": "2023-05-01",
+               "group_id": 1, "users": [], "category_id": 13}
+    expense = sw_client._build_sw_expense(payload)
+    assert expense.getCategory() is not None and expense.getCategory().getId() == 13
+    # No category_id → no category set.
+    assert sw_client._build_sw_expense({**payload, "category_id": None}).getCategory() is None
+
+
 def test_build_payload_marks_settleup_as_payment():
     swids = {"matt": "11", "nikki": "22"}
     splits = [

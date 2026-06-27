@@ -9,6 +9,28 @@ NON_GROUP_SENTINEL = "0"
 NON_GROUP_NAME = "Non-group expenses"
 SETTLEUP_CATEGORY = "Settle-up"
 
+# Our canonical categories whose name differs from Splitwise's — map to the Splitwise subcategory name so we
+# can resolve a category_id when pushing. Names that already match (Groceries, Rent, Insurance, Entertainment,
+# Utilities, Education, Gifts, Pets, Mortgage) resolve directly. Unmapped → no category (Splitwise default).
+_CATEGORY_ALIASES = {
+    "dining": "dining out",
+    "fuel": "gas/fuel",
+    "health": "medical expenses",
+    "household": "household supplies",
+    "transport": "car",
+    "shopping": "clothing",
+    "subscriptions": "tv/phone/internet",
+}
+
+
+def resolve_category_id(category: str | None, name_to_id: dict[str, int]) -> int | None:
+    """Map our category string to a Splitwise category_id via its taxonomy (`{name.lower(): id}`). Settle-ups
+    push as payments, not a category. Unknown → None (Splitwise leaves it 'General')."""
+    if not category or category == SETTLEUP_CATEGORY:
+        return None
+    key = category.strip().lower()
+    return name_to_id.get(key) or name_to_id.get(_CATEGORY_ALIASES.get(key, ""))
+
 
 def resolve_user_identifier(user_id: str, first_name: str, user_map: dict[str, str]) -> str:
     mapped = user_map.get(user_id)
