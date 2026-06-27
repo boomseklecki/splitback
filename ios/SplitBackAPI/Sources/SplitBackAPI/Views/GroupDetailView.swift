@@ -49,6 +49,16 @@ struct GroupDetailView: View {
     }
 
     var body: some View {
+        if group.isDeleted {
+            // The group was just deleted from this screen — stop reading the dangling SwiftData model
+            // (touching a deleted @Model crashes) and pop back instead.
+            Color.clear.onAppear { dismiss() }
+        } else {
+            content
+        }
+    }
+
+    private var content: some View {
         // Hoist per-render values out of the row builders — reading a @Query/env per row freezes the list on tap.
         let users = self.users
         let me = env.currentUser?.identifier
