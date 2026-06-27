@@ -38,6 +38,7 @@ async def test_import_creates_account_and_transactions():
             acct = await s.get(Account, result.account_id)
             assert acct.owner_identifier == OWNER and acct.plaid_account_id is None
             assert acct.external_account_id == "xxxxxxxxxxxx4321"   # find-or-create key (ACCTID)
+            assert acct.mask == "xxx"                              # ACCTID[:3]
             assert acct.institution_name == "Apple Card" and acct.institution_domain == "apple.com"
             assert acct.balance == Decimal("621.28")               # LEDGERBAL -621.28 flipped → positive owed
             assert acct.available_balance == Decimal("7878.72")    # AVAILBAL as-is
@@ -85,6 +86,26 @@ async def test_balance_follows_newest_statement():
         async with async_session() as s:
             acct = await s.get(Account, r.account_id)
             assert acct.balance == Decimal("100.00") and acct.balance_as_of == date(2026, 7, 26)
+    finally:
+        await _purge()
+
+
+async def test_adopts_name_keyed_account_no_duplicate():
+    """A prior import keyed on name only (no external_account_id) is adopted + backfilled, not duplicated."""
+    await _purge()
+    try:
+        async with async_session() as s:
+            s.add(Account(name="Apple Card", type="credit", owner_identifier=OWNER,
+                          currency="USD", balance=Decimal(0)))  # external_account_id stays null
+            await s.commit()
+        async with async_session() as s:
+            result = await import_ofx(s, OWNER, SAMPLE.encode())
+        async with async_session() as s:
+            accts = (await s.scalars(select(Account).where(Account.owner_identifier == OWNER))).all()
+            assert len(accts) == 1                                  # adopted, not duplicated
+            assert accts[0].id == result.account_id
+            assert accts[0].external_account_id == "xxxxxxxxxxxx4321"  # backfilled
+            assert accts[0].mask == "xxx" and accts[0].institution_domain == "apple.com"
     finally:
         await _purge()
 

@@ -43,22 +43,28 @@ async def import_ofx(session: AsyncSession, caller: str | None, data: bytes) -> 
     if not parsed.transactions and not parsed.acctid:
         raise HTTPException(status_code=422, detail="Not a recognizable OFX statement")
 
-    # Find-or-create the manual account this statement belongs to — keyed on the stable OFX account id
-    # (ACCTID) when present, else the institution name (older exports without an id).
+    # Find-or-create the manual account this statement belongs to. Prefer the stable OFX account id (ACCTID);
+    # if there's no match, adopt a prior name-keyed import of this card that has no external id yet (backfill
+    # it) rather than creating a duplicate — older imports were keyed on name only.
     name = (parsed.org or "Imported Card").strip()[:255] or "Imported Card"
+    account = None
     if parsed.acctid:
         account = await session.scalar(select(Account).where(
             Account.owner_identifier == caller, Account.external_account_id == parsed.acctid))
-    else:
+    if account is None:
         account = await session.scalar(select(Account).where(
-            Account.owner_identifier == caller, Account.name == name, Account.plaid_account_id.is_(None)))
+            Account.owner_identifier == caller, Account.name == name,
+            Account.plaid_account_id.is_(None), Account.external_account_id.is_(None)))
     if account is None:
         account = Account(name=name, type="credit", owner_identifier=caller, currency=parsed.currency,
-                          balance=Decimal(0), external_account_id=parsed.acctid)
+                          balance=Decimal(0))
         session.add(account)
         await session.flush()
-    # Refresh institution branding from the statement each import.
+    # Refresh identity + branding from the statement each import.
+    if parsed.acctid:
+        account.external_account_id = parsed.acctid     # set / backfill the stable key
     account.name = name
+    account.mask = (parsed.acctid or "")[:3] or None    # short display tag from the ACCTID
     account.institution_name = parsed.org
     account.institution_domain = resolve_domain(parsed.org)
 
