@@ -118,6 +118,15 @@ struct ExpenseDetailView: View {
     }
 
     var body: some View {
+        if expense.isDeleted {
+            // Deleted from this screen — don't read the dangling SwiftData model (crashes); pop back.
+            Color.clear.onAppear { dismiss() }
+        } else {
+            content
+        }
+    }
+
+    private var content: some View {
         List {
             Section {
                 header

@@ -31,6 +31,15 @@ struct GoalDetailView: View {
     private var account: Account? { goal.accountId.flatMap { id in accounts.first { $0.id == id } } }
 
     var body: some View {
+        if goal.isDeleted {
+            // Deleted from this screen — don't read the dangling SwiftData model (crashes); pop back.
+            Color.clear.onAppear { dismiss() }
+        } else {
+            content
+        }
+    }
+
+    private var content: some View {
         List {
             if goal.goalKind == .spend { budgetContent } else { saveContent }
 
