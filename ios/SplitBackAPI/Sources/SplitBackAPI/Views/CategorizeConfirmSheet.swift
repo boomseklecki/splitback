@@ -12,6 +12,7 @@ struct CategorizeConfirmSheet: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     @State private var transactions: [Transaction] = []
+    @State private var accountNames: [UUID: String] = [:]   // accountId → "Name •••• 1234"
     @State private var chosen: String?
     @State private var showingPicker = false
 
@@ -44,7 +45,9 @@ struct CategorizeConfirmSheet: View {
                     Section("Transactions (\(transactions.count))") {
                         ForEach(transactions) { t in
                             SuggestionRecordRow(title: t.details, amount: t.amount,
-                                                currency: t.currency, date: t.date)
+                                                currency: t.currency, date: t.date,
+                                                source: t.accountId.flatMap { accountNames[$0] },
+                                                sourceIcon: "building.columns")
                         }
                     }
                 } else {
@@ -77,5 +80,13 @@ struct CategorizeConfirmSheet: View {
             FetchDescriptor<Transaction>(predicate: #Predicate { idSet.contains($0.id) }))) ?? []
         // Preserve the suggestion's order (newest-first from the engine).
         transactions = ids.compactMap { id in fetched.first { $0.id == id } }
+
+        // Resolve each transaction's account (the rows may span accounts) so they read like the Link confirm.
+        let accountIds = Set(transactions.compactMap(\.accountId))
+        let accounts = (try? context.fetch(
+            FetchDescriptor<Account>(predicate: #Predicate { accountIds.contains($0.id) }))) ?? []
+        accountNames = Dictionary(uniqueKeysWithValues: accounts.map { account in
+            (account.id, [account.displayLabel, account.maskLabel].compactMap { $0 }.joined(separator: " "))
+        })
     }
 }
