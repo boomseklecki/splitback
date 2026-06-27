@@ -84,6 +84,9 @@ public final class AppEnvironment {
         self.hasToken = (store.load()?.isEmpty == false)
         self.baseURLString = APIConfig.baseURL.absoluteString
         self.pendingInvite = UserDefaults.standard.string(forKey: Self.pendingInviteKey)
+        // Mirror the current session into the App Group every launch so the Share Extension has it even for an
+        // already-signed-in user (setToken/setBaseURL only fire on a change).
+        SharedImportConfig.update(baseURL: self.baseURLString, token: store.load())
     }
 
     /// Stores (or clears) the pending enrollment invite, persisted across launches.
