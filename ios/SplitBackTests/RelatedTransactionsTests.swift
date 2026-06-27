@@ -87,4 +87,21 @@ final class RelatedTransactionsTests: XCTestCase {
         let all = [txn("JOES CRAB SHACK")]
         XCTAssertTrue(RelatedTransactions.group(seedDescription: "TRADER JOES", in: all).isEmpty)
     }
+
+    /// The user's Apple Card case: a recurring $9.99 subscription lumped with one-off charges under the same
+    /// "APPLE.COM" description. Strict groups every Apple row; Exact (merchant + amount) isolates the $9.99s;
+    /// Exact with no seed amount falls back to Strict.
+    func testExactMatchIsolatesByAmount() {
+        let all = [txn("APPLE.COM/BILL", 9.99, daysAgo: 0), txn("APPLE.COM/BILL", 9.99, daysAgo: 30),
+                   txn("APPLE.COM/BILL", 4.99, daysAgo: 5)]
+        XCTAssertEqual(RelatedTransactions.group(seedDescription: "APPLE.COM/BILL", in: all,
+                                                 strictness: .strict).count, 3)
+        let exact = RelatedTransactions.group(seedDescription: "APPLE.COM/BILL", seedAmount: 9.99, in: all,
+                                              strictness: .exact)
+        XCTAssertEqual(exact.count, 2)
+        XCTAssertTrue(exact.allSatisfy { $0.amount == 9.99 })
+        // No seed amount → behaves like Strict (no amount filter).
+        XCTAssertEqual(RelatedTransactions.group(seedDescription: "APPLE.COM/BILL", seedAmount: nil, in: all,
+                                                 strictness: .exact).count, 3)
+    }
 }

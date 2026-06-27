@@ -11,12 +11,14 @@ enum RelatedTransactions {
         case fuzzy     // any shared significant word (broadest)
         case balanced  // most words match (overlap coefficient > 0.5)
         case strict    // same merchant: one description's significant words fully contain the other's
+        case exact     // same merchant AND same amount (isolates one recurring charge from other merchant rows)
         var id: String { rawValue }
         var label: String {
             switch self {
             case .fuzzy: return "Fuzzy"
             case .balanced: return "Balanced"
             case .strict: return "Strict"
+            case .exact: return "Exact"
             }
         }
     }
@@ -24,13 +26,18 @@ enum RelatedTransactions {
     /// Bank/manual transactions whose significant words overlap the seed description's at the given
     /// `strictness`, most recent first. Returns `[]` when the seed has no significant words.
     static func group(
-        seedDescription: String, in transactions: [Transaction], strictness: MatchStrictness = .balanced
+        seedDescription: String, seedAmount: Decimal? = nil, in transactions: [Transaction],
+        strictness: MatchStrictness = .balanced
     ) -> [Transaction] {
         let seed = SubscriptionDetector.significantTokens(seedDescription)
         guard !seed.isEmpty else { return [] }
         return transactions
             .filter { $0.source == .plaid || $0.source == .manual }
-            .filter { matches(SubscriptionDetector.significantTokens($0.details), seed, strictness) }
+            .filter { t in
+                guard matches(SubscriptionDetector.significantTokens(t.details), seed, strictness) else { return false }
+                if strictness == .exact, let amount = seedAmount { return t.amount == amount }
+                return true
+            }
             .sorted { $0.date > $1.date }
     }
 
@@ -42,7 +49,7 @@ enum RelatedTransactions {
         case .balanced:
             guard !c.isEmpty else { return false }
             return Double(c.intersection(s).count) / Double(min(c.count, s.count)) > 0.5
-        case .strict:
+        case .strict, .exact:
             return !c.isEmpty && (s.isSubset(of: c) || c.isSubset(of: s))
         }
     }

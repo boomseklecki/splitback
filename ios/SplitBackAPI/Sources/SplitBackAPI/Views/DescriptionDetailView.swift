@@ -10,6 +10,8 @@ struct DescriptionDetailView: View {
     let seedDescription: String
     /// Pre-selects the category picker (the category of the row you came from).
     var seedCategory: String? = nil
+    /// The amount of the row you came from — used by the "Exact" match level to isolate one recurring charge.
+    var seedAmount: Decimal? = nil
 
     @Environment(AppEnvironment.self) private var env
     @Environment(\.modelContext) private var context
@@ -30,7 +32,7 @@ struct DescriptionDetailView: View {
     var body: some View {
         // Group once per render (not inside the row builders), like SubscriptionsView.
         let group = RelatedTransactions.group(
-            seedDescription: seedDescription, in: transactions, strictness: strictness)
+            seedDescription: seedDescription, seedAmount: seedAmount, in: transactions, strictness: strictness)
         let name = RelatedTransactions.displayName(for: seedDescription)
         let code = group.first?.currency ?? "USD"
         let total = group.reduce(Decimal(0)) { $0 + $1.amount }
@@ -62,6 +64,20 @@ struct DescriptionDetailView: View {
             }
 
             Section {
+                Picker("Matching", selection: $strictnessRaw) {
+                    ForEach(RelatedTransactions.MatchStrictness.allCases) {
+                        Text($0.label).tag($0.rawValue)
+                    }
+                }
+                .pickerStyle(.segmented)
+            } header: {
+                Text("Matching")
+            } footer: {
+                Text("Fuzzy groups any shared word; Strict only the same merchant; "
+                     + "Exact is the same merchant and amount (isolates a recurring charge).")
+            }
+
+            Section {
                 ForEach(group) { t in
                     NavigationLink {
                         LazyView(TransactionDetailView(transaction: t))
@@ -83,25 +99,10 @@ struct DescriptionDetailView: View {
                 }
             } header: {
                 Text("Charges")
-            } footer: {
-                Text("Matching: \(strictness.label). Fuzzy groups any shared word; Strict only the same merchant.")
             }
         }
         .navigationTitle(name)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Picker("Match", selection: $strictnessRaw) {
-                        ForEach(RelatedTransactions.MatchStrictness.allCases) {
-                            Text($0.label).tag($0.rawValue)
-                        }
-                    }
-                } label: {
-                    Image(systemName: "slider.horizontal.3")
-                }
-            }
-        }
         .sheet(isPresented: $showingCategoryPicker) {
             CategoryPickerView(current: current, subject: name) { apply($0, to: group) }
         }

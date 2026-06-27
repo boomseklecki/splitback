@@ -12,6 +12,7 @@ struct TransactionsView: View {
 
     @State private var showingManual = false
     @State private var errorText: String?
+    @State private var search = ""
     /// When true, pending transactions get their own section at the top; when false they're interleaved
     /// with posted ones in date order (still styled as pending).
     @AppStorage("transactions.groupPending") private var groupPending = true
@@ -35,26 +36,36 @@ struct TransactionsView: View {
         // inside the row closure rebuilt this dictionary for every transaction — O(rows × maps) of
         // dictionary construction on the main thread, which froze long lists.
         let lookup = self.lookup
+        // Filter by the search query ONCE per render (description or formatted amount), before the
+        // pending/posted split — same derived-values-once discipline as the split below.
+        let q = search.trimmingCharacters(in: .whitespaces)
+        let shown = q.isEmpty ? transactions : transactions.filter {
+            $0.details.localizedCaseInsensitiveContains(q)
+            || $0.amount.formatted(.currency(code: $0.currency)).localizedCaseInsensitiveContains(q)
+        }
         // Split once per render (not inside the ForEach — building these per row is the derived-values
         // pitfall that froze long lists). The @Query is date-desc, so each group stays newest-first.
-        let pending = transactions.filter(\.pending)
+        let pending = shown.filter(\.pending)
         // Separate into Pending/Posted sections only when the user wants grouping and there's something
         // pending; otherwise show one date-ordered list (pending rows still styled with the pill).
         let separate = groupPending && !pending.isEmpty
-        let posted = separate ? transactions.filter { !$0.pending } : []
+        let posted = separate ? shown.filter { !$0.pending } : []
         return List {
             // Keep the List uniformly sectioned: a loose element before the row Sections makes SwiftUI
             // swallow the rows' tap/navigation (broke the account → transaction drill-through).
             if let account {
                 Section { AccountSummaryHeader(account: account, transactions: transactions) }
             }
-            if transactions.isEmpty {
+            if shown.isEmpty {
                 Section {
                     ContentUnavailableView(
-                        "No Transactions", systemImage: "list.bullet.rectangle",
-                        description: Text(account == nil
-                            ? "Sync a linked bank or add one manually."
-                            : "No transactions for this account yet.")
+                        q.isEmpty ? "No Transactions" : "No Results",
+                        systemImage: q.isEmpty ? "list.bullet.rectangle" : "magnifyingglass",
+                        description: Text(!q.isEmpty
+                            ? "No transactions match “\(q)”."
+                            : account == nil
+                                ? "Sync a linked bank or add one manually."
+                                : "No transactions for this account yet.")
                     )
                 }
             }
@@ -71,7 +82,7 @@ struct TransactionsView: View {
                     }
                 }
             } else {
-                ForEach(monthGroups(transactions, date: \.date), id: \.id) { month in
+                ForEach(monthGroups(shown, date: \.date), id: \.id) { month in
                     Section {
                         ForEach(month.items) { transactionLink($0, lookup: lookup, isPending: $0.pending) }
                     } header: {
@@ -81,6 +92,7 @@ struct TransactionsView: View {
             }
         }
         .navigationTitle(account?.displayLabel ?? "Transactions")
+        .searchable(text: $search, prompt: "Search transactions")
         .toolbar {
             if account == nil {
                 if !pending.isEmpty {

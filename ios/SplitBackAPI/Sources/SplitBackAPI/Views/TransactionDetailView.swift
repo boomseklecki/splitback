@@ -112,7 +112,8 @@ struct TransactionDetailView: View {
 
             Section {
                 NavigationLink {
-                    DescriptionDetailView(seedDescription: transaction.details, seedCategory: effectiveCategory)
+                    DescriptionDetailView(seedDescription: transaction.details, seedCategory: effectiveCategory,
+                                          seedAmount: transaction.amount)
                 } label: {
                     Label("Find Related Transactions", systemImage: "text.magnifyingglass")
                 }
