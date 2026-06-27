@@ -104,9 +104,7 @@ struct SubscriptionDetailView: View {
             applying = true
             defer { applying = false }
             do {
-                for id in ids {
-                    try await env.accounts(context).setCategoryOverride(id: id, category: category)
-                }
+                try await env.accounts(context).setCategoryOverride(ids: ids, category: category)
             } catch {
                 errorText = errorMessage(error)
             }

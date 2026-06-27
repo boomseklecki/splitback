@@ -100,8 +100,8 @@ struct SuggestionService {
         case .categorize:
             guard let category = s.category else { return }
             let ids = s.transactionIds.isEmpty ? [s.transactionId].compactMap { $0 } : s.transactionIds
-            let accounts = AccountRepository(client: client, context: context)
-            for id in ids { try await accounts.setCategoryOverride(id: id, category: category) }
+            try await AccountRepository(client: client, context: context)
+                .setCategoryOverride(ids: ids, category: category)
         case .link:
             guard let expenseId = s.expenseId, let txnId = s.transactionId else { return }
             try await ExpenseRepository(client: client, context: context)

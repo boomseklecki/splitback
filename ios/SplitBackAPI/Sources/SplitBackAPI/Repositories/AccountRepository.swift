@@ -91,6 +91,37 @@ struct AccountRepository {
         }
     }
 
+    /// Applies the same category override to many transactions at once (bulk recategorize from the Inbox,
+    /// Find Related, or a subscription). The PATCHes run **concurrently** and every response is cached in a
+    /// **single** save — so a card covering dozens of rows doesn't fan out into N sequential round-trips and N
+    /// store writes (each of which re-runs every `@Query`, which is what made the Inbox jank after a bulk accept).
+    func setCategoryOverride(ids: [UUID], category: String?) async throws {
+        guard !ids.isEmpty else { return }
+        guard ids.count > 1 else { return try await setCategoryOverride(id: ids[0], category: category) }
+        let client = self.client
+        let responses = try await withThrowingTaskGroup(
+            of: Components.Schemas.TransactionResponse.self
+        ) { group in
+            for id in ids {
+                group.addTask {
+                    let output = try await client.update_transaction_transactions__transaction_id__patch(
+                        path: .init(transaction_id: id.uuidString),
+                        body: .json(.init(category_override: category)))
+                    switch output {
+                    case let .ok(ok): return try ok.body.json
+                    case let .unprocessableContent(error):
+                        throw BackendError.validation(BackendError.validationMessage(try? error.body.json))
+                    case let .undocumented(statusCode, _): throw BackendError.fromUndocumented(statusCode)
+                    }
+                }
+            }
+            var out: [Components.Schemas.TransactionResponse] = []
+            for try await r in group { out.append(r) }
+            return out
+        }
+        try upsertTransactions(responses)
+    }
+
     /// Sets the per-transaction budget overrides (include in spending / cash flow) and caches the response.
     func setTransactionFlags(id: UUID, includeInSpending: Bool? = nil, includeInCashFlow: Bool? = nil) async throws {
         let output = try await client.update_transaction_override_transactions__transaction_id__override_patch(

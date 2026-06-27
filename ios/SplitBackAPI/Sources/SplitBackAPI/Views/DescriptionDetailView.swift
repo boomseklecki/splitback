@@ -122,16 +122,14 @@ struct DescriptionDetailView: View {
         return counts.max { $0.value < $1.value }?.key
     }
 
-    /// Apply the picked category to every transaction in the group (no batch endpoint — loop the override).
+    /// Apply the picked category to every transaction in the group (concurrent batch, one cache write).
     private func apply(_ category: String, to group: [Transaction]) {
         let ids = group.map(\.id)
         Task {
             applying = true
             defer { applying = false }
             do {
-                for id in ids {
-                    try await env.accounts(context).setCategoryOverride(id: id, category: category)
-                }
+                try await env.accounts(context).setCategoryOverride(ids: ids, category: category)
             } catch {
                 errorText = errorMessage(error)
             }
