@@ -114,6 +114,7 @@ public final class AppEnvironment {
     func setToken(_ token: String?) {
         tokenStore.save(token)
         hasToken = (token?.isEmpty == false)
+        SharedImportConfig.update(baseURL: baseURLString, token: token)  // mirror for the Share Extension
     }
 
     /// Refreshes the signed-in profile from `GET /me`. A definitive 401 means the stored token is
@@ -177,6 +178,7 @@ public final class AppEnvironment {
         slowClient = APIClientFactory.makeClient(baseURL: APIConfig.baseURL, tokenStore: tokenStore,
                                                  requestTimeout: 300)
         hasToken = (tokenStore.load()?.isEmpty == false)
+        SharedImportConfig.update(baseURL: baseURLString, token: tokenStore.load())  // mirror new server+token
     }
 
     /// Drops the local SwiftData cache WITHOUT signing out — used when switching backends so prod/dev data
@@ -223,6 +225,7 @@ public final class AppEnvironment {
     var connections: ConnectionRepository { .init(client: client) }
     var notifications: NotificationRepository { .init(client: client) }
     var devices: DeviceRepository { .init(client: client) }
+    func statements(_ context: ModelContext) -> StatementRepository { .init(client: client, context: context) }
 
     /// The APNs token last handed to us, so we can unregister it on sign-out.
     @ObservationIgnored private var deviceToken: String?

@@ -26,6 +26,7 @@ targets:
     dependencies:
       - package: SplitBackAPI
       - target: SplitBackNotificationService  # E2E push decryption extension (embedded)
+      - target: SplitBackShareExtension       # OFX statement import from the share sheet (embedded)
     info:
       path: SplitBack/Info.plist
       properties:
@@ -55,6 +56,16 @@ targets:
         UILaunchScreen: {}
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
+        # Declare an imported UTI for OFX bank statements (.ofx has no system UTI) so SplitBack can be a
+        # share-sheet target for Apple Card / bank statement exports (see the Share Extension's activation rule).
+        UTImportedTypeDeclarations:
+          - UTTypeIdentifier: com.splitback.ofx
+            UTTypeDescription: OFX bank statement
+            UTTypeConformsTo:
+              - public.data
+            UTTypeTagSpecification:
+              public.filename-extension:
+                - ofx
     entitlements:
       path: SplitBack/SplitBack.entitlements
       properties:
@@ -110,6 +121,38 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.splitback.app.NotificationService
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
+
+  # Share Extension: accepts an OFX statement from the share sheet and uploads it to the user's backend
+  # (Apple Card manual import) without opening the app. Compiles the shared config/uploader directly (no
+  # SwiftData/package link), reading the base URL + token the app mirrors into the App Group.
+  SplitBackShareExtension:
+    type: app-extension
+    platform: iOS
+    sources:
+      - SplitBackShareExtension
+      - path: SplitBackAPI/Sources/SplitBackAPI/Networking/SharedImportConfig.swift
+        group: Shared
+      - path: SplitBackAPI/Sources/SplitBackAPI/Networking/StatementUploader.swift
+        group: Shared
+    info:
+      path: SplitBackShareExtension/Info.plist
+      properties:
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            # Only offer SplitBack for a single OFX statement file (our imported UTI), not every share.
+            NSExtensionActivationRule: "SUBQUERY(extensionItems, $item, SUBQUERY($item.attachments, $att, ANY $att.registeredTypeIdentifiers UTI-CONFORMS-TO \"com.splitback.ofx\").@count == 1).@count == 1"
+    entitlements:
+      path: SplitBackShareExtension/SplitBackShareExtension.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.splitback.app
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.splitback.app.ShareExtension
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1,2"
 

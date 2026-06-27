@@ -59,5 +59,25 @@
 	</dict>
 	<key>UILaunchScreen</key>
 	<dict/>
+	<key>UTImportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>OFX bank statement</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.splitback.ofx</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>ofx</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
 </dict>
 </plist>

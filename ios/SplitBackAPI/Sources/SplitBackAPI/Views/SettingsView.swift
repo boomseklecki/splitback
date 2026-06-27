@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import UIKit
+import UniformTypeIdentifiers
 
 /// Account/session, backend base URL, bearer-token entry (Keychain), Splitwise status + import,
 /// linked banks (Plaid), and a drill-through to the people roster.
@@ -20,6 +21,9 @@ struct SettingsView: View {
     @State private var confirmingDelete = false
     @State private var importing = false
     @State private var importSummary: String?
+    @State private var importingStatement = false
+    @State private var statementBusy = false
+    @State private var statementSummary: String?
     @State private var splitwiseConnectURL: IdentifiableURL?
     @State private var showingSignIn = false
     @State private var items: [Components.Schemas.PlaidItemResponse] = []
@@ -209,6 +213,24 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Button("Import Statement (.ofx)", systemImage: "doc.badge.plus") {
+                        importingStatement = true
+                    }.disabled(statementBusy)
+                    if let statementSummary {
+                        Text(statementSummary).font(.caption).foregroundStyle(.secondary)
+                    }
+                } header: {
+                    Text("Bank Statements")
+                } footer: {
+                    Text("For accounts no aggregator supports (e.g. Apple Card): export a statement from "
+                         + "Wallet and share it to SplitBack, or pick a saved .ofx file here.")
+                }
+                .fileImporter(isPresented: $importingStatement,
+                              allowedContentTypes: [UTType(filenameExtension: "ofx") ?? .data]) { result in
+                    importStatement(result)
+                }
+
+                Section {
                     NavigationLink {
                         PeopleView()
                     } label: {
@@ -352,6 +374,23 @@ struct SettingsView: View {
                 importSummary = "Imported \(count.formatted()) expense\(count == 1 ? "" : "s")."
                 await env.refreshSplitwiseStatus()
                 try await env.refreshAll(context)
+            } catch { errorText = errorMessage(error) }
+        }
+    }
+
+    /// Import a picked OFX statement (the in-app alternative to the share-sheet flow).
+    private func importStatement(_ result: Result<URL, Error>) {
+        guard case let .success(url) = result else { return }
+        statementBusy = true
+        Task {
+            defer { statementBusy = false }
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            do {
+                let data = try Data(contentsOf: url)
+                let r = try await env.statements(context).importOFX(data)
+                statementSummary = "Imported \(r.imported.formatted()) of \(r.total.formatted()) "
+                    + "transaction\(r.total == 1 ? "" : "s") into \(r.account_name)."
             } catch { errorText = errorMessage(error) }
         }
     }
