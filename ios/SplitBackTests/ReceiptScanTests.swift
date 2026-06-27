@@ -1,6 +1,35 @@
 import XCTest
 @testable import SplitBackAPI
 
+/// The scanned-receipt date is bounded to the last 60 days (else today) so a wrong-year AI extraction
+/// doesn't slip a 2024 date into a fresh scan.
+final class RecentReceiptDateTests: XCTestCase {
+    private let cal = Calendar.current
+    private lazy var now = cal.startOfDay(for: Date(timeIntervalSince1970: 1_780_000_000))  // a fixed "today"
+    private func day(_ offset: Int) -> Date { cal.date(byAdding: .day, value: offset, to: now)! }
+
+    func testKeepsInWindowDate() {
+        XCTAssertEqual(ExpensePrefill.recentReceiptDate(day(-10), now: now), day(-10))
+    }
+
+    func testKeepsWindowBoundary() {
+        XCTAssertEqual(ExpensePrefill.recentReceiptDate(day(-60), now: now), day(-60))
+    }
+
+    func testFutureDateBecomesToday() {
+        XCTAssertEqual(ExpensePrefill.recentReceiptDate(day(3), now: now), now)
+    }
+
+    func testTooOldBecomesToday() {
+        XCTAssertEqual(ExpensePrefill.recentReceiptDate(day(-400), now: now), now)  // e.g. the 2024 case
+        XCTAssertEqual(ExpensePrefill.recentReceiptDate(day(-61), now: now), now)
+    }
+
+    func testNilBecomesToday() {
+        XCTAssertEqual(ExpensePrefill.recentReceiptDate(nil, now: now), now)
+    }
+}
+
 final class ReceiptHeuristicsTests: XCTestCase {
     func testTotalPrefersTotalLineOverSubtotal() {
         let text = "Store ABC\nSubtotal 10.00\nTax 2.34\nTotal 12.34"

@@ -28,7 +28,7 @@ struct ExpensePrefill {
         ExpensePrefill(
             details: extraction.merchant,
             amount: decimal(extraction.total),
-            date: Mapping.dateOnlyFormatter.date(from: extraction.date) ?? Date(),
+            date: recentReceiptDate(Mapping.dateOnlyFormatter.date(from: extraction.date)),
             category: extraction.items.first?.category,
             items: extraction.items.map {
                 ItemDraft(name: $0.name, quantity: decimal($0.quantity), price: decimal($0.price), category: $0.category)
@@ -41,10 +41,22 @@ struct ExpensePrefill {
         ExpensePrefill(
             details: result.merchant ?? "",
             amount: result.total ?? 0,
-            date: result.date ?? Date(),
+            date: recentReceiptDate(result.date),
             category: nil,
             items: []
         )
+    }
+
+    /// Bounds a scanned receipt date to a realistic window. A receipt can't be in the future, and a date
+    /// older than `window` days is almost certainly a wrong-year extraction → fall back to today (receipts are
+    /// scanned fresh). nil → today. Date-only (start of day). Only the receipt-scan funnels clamp; a bank
+    /// transaction's date is authoritative.
+    static func recentReceiptDate(_ date: Date?, now: Date = Date(), window: Int = 60) -> Date {
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: now)
+        let earliest = cal.date(byAdding: .day, value: -window, to: today) ?? today
+        guard let date, case let d = cal.startOfDay(for: date), d >= earliest, d <= today else { return today }
+        return d
     }
 
     /// Double → Decimal rounded to 2 places (avoids binary-float noise in money).
