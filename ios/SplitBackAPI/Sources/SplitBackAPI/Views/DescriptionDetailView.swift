@@ -43,7 +43,7 @@ struct DescriptionDetailView: View {
             Section {
                 VStack(spacing: 8) {
                     Button { showingCategoryPicker = true } label: {
-                        categoryAvatar(current)
+                        CategoryAvatar(category: current)
                     }
                     .buttonStyle(.plain)
                     .disabled(applying || group.isEmpty)
@@ -107,20 +107,6 @@ struct DescriptionDetailView: View {
             CategoryPickerView(current: current, subject: name) { apply($0, to: group) }
         }
         .errorAlert($errorText)
-    }
-
-    /// A circular, category-colored icon with a pencil badge — tappable to recategorize the whole group.
-    private func categoryAvatar(_ category: String?) -> some View {
-        Image(systemName: categorySymbol(category))
-            .font(.title)
-            .foregroundStyle(categoryColor(category))
-            .frame(width: 64, height: 64)
-            .background(categoryColor(category).opacity(0.15), in: Circle())
-            .overlay(alignment: .bottomTrailing) {
-                Image(systemName: "pencil.circle.fill")
-                    .font(.body).foregroundStyle(.secondary)
-                    .background(Circle().fill(Color(.systemBackground)))
-            }
     }
 
     private func currency(_ value: Decimal, _ code: String) -> String {

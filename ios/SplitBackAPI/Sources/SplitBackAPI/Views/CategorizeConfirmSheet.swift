@@ -2,30 +2,44 @@ import SwiftData
 import SwiftUI
 
 /// Confirmation before accepting a "Use {category}" suggestion — the on-device AI disagrees with a
-/// transaction's current category. Shows the transaction and the current → suggested change so the user can
-/// vet it before it becomes an override. `onConfirm` performs the accept (InboxView → setCategoryOverride).
+/// transaction's current category. Shows the transaction and the current → chosen change, with a tappable
+/// category avatar (the same affordance as Find Related Transactions) so the user can **correct** a wrong
+/// guess before it becomes an override. `onConfirm` receives the chosen category (InboxView → setCategoryOverride).
 struct CategorizeConfirmSheet: View {
     let suggestion: Suggestion
-    let onConfirm: () -> Void
+    let onConfirm: (String) -> Void
 
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     @State private var transactions: [Transaction] = []
+    @State private var chosen: String?
+    @State private var showingPicker = false
+
+    init(suggestion: Suggestion, onConfirm: @escaping (String) -> Void) {
+        self.suggestion = suggestion
+        self.onConfirm = onConfirm
+        _chosen = State(initialValue: suggestion.category)
+    }
 
     var body: some View {
         NavigationStack {
             List {
                 if !transactions.isEmpty {
                     Section {
-                        LabeledContent("Current", value: suggestion.currentCategory ?? "Uncategorized")
-                        LabeledContent("Suggested") {
-                            Text(suggestion.category ?? "—").fontWeight(.semibold).foregroundStyle(.tint)
+                        VStack(spacing: 8) {
+                            Button { showingPicker = true } label: {
+                                CategoryAvatar(category: chosen)
+                            }
+                            .buttonStyle(.plain)
+                            Text(chosen ?? "Pick a category")
+                                .font(.title3).fontWeight(.semibold)
+                            Text("was \(suggestion.currentCategory ?? "Uncategorized")")
+                                .font(.subheadline).foregroundStyle(.secondary)
                         }
-                    } header: {
-                        Text("Category")
+                        .frame(maxWidth: .infinity).padding(.vertical, 8)
                     } footer: {
-                        Text(transactions.count == 1 ? "Sets the category on this transaction."
-                             : "Sets the category on \(transactions.count) transactions.")
+                        Text(transactions.count == 1 ? "Sets the category on this transaction. Tap the icon to change it."
+                             : "Sets the category on \(transactions.count) transactions. Tap the icon to change it.")
                     }
                     Section("Transactions (\(transactions.count))") {
                         ForEach(transactions) { t in
@@ -42,8 +56,14 @@ struct CategorizeConfirmSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(suggestion.acceptLabel) { onConfirm(); dismiss() }.disabled(transactions.isEmpty)
+                    Button(chosen.map { "Use \($0)" } ?? suggestion.acceptLabel) {
+                        if let chosen { onConfirm(chosen); dismiss() }
+                    }
+                    .disabled(transactions.isEmpty || chosen == nil)
                 }
+            }
+            .sheet(isPresented: $showingPicker) {
+                CategoryPickerView(current: chosen, subject: suggestion.title) { chosen = $0 }
             }
             .task { resolve() }
         }

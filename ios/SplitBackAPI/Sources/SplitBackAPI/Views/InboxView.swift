@@ -64,7 +64,7 @@ struct InboxView: View {
                                  onExternalChange: { Task { await reload() } })
             }
             .sheet(item: $categorizeConfirm) { s in
-                CategorizeConfirmSheet(suggestion: s) { accept(s) }
+                CategorizeConfirmSheet(suggestion: s) { chosen in accept(s, category: chosen) }
             }
             .sheet(item: $subscriptionConfirm) { s in
                 SubscriptionConfirmSheet(suggestion: s) { accept(s) }
@@ -194,7 +194,9 @@ struct InboxView: View {
     /// Accept a card with a light, synchronous cache recompute — never the full `reload()` (which re-runs the
     /// slow on-device AI pass + network syncs and made accepting hang). The accept mutation already updates the
     /// store; we optimistically drop the card, then recompute siblings from the cache.
-    private func accept(_ s: Suggestion) {
+    private func accept(_ s: Suggestion, category: String? = nil) {
+        var s = s
+        if let category { s.category = category }   // user-corrected category flows into setCategoryOverride
         let service = env.suggestions(context)
         withAnimation { suggestions.removeAll { $0.id == s.id } }
         updateBadge()

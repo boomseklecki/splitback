@@ -62,3 +62,23 @@ struct CategoryPickerView: View {
         }
     }
 }
+
+/// A circular, category-colored icon with a pencil badge — the shared "tap to recategorize" affordance used
+/// by Find Related Transactions and the Inbox categorize confirm. Pair it with a `Button` that opens
+/// `CategoryPickerView`.
+struct CategoryAvatar: View {
+    let category: String?
+
+    var body: some View {
+        Image(systemName: categorySymbol(category))
+            .font(.title)
+            .foregroundStyle(categoryColor(category))
+            .frame(width: 64, height: 64)
+            .background(categoryColor(category).opacity(0.15), in: Circle())
+            .overlay(alignment: .bottomTrailing) {
+                Image(systemName: "pencil.circle.fill")
+                    .font(.body).foregroundStyle(.secondary)
+                    .background(Circle().fill(Color(.systemBackground)))
+            }
+    }
+}

@@ -11,6 +11,7 @@ struct SubscriptionsView: View {
     @Query private var expenses: [Expense]
     @Query private var categoryMaps: [CategoryMap]
     @Query private var rules: [SubscriptionRule]
+    @Query private var decisions: [SuggestionDecision]
 
     @State private var brandModel = SubscriptionBrandModel()
 
@@ -21,7 +22,11 @@ struct SubscriptionsView: View {
         let result = SubscriptionDetector.analyze(transactions: transactions, expenses: expenses,
                                                   lookup: lookup, me: env.currentUser?.identifier, rules: rules)
         let subs = result.subscriptions
-        let candidates = result.candidates
+        // Hide candidates the user dismissed in the Inbox (or here) — same decision store the Inbox reads.
+        let blocked = Set(decisions.filter(\.isActive).map(\.key))
+        let candidates = result.candidates.filter {
+            !blocked.contains("sub:\($0.id)") && !blocked.contains("merchant:\($0.id)")
+        }
         let annual = subs.reduce(Decimal(0)) { $0 + $1.annualCost }
         // Upcoming = predicted charges from today through the next 30 days. A nextDate in the past means
         // the charge already lapsed (stale data) — don't show it as "upcoming".
@@ -81,11 +86,18 @@ struct SubscriptionsView: View {
 
             if !candidates.isEmpty {
                 Section {
-                    ForEach(candidates) { candidateRow($0) }
+                    ForEach(candidates) { c in
+                        candidateRow(c)
+                            .swipeActions(edge: .trailing) {
+                                Button("Dismiss", role: .destructive) { decide(c, forMerchant: false) }
+                                Button("Never") { decide(c, forMerchant: true) }.tint(.gray)
+                            }
+                    }
                 } header: {
                     Text("Possible Subscriptions")
                 } footer: {
-                    Text("Recurring charges we didn't auto-detect. Tap ＋ to track one as a subscription.")
+                    Text("Recurring charges we didn't auto-detect. Tap ＋ to track one, or swipe to dismiss "
+                         + "or mark it never a subscription.")
                 }
             }
         }
@@ -130,6 +142,15 @@ struct SubscriptionsView: View {
         context.insert(SubscriptionRule(merchantKey: merchantKey, amount: amount,
                                         isSubscription: isSubscription, displayName: displayName))
         try? context.save()
+    }
+
+    /// Decline a candidate through the same path the Inbox uses, so the two areas stay in lockstep:
+    /// Dismiss hides this candidate (and stops the Inbox nag); Never also excludes it from detection.
+    private func decide(_ c: SubscriptionCandidate, forMerchant: Bool) {
+        let name = brandModel.brand(key: c.id, displayName: c.displayName).name
+        let sug = Suggestion(id: "sub:\(c.id)", kind: .subscription, title: name, subtitle: "",
+                             icon: "repeat", acceptLabel: "Track", merchantKey: c.id, amount: c.amount)
+        try? env.suggestions(context).dismiss(sug, forMerchant: forMerchant)
     }
 
     /// A compact card for the horizontal "Upcoming" gallery: logo, name, amount, and due date.
