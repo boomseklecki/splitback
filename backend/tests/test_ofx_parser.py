@@ -62,6 +62,15 @@ def test_fields_date_and_description():
     assert t.description == "BURRITO PALACE"
 
 
+def test_prefers_dtuser_over_dtposted():
+    # When an institution emits DTUSER (purchase date), prefer it over the later DTPOSTED (settled date).
+    # Apple Card omits DTUSER, so the SAMPLE rows above exercise the DTPOSTED fallback.
+    block = ("<OFX><STMTTRN><DTUSER>20260612<DTPOSTED>20260614120000"
+             "<TRNAMT>-9.99<FITID>X<NAME>WITH DTUSER</STMTTRN></OFX>")
+    t = ofx.parse(block).transactions[0]
+    assert t.date == date(2026, 6, 12)
+
+
 def test_falls_back_to_memo_when_no_name():
     # Drop NAME, keep MEMO → description from MEMO.
     block = "<OFX><STMTTRN><DTPOSTED>20260601<TRNAMT>-1.00<FITID>X<MEMO>FROM MEMO</STMTTRN></OFX>"

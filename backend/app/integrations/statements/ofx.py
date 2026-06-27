@@ -77,7 +77,9 @@ def parse(content: bytes | str) -> ParsedStatement:
     for block in _STMTTRN.findall(text):
         fitid = _leaf("FITID", block)
         amount_raw = _leaf("TRNAMT", block)
-        when = _parse_date(_leaf("DTPOSTED", block))
+        # Prefer the transaction (purchase) date when the institution emits it; fall back to the posted/
+        # settled date. Note: Apple Card's OFX carries only DTPOSTED, so this is a no-op there.
+        when = _parse_date(_leaf("DTUSER", block)) or _parse_date(_leaf("DTPOSTED", block))
         name = _leaf("NAME", block) or _leaf("MEMO", block) or "Transaction"
         if not fitid or amount_raw is None or when is None:
             continue
