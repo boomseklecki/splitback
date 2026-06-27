@@ -31,7 +31,7 @@ async def test_upsert_account_bumps_updated_at():
         await s.commit()
         await s.refresh(item)
         fields = {"plaid_account_id": PLAID_ACCOUNT_ID, "name": "Checking", "type": "depository",
-                  "mask": "1234", "balance": Decimal("10.00"), "currency": "USD"}
+                  "mask": "1234", "balance": Decimal("10.00"), "available_balance": None, "currency": "USD"}
         try:
             account_id = await _upsert_account(s, item.id, fields, owner_identifier=OWNER)
             await s.commit()
@@ -56,7 +56,7 @@ async def test_upsert_transaction_bumps_updated_at():
         await s.refresh(item)
         acct_id = await _upsert_account(
             s, item.id, {"plaid_account_id": PLAID_ACCOUNT_ID, "name": "Checking", "type": "depository",
-                         "mask": "1234", "balance": Decimal("10.00"), "currency": "USD"}, owner_identifier=OWNER)
+                         "mask": "1234", "balance": Decimal("10.00"), "available_balance": None, "currency": "USD"}, owner_identifier=OWNER)
         await s.commit()
         account_map = {PLAID_ACCOUNT_ID: acct_id}
         txn = {"plaid_account_id": PLAID_ACCOUNT_ID, "plaid_transaction_id": PLAID_TXN_ID,
