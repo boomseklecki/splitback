@@ -17,6 +17,8 @@ final class Account {
     /// Present server-side but not returned by `GET /accounts`; left nil when mapped from the API.
     var plaidItemId: UUID?
     var balance: Decimal
+    /// Available balance / credit (Plaid `balances.available`; OFX `<AVAILBAL>`). nil when unknown.
+    var availableBalance: Decimal?
     var currency: String
     /// Goals-analytics inclusion overrides; nil = derive from the account's classification (subtype).
     var includeInSpending: Bool?
@@ -44,6 +46,7 @@ final class Account {
         plaidAccountId: String? = nil,
         plaidItemId: UUID? = nil,
         balance: Decimal,
+        availableBalance: Decimal? = nil,
         currency: String,
         includeInSpending: Bool? = nil,
         includeInCashFlow: Bool? = nil,
@@ -64,6 +67,7 @@ final class Account {
         self.plaidAccountId = plaidAccountId
         self.plaidItemId = plaidItemId
         self.balance = balance
+        self.availableBalance = availableBalance
         self.currency = currency
         self.includeInSpending = includeInSpending
         self.includeInCashFlow = includeInCashFlow

@@ -141,6 +141,7 @@ enum Mapping {
             plaidAccountId: r.plaid_account_id,
             plaidItemId: nil,
             balance: try decimal(r.balance, field: "Account.balance"),
+            availableBalance: r.available_balance.flatMap { try? decimal($0, field: "Account.available_balance") },
             currency: r.currency,
             includeInSpending: r.include_in_spending,
             includeInCashFlow: r.include_in_cash_flow,

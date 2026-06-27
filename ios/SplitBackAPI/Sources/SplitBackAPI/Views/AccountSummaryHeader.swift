@@ -53,6 +53,9 @@ struct AccountSummaryHeader: View {
             case .liability:
                 HStack(spacing: 24) {
                     stat("Spent this month", sentThisMonth.formatted(.currency(code: code)), .primary)
+                    if let available = account.availableBalance {
+                        stat("Available credit", available.formatted(.currency(code: code)), .green)
+                    }
                     if !pending.isEmpty {
                         stat("Pending", "\(pending.count) · \(pendingTotal.formatted(.currency(code: code)))", .orange)
                     }

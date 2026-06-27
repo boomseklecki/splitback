@@ -155,6 +155,8 @@ struct AccountRepository {
                 existing.mask = r.mask
                 existing.plaidAccountId = r.plaid_account_id
                 existing.balance = try Mapping.decimal(r.balance, field: "Account.balance")
+                existing.availableBalance = r.available_balance.flatMap {
+                    try? Mapping.decimal($0, field: "Account.available_balance") }
                 existing.currency = r.currency
                 existing.includeInSpending = r.include_in_spending
                 existing.includeInCashFlow = r.include_in_cash_flow
