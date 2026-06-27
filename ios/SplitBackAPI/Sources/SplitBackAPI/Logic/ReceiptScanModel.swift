@@ -31,7 +31,8 @@ final class ReceiptScanModel {
         let extractor = ReceiptExtractor()
         if extractor.isAvailable {
             do {
-                prefill = .from(try await extractor.extract(from: text, categories: categories))
+                prefill = await .from(try await extractor.extract(from: text, categories: categories),
+                                      categories: categories)
             } catch {
                 prefill = .from(ReceiptHeuristics.parse(text))
                 infoMessage = "AI extraction failed; used a quick scan — please double-check."

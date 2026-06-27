@@ -457,8 +457,9 @@ struct ExpenseDetailView: View {
         }
         do {
             let text = try await ReceiptOCR.recognizeText(in: image)
-            let extraction = try await ReceiptExtractor().extract(from: text, categories: spendCategories.map(\.name))
-            editPrefill = .from(extraction)
+            let cats = spendCategories.map(\.name)
+            let extraction = try await ReceiptExtractor().extract(from: text, categories: cats)
+            editPrefill = await .from(extraction, categories: cats)
             showingEdit = true
         } catch {
             errorText = errorMessage(error)

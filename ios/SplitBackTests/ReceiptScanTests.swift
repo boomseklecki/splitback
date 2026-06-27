@@ -30,6 +30,27 @@ final class RecentReceiptDateTests: XCTestCase {
     }
 }
 
+/// Receipt categories are snapped to the user's list (case-insensitive), so a free-text AI guess like
+/// "Beverages" can't leak an off-list category.
+final class MatchCategoryTests: XCTestCase {
+    private let cats = ["Dining", "Groceries", "Fuel"]
+
+    func testExactMatchCaseInsensitive() {
+        XCTAssertEqual(ExpensePrefill.matchCategory("dining", in: cats), "Dining")
+        XCTAssertEqual(ExpensePrefill.matchCategory("  GROCERIES ", in: cats), "Groceries")
+    }
+
+    func testOffListReturnsNil() {
+        XCTAssertNil(ExpensePrefill.matchCategory("Beverages", in: cats))
+    }
+
+    func testNilAndEmpty() {
+        XCTAssertNil(ExpensePrefill.matchCategory(nil, in: cats))
+        XCTAssertNil(ExpensePrefill.matchCategory("Dining", in: []))
+        XCTAssertNil(ExpensePrefill.matchCategory("   ", in: cats))
+    }
+}
+
 final class ReceiptHeuristicsTests: XCTestCase {
     func testTotalPrefersTotalLineOverSubtotal() {
         let text = "Store ABC\nSubtotal 10.00\nTax 2.34\nTotal 12.34"
@@ -55,18 +76,22 @@ final class ReceiptHeuristicsTests: XCTestCase {
 }
 
 final class ExpensePrefillTests: XCTestCase {
-    func testPrefillFromExtraction() {
+    func testPrefillFromExtraction() async {
+        let recent = Calendar.current.date(byAdding: .day, value: -3, to: Date())!  // in the 60-day window
         let extraction = ReceiptExtraction(
-            merchant: "Cafe", date: "2026-06-19", total: 12.5,
+            merchant: "Cafe", date: Mapping.dateOnlyFormatter.string(from: recent), total: 12.5,
             items: [ExtractedItem(name: "Latte", quantity: 1, price: 5.5, category: "coffee")]
         )
-        let prefill = ExpensePrefill.from(extraction)
+        // Empty list short-circuits the on-device classifier (which the sim lacks); the snapping logic is
+        // covered by MatchCategoryTests. So the expense + item categories resolve to nil here.
+        let prefill = await ExpensePrefill.from(extraction, categories: [])
         XCTAssertEqual(prefill.details, "Cafe")
         XCTAssertEqual(prefill.amount, Decimal(string: "12.50"))
-        XCTAssertEqual(prefill.date, Mapping.dateOnlyFormatter.date(from: "2026-06-19"))
-        XCTAssertEqual(prefill.category, "coffee")
+        XCTAssertTrue(Calendar.current.isDate(prefill.date, inSameDayAs: recent))
         XCTAssertEqual(prefill.items.count, 1)
         XCTAssertEqual(prefill.items.first?.price, Decimal(string: "5.50"))
+        XCTAssertNil(prefill.category)              // no off-list category leaks
+        XCTAssertNil(prefill.items.first?.category)
     }
 
     func testPrefillFromHeuristics() {
