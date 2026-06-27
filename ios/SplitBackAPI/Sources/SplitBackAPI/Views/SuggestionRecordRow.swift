@@ -9,6 +9,10 @@ struct SuggestionRecordRow: View {
     let currency: String
     let date: Date
     var category: String? = nil
+    /// Where this record lives — the split group (for an expense) or the account (for a transaction). Shown
+    /// with `sourceIcon` so the two sides of a Link confirm read as counterparts.
+    var source: String? = nil
+    var sourceIcon: String = "tray"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -22,6 +26,10 @@ struct SuggestionRecordRow: View {
                 if let category { Text("· \(category)") }
             }
             .font(.caption).foregroundStyle(.secondary)
+            if let source {
+                Label(source, systemImage: sourceIcon)
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
         }
     }
 }

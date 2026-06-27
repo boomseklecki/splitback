@@ -15,6 +15,8 @@ struct LinkConfirmSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var expense: Expense?
     @State private var transaction: Transaction?
+    @State private var groupName: String?
+    @State private var accountName: String?
     @State private var showPicker = false
 
     var body: some View {
@@ -24,12 +26,14 @@ struct LinkConfirmSheet: View {
                     Section("Expense") {
                         SuggestionRecordRow(title: expense.details, amount: expense.amount,
                                             currency: expense.currency, date: expense.date,
-                                            category: expense.category)
+                                            category: expense.category,
+                                            source: groupName, sourceIcon: "person.2")
                     }
                     Section {
                         SuggestionRecordRow(title: transaction.details, amount: transaction.amount,
                                             currency: transaction.currency, date: transaction.date,
-                                            category: transaction.category)
+                                            category: transaction.category,
+                                            source: accountName, sourceIcon: "building.columns")
                     } header: {
                         HStack {
                             Text("Bank transaction")
@@ -73,6 +77,17 @@ struct LinkConfirmSheet: View {
         if let tid = suggestion.transactionId {
             transaction = try? context.fetch(
                 FetchDescriptor<Transaction>(predicate: #Predicate { $0.id == tid })).first
+        }
+        // The split group the expense lives in, and the account behind the transaction — so the two sides of
+        // the link read as counterparts.
+        if let gid = expense?.groupId {
+            groupName = (try? context.fetch(
+                FetchDescriptor<ExpenseGroup>(predicate: #Predicate { $0.id == gid })))?.first?.name
+        }
+        if let aid = transaction?.accountId,
+           let account = try? context.fetch(
+            FetchDescriptor<Account>(predicate: #Predicate { $0.id == aid })).first {
+            accountName = [account.displayLabel, account.maskLabel].compactMap { $0 }.joined(separator: " ")
         }
     }
 
