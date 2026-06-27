@@ -64,7 +64,7 @@ async def import_ofx(session: AsyncSession, caller: str | None, data: bytes) -> 
     if parsed.acctid:
         account.external_account_id = parsed.acctid     # set / backfill the stable key
     account.name = name
-    account.mask = (parsed.acctid or "")[:3] or None    # short display tag from the ACCTID
+    account.mask = (parsed.acctid or "")[-4:] or None   # short display tag — the end of the ACCTID
     account.institution_name = parsed.org
     account.institution_domain = resolve_domain(parsed.org)
 

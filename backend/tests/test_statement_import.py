@@ -38,7 +38,7 @@ async def test_import_creates_account_and_transactions():
             acct = await s.get(Account, result.account_id)
             assert acct.owner_identifier == OWNER and acct.plaid_account_id is None
             assert acct.external_account_id == "xxxxxxxxxxxx4321"   # find-or-create key (ACCTID)
-            assert acct.mask == "xxx"                              # ACCTID[:3]
+            assert acct.mask == "4321"                             # ACCTID[-4:]
             assert acct.institution_name == "Apple Card" and acct.institution_domain == "apple.com"
             assert acct.balance == Decimal("621.28")               # LEDGERBAL -621.28 flipped → positive owed
             assert acct.available_balance == Decimal("7878.72")    # AVAILBAL as-is
@@ -105,7 +105,7 @@ async def test_adopts_name_keyed_account_no_duplicate():
             assert len(accts) == 1                                  # adopted, not duplicated
             assert accts[0].id == result.account_id
             assert accts[0].external_account_id == "xxxxxxxxxxxx4321"  # backfilled
-            assert accts[0].mask == "xxx" and accts[0].institution_domain == "apple.com"
+            assert accts[0].mask == "4321" and accts[0].institution_domain == "apple.com"
     finally:
         await _purge()
 
