@@ -456,9 +456,13 @@ def fetch_notifications(client: Splitwise, access_token: str | None = None) -> l
     settle-ups, etc.), normalized to `{splitwise_id, type, content, created_at}`.
 
     The `splitwise` SDK doesn't reliably expose `getNotifications()` across versions (its
-    `__getattr__` masks that — see `_method`), so fall back to the REST endpoint with the OAuth
-    token, mirroring `fetch_receipt_bytes`."""
-    notifications = _method(client, "getNotifications")
+    `__getattr__` masks that — see `_method`), and even when present its typed parser raises
+    (e.g. KeyError 'url' on a notification whose `source` has no url), so prefer it but fall back
+    to the REST endpoint on ANY failure — mirroring `fetch_receipt_bytes`."""
+    try:
+        notifications = _method(client, "getNotifications")
+    except Exception:
+        notifications = None  # SDK typed-parse blew up (e.g. source missing 'url') → use REST below
     if notifications is not None:
         return [_normalize_notification_obj(n) for n in notifications]
     if access_token is None:
