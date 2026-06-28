@@ -54,11 +54,13 @@ struct GroupMembersView: View {
     private func remove(_ offsets: IndexSet) {
         let identifiers = offsets.map { members[$0].userIdentifier }
         Task {
-            do {
-                for identifier in identifiers {
-                    try await env.groups(context).removeMember(groupId: group.id, userIdentifier: identifier)
-                }
-            } catch { errorText = errorMessage(error) }
+            var firstError: Error?
+            for identifier in identifiers {
+                do { try await env.groups(context).removeMember(groupId: group.id, userIdentifier: identifier) }
+                catch let e as BackendError where e == .notFound { continue }  // already removed — silent skip
+                catch { firstError = firstError ?? error }                     // keep removing the rest
+            }
+            if let firstError { errorText = errorMessage(firstError) }
         }
     }
 }

@@ -483,11 +483,16 @@ struct ExpenseDetailView: View {
         let expenseId = expense.id
         Task {
             defer { uploading = false }
-            do {
-                for jpeg in images {
-                    try await env.receipts(context).upload(expenseId: expenseId, imageData: jpeg)
-                }
-            } catch { errorText = errorMessage(error) }
+            var failures = 0
+            var lastError: Error?
+            for jpeg in images {
+                do { try await env.receipts(context).upload(expenseId: expenseId, imageData: jpeg) }
+                catch { failures += 1; lastError = error }  // keep uploading the rest
+            }
+            if let lastError {
+                errorText = images.count == 1 ? errorMessage(lastError)
+                    : "\(failures) of \(images.count) receipts couldn’t be uploaded: \(errorMessage(lastError))"
+            }
         }
     }
 

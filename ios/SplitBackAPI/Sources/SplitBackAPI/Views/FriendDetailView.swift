@@ -163,9 +163,12 @@ struct FriendDetailView: View {
     }
 
     private func reconcileFriend() async throws {
+        var firstError: Error?
         for gid in friend.groups.compactMap(\.groupId) {
-            try await env.expenses(context).reconcileAll(groupId: gid)
+            do { try await env.expenses(context).reconcileAll(groupId: gid) }
+            catch { firstError = firstError ?? error }  // keep reconciling the friend's other groups
         }
         try? await env.balances(context).refreshFriends()  // refresh the cached net/groups snapshot
+        if let firstError { throw firstError }  // surface after attempting all groups (caller shows errorText)
     }
 }
