@@ -1,0 +1,42 @@
+SplitBack backend deploy verification (uplink / Linux full-stack)
+================================================================
+
+Commit tested:  05de6453c95c475f57b9bf36c05211061af94f0b  (main HEAD)
+Date (UTC):     2026-06-28
+Migration head: 0040_pending_txn_id  (already applied; not touched)
+
+Commits in scope (all present at this HEAD):
+  05de645  Error-handling hardening: notify rollback, import resilience, surfaced failures
+  b2403a0  ExpenseEditView: reasonable message for a create/update 404 (iOS)
+  478ef35  Harden three batch loops: skip benign items, continue, surface one error
+  5206c78  Guard sweep: update_expense 404 + bulk recategorize skip-and-continue
+  435c6ab  posted-pending detection   (built+tested in a prior run)
+  31f67d4  carry-forward              (prior run)
+  98abe29  reap                       (prior run)
+  aa488b1  OFX DTUSER                 (prior run)
+
+BUILD / RESTART:  OK
+  - git pull --ff-only to 05de645 (clean).
+  - docker compose build api api-dev api-demo api-test  -> built.
+  - Recreated: api (real, :8000), api-dev (--profile dev), api-demo (--profile demo),
+    db-test + api-test (--profile test). All healthy.
+  - alembic upgrade head -> no-op (already at 0040_pending_txn_id). Migration untouched.
+  - import sanity: app.main + notify/splitwise/expenses/statements/importer import clean.
+
+TEST RUN (api-test stack, includes HTTP- and MinIO-dependent tests):  PASS
+  TOTAL passing: 196   FAIL: 0   (44 modules, all green)
+
+Watch-list (all PASS):
+  test_groups_expenses ........ 6  (expense create/update/link -> clean 404 on missing txn, not FK-500)
+  test_import_local ........... 2  (Splitwise local import; receipts best-effort, one bad receipt no longer rolls back the clone)
+  test_statement_import ....... 5  (OFX import incl. duplicate-FITID-in-one-file resilience)
+  test_sharing ................ 6  (connection accept path)
+  test_notifications .......... 4  } notify() session-rollback fix: a notify failure does not 500
+  test_notification_producer .. 4  } an already-committed accept/create
+  test_plaid_sync ............. 5  (HTTP sync test, incl. pending->posted carry-forward)
+
+FAILURES: none.
+
+SUMMARY: PASS. 05de645 builds, restarts, and passes the full backend suite (196/196)
+on the running stack. Safe on prod (real api/db at 0040, healthy). No code changes
+needed on the Linux side; nothing committed from here.
