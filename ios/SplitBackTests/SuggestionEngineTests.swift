@@ -27,9 +27,11 @@ final class SuggestionEngineTests: XCTestCase {
                           templates: [SplitTemplate] = [], rules: [SubscriptionRule] = [],
                           decisions: [SuggestionDecision] = [],
                           linkThreshold: Double = SuggestionEngine.defaultLinkThreshold) -> [Suggestion] {
-        SuggestionEngine.generate(transactions: transactions, expenses: expenses, lookup: [:], sources: [:],
-                                  templates: templates, rules: rules, decisions: decisions, me: me,
-                                  linkThreshold: linkThreshold)
+        let subscriptions = SubscriptionDetector.analyze(
+            transactions: transactions, expenses: expenses, lookup: [:], me: me, rules: rules).subscriptions
+        return SuggestionEngine.generate(transactions: transactions, expenses: expenses, lookup: [:], sources: [:],
+                                         templates: templates, rules: rules, subscriptions: subscriptions,
+                                         decisions: decisions, me: me, linkThreshold: linkThreshold)
     }
 
     func testCategorizeOverNonExplicit() {

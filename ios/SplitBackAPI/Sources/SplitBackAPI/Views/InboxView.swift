@@ -26,19 +26,11 @@ struct InboxView: View {
 
     struct BudgetPrefill: Identifiable { let id = UUID(); let category: String; let amount: Decimal }
 
-    private static let order: [Suggestion.Kind] = [
-        .recurringSplit, .overspend, .settleUp, .link, .sharedBudgetCandidate, .categorize, .subscription]
-    private var sortedSuggestions: [Suggestion] {
-        suggestions.sorted {
-            (Self.order.firstIndex(of: $0.kind) ?? 99) < (Self.order.firstIndex(of: $1.kind) ?? 99)
-        }
-    }
-
     var body: some View {
         NavigationStack {
             List {
                 if !suggestions.isEmpty {
-                    Section("Suggestions") { ForEach(sortedSuggestions) { row($0) } }
+                    Section("Suggestions") { ForEach(suggestions) { row($0) } }
                 }
                 if !activity.isEmpty {
                     Section("Activity") { ForEach(activity, id: \.id) { activityRow($0) } }
@@ -203,14 +195,12 @@ struct InboxView: View {
         Task {
             do {
                 try await service.accept(s)
-                if let refreshed = try? service.current(partners: lastPartners) {
-                    withAnimation { suggestions = refreshed }
-                }
-                updateBadge()
+                // Mirror dismiss: trust the optimistic removal — no full re-analysis per accept. The next
+                // reload (pull-to-refresh / reappear) re-ranks; the badge is already correct from above.
             } catch {
                 errorText = errorMessage(error)
                 if let restored = try? service.current(partners: lastPartners) {
-                    suggestions = restored  // the mutation failed — bring the card back
+                    withAnimation { suggestions = restored }  // the mutation failed — bring the card back
                 }
                 updateBadge()
             }

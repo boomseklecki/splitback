@@ -11,30 +11,38 @@ enum SuggestionEngine {
     static let recurringWindowDays = 60
     /// Cap on subscription "track this?" cards so a big history doesn't flood the queue.
     static let maxSubscriptionCards = 8
+    /// Newest unlinked expenses to consider for a link card — bounds the heavy per-expense match scan on a big
+    /// history (the freshest are what `SuggestionRanking` surfaces anyway).
+    static let linkScanCap = 200
 
+    /// Produces the candidate cards (each stamped with `sortDate` for recency); the caller ranks + caps them
+    /// via `SuggestionRanking`. `subscriptions` is precomputed (cached) by the caller so this stays cheap/pure.
     static func generate(transactions: [Transaction], expenses: [Expense], lookup: [String: String],
                          sources: [String: String], templates: [SplitTemplate], rules: [SubscriptionRule],
-                         decisions: [SuggestionDecision], me: String?, asOf: Date = Date(),
-                         linkThreshold: Double = defaultLinkThreshold) -> [Suggestion] {
+                         subscriptions: [Subscription], decisions: [SuggestionDecision], me: String?,
+                         asOf: Date = Date(), linkThreshold: Double = defaultLinkThreshold) -> [Suggestion] {
         // Active dismissals/snoozes: both per-suggestion ids and merchant-scope keys.
         let blocked = Set(decisions.filter { $0.isActive }.map(\.key))
         let linkedTxnIds = Set(expenses.lazy.compactMap(\.transactionId))
+        let txnsDesc = transactions.sorted { $0.date > $1.date }  // newest-first so the freshest cards surface
 
         var out: [Suggestion] = []
 
         // 1) Recategorize — AI disagrees with the current category (and no human/AI-map chose it). Aggregate
-        // by (description, suggested) so dozens of identical merchant rows become one accept-all card.
-        struct CatGroup { let title: String; let suggested: String; let current: String?; var ids: [UUID] }
+        // by (description, suggested) so dozens of identical merchant rows become one accept-all card; the
+        // group's `sortDate` is its newest transaction (we iterate newest-first).
+        struct CatGroup { let title: String; let suggested: String; let current: String?; let sortDate: Date; var ids: [UUID] }
         var catGroups: [String: CatGroup] = [:]
         var catOrder: [String] = []
-        for t in transactions {
+        for t in txnsDesc {
             guard let suggested = t.aiSuggestedCategory, !suggested.isEmpty else { continue }
             let res = CategoryMapping.resolve(for: t, lookup: lookup, sources: sources)
             guard res.source == .deterministic || res.source == .raw else { continue }
             guard suggested != res.category else { continue }
             let key = "\(t.details.lowercased())|\(suggested)"
             if catGroups[key] == nil {
-                catGroups[key] = CatGroup(title: t.details, suggested: suggested, current: res.category, ids: [])
+                catGroups[key] = CatGroup(title: t.details, suggested: suggested, current: res.category,
+                                          sortDate: t.date, ids: [])
                 catOrder.append(key)
             }
             catGroups[key]?.ids.append(t.id)
@@ -46,11 +54,12 @@ enum SuggestionEngine {
                 title: g.title, subtitle: "\(g.current ?? "Uncategorized") → \(g.suggested)\(suffix)",
                 icon: "sparkles", acceptLabel: "Use \(g.suggested)",
                 transactionId: g.ids.first, transactionIds: g.ids,
-                category: g.suggested, currentCategory: g.current))
+                category: g.suggested, currentCategory: g.current, sortDate: g.sortDate))
         }
 
-        // 2) Link — an unlinked expense with a high-confidence matching unlinked transaction (de-dupes spend).
-        for e in expenses where e.transactionId == nil {
+        // 2) Link — newest unlinked expenses (bounded) with a high-confidence matching transaction (de-dupes spend).
+        let unlinkedNewest = expenses.filter { $0.transactionId == nil }.sorted { $0.date > $1.date }.prefix(linkScanCap)
+        for e in unlinkedNewest {
             if let c = e.category, CanonicalCategory.neutral.contains(c) { continue }
             guard let top = TransactionMatcher.candidates(
                 for: e, transactions: transactions, expenses: expenses, me: me).first,
@@ -59,35 +68,32 @@ enum SuggestionEngine {
                 id: "link:\(top.transaction.id.uuidString):\(e.id.uuidString)", kind: .link,
                 title: e.details, subtitle: "Looks like “\(top.transaction.details)” — link to de-dupe",
                 icon: "link", acceptLabel: "Link",
-                transactionId: top.transaction.id, expenseId: e.id, matchScore: top.score))
+                transactionId: top.transaction.id, expenseId: e.id, matchScore: top.score, sortDate: e.date))
         }
 
-        // 3) Subscriptions — newly detected recurring charges with no rule yet.
+        // 3) Subscriptions — precomputed recurring charges with no rule yet (`sortDate` = last charge).
         let ruleKeys = Set(rules.map(\.merchantKey))
-        let subs = SubscriptionDetector.analyze(
-            transactions: transactions, expenses: expenses, lookup: lookup, me: me, rules: rules, asOf: asOf)
-            .subscriptions
-        for sub in subs where !ruleKeys.contains(sub.id) {
+        for sub in subscriptions where !ruleKeys.contains(sub.id) {
             out.append(Suggestion(
                 id: "sub:\(sub.id)", kind: .subscription,
                 title: sub.displayName,
                 subtitle: "\(sub.cadence.label) · \(sub.latestAmount.formatted(.currency(code: sub.currency)))",
                 icon: "repeat", acceptLabel: "Track",
-                merchantKey: sub.id, amount: sub.latestAmount))
+                merchantKey: sub.id, amount: sub.latestAmount, sortDate: sub.lastDate))
             if out.filter({ $0.kind == .subscription }).count >= maxSubscriptionCards { break }
         }
 
-        // 4) Recurring split — an unlinked recent charge matching a learned template.
+        // 4) Recurring split — newest unlinked recent charge matching a learned template.
         let cutoff = Calendar.current.date(byAdding: .day, value: -recurringWindowDays, to: asOf) ?? asOf
         let templatesByKey = Dictionary(templates.map { ($0.merchantKey, $0) }, uniquingKeysWith: { a, _ in a })
-        for t in transactions where t.amount > 0 && !linkedTxnIds.contains(t.id) && t.date >= cutoff {
+        for t in txnsDesc where t.amount > 0 && !linkedTxnIds.contains(t.id) && t.date >= cutoff {
             guard let tmpl = templatesByKey[SubscriptionDetector.merchantKey(t.details)] else { continue }
             out.append(Suggestion(
                 id: "rsplit:\(t.id.uuidString):\(tmpl.merchantKey)", kind: .recurringSplit,
                 title: t.details, subtitle: "Split like last time · \(tmpl.displayName)",
                 icon: "arrow.triangle.2.circlepath", acceptLabel: "Split",
                 transactionId: t.id, category: tmpl.category, templateMerchantKey: tmpl.merchantKey,
-                merchantKey: tmpl.merchantKey))
+                merchantKey: tmpl.merchantKey, sortDate: t.date))
         }
 
         // Drop anything the user dismissed (by id or by merchant scope).

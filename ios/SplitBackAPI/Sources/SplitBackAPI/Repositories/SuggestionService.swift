@@ -9,6 +9,8 @@ struct SuggestionService {
     let client: Client
     let context: ModelContext
     let me: String?
+    /// Shared subscription-analysis memo (injected by `AppEnvironment`); nil in any direct construction.
+    var analysisCache: SuggestionAnalysisCache? = nil
 
     /// Max transactions the AI pass classifies per run (Apple Intelligence inference is not free).
     private static let aiBatch = 25
@@ -30,9 +32,16 @@ struct SuggestionService {
         let decisions = try context.fetch(FetchDescriptor<SuggestionDecision>())
         let lookup = CategoryMapping.lookup(maps), sources = CategoryMapping.sources(maps)
 
+        // Subscription cadence is the heaviest pass and unaffected by partner/category/dismissal churn — memoize
+        // it (cache shared via AppEnvironment), falling back to a direct analyze if no cache was injected.
+        let subscriptions = analysisCache?.subscriptions(
+            transactions: transactions, expenses: expenses, lookup: lookup, me: me, rules: rules, asOf: Date())
+            ?? SubscriptionDetector.analyze(
+                transactions: transactions, expenses: expenses, lookup: lookup, me: me, rules: rules).subscriptions
+
         var result = SuggestionEngine.generate(
             transactions: transactions, expenses: expenses, lookup: lookup, sources: sources,
-            templates: templates, rules: rules, decisions: decisions, me: me,
+            templates: templates, rules: rules, subscriptions: subscriptions, decisions: decisions, me: me,
             linkThreshold: LinkSensitivity.current().threshold)
 
         // Read the cached Friend balances (snapshot from the last /friends sync); names from the directory.
@@ -44,7 +53,8 @@ struct SuggestionService {
         result += SuggestionEngine.nudges(
             goals: goals, transactions: transactions, expenses: expenses, accounts: accounts, lookup: lookup,
             groupMembers: groupMembers, partners: partners, friendNets: friendNets, decisions: decisions, me: me)
-        return result
+        // Rank by usefulness + recency and cap — the freshest, most-useful cards surface at the top.
+        return SuggestionRanking.ranked(result)
     }
 
     /// The accepted partner connections (network, best-effort — offline yields an empty set).

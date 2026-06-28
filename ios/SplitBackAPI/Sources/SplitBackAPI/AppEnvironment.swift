@@ -205,8 +205,10 @@ public final class AppEnvironment {
     func receipts(_ context: ModelContext) -> ReceiptRepository { .init(client: client, context: context) }
     func accounts(_ context: ModelContext) -> AccountRepository { .init(client: client, context: context) }
     func goals(_ context: ModelContext) -> GoalRepository { .init(client: client, context: context) }
+    /// Shared memo cache for the Inbox's subscription analysis (one instance, reused across every built service).
+    let suggestionAnalysisCache = SuggestionAnalysisCache()
     func suggestions(_ context: ModelContext) -> SuggestionService {
-        .init(client: client, context: context, me: currentUser?.identifier)
+        .init(client: client, context: context, me: currentUser?.identifier, analysisCache: suggestionAnalysisCache)
     }
     func categoryMaps(_ context: ModelContext) -> CategoryMapRepository { .init(client: client, context: context) }
     func plaid(_ context: ModelContext) -> PlaidRepository { .init(client: client, context: context) }
