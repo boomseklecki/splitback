@@ -85,9 +85,8 @@ struct BankCategoriesView: View {
         let allowed = categoryModels.map(\.name)
         let suggestions = await CategoryMapper.suggest(for: unmapped, allowed: allowed)
         do {
-            for (raw, canonical) in suggestions {
-                try await env.categoryMaps(context).set(raw: raw, canonical: canonical, source: "ondevice")
-            }
+            try await env.categoryMaps(context).setMany(
+                suggestions.map { (raw: $0.key, canonical: $0.value) }, source: "ondevice")
         } catch { errorText = errorMessage(error) }
         let items = refinable.map {
             CategoryMapper.Item(id: $0.id, description: $0.details, rawCategory: $0.category)
@@ -143,9 +142,8 @@ struct SplitwiseCategoriesView: View {
         let unmapped = splitwiseCategories.filter { resolved($0).source == "unmapped" }
         let suggestions = await CategoryMapper.suggest(for: unmapped, allowed: categoryModels.map(\.name))
         do {
-            for (raw, canonical) in suggestions {
-                try await env.categoryMaps(context).set(raw: raw, canonical: canonical, source: "ondevice")
-            }
+            try await env.categoryMaps(context).setMany(
+                suggestions.map { (raw: $0.key, canonical: $0.value) }, source: "ondevice")
         } catch { errorText = errorMessage(error) }
     }
 
