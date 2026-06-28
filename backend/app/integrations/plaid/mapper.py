@@ -39,4 +39,5 @@ def map_transaction(transaction: dict) -> dict:
         "date": _parse_date(transaction.get("date")),
         "category": transaction.get("category"),
         "pending": bool(transaction.get("pending")),
+        "pending_transaction_id": transaction.get("pending_transaction_id"),
     }

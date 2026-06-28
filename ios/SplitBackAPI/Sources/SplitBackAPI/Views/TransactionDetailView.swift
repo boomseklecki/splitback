@@ -10,6 +10,7 @@ struct TransactionDetailView: View {
 
     @Environment(AppEnvironment.self) private var env
     @Environment(\.modelContext) private var context
+    @Environment(\.dismiss) private var dismiss
     @Query private var categoryMaps: [CategoryMap]
     @Query(sort: \SpendCategory.position) private var spendCategories: [SpendCategory]
     @Query private var accounts: [Account]
@@ -22,6 +23,14 @@ struct TransactionDetailView: View {
     @State private var categorizing = false
     @State private var aiAvailable = false
     @State private var errorText: String?
+    /// "This transaction already posted" flow: set when a customize action 404s on a pending row. `postedTwin`
+    /// is the posted replacement (matched by `pendingTransactionId`), if we found it; `showingPosted` drives
+    /// the prompt; `showingTwin` opens the twin in a sheet. `sheetDetectedGone` relays the signal from the
+    /// items/link child sheets so we trigger the prompt only after the sheet has dismissed (no alert/sheet race).
+    @State private var postedTwin: Transaction?
+    @State private var showingPosted = false
+    @State private var showingTwin = false
+    @State private var sheetDetectedGone = false
     /// The expense linked to this transaction, loaded off the render path (see `loadLinkedExpense`). A
     /// body-time `@Query` over the expenses table blocked the navigation push on large datasets.
     @State private var linkedExpense: Expense?
@@ -215,11 +224,26 @@ struct TransactionDetailView: View {
         .sheet(isPresented: $showingCreate, onDismiss: loadLinkedExpense) {
             NewExpenseFromTransactionView(transaction: transaction)
         }
-        .sheet(isPresented: $showingLinkExpense, onDismiss: loadLinkedExpense) {
-            ExpenseLinkPickerView(transaction: transaction)
+        .sheet(isPresented: $showingLinkExpense, onDismiss: handleSheetDismiss) {
+            ExpenseLinkPickerView(transaction: transaction) { sheetDetectedGone = true }
         }
-        .sheet(isPresented: $showingItems) {
-            TransactionItemsView(transaction: transaction)
+        .sheet(isPresented: $showingItems, onDismiss: handleSheetDismiss) {
+            TransactionItemsView(transaction: transaction) { sheetDetectedGone = true }
+        }
+        .sheet(isPresented: $showingTwin) {
+            if let twin = postedTwin {
+                NavigationStack { TransactionDetailView(transaction: twin) }
+            }
+        }
+        .alert("This transaction has already posted", isPresented: $showingPosted) {
+            if postedTwin != nil {
+                Button("View posted transaction") { showingTwin = true }
+            }
+            Button("Back to account", role: .cancel) { dismiss() }
+        } message: {
+            Text(postedTwin != nil
+                 ? "Your change wasn’t saved here — this pending charge posted as a new transaction. Open it to make the change there."
+                 : "Your change wasn’t saved here — this pending charge posted as a new transaction. It’ll appear in your account in a moment.")
         }
         .errorAlert($errorText)
     }
@@ -282,7 +306,7 @@ struct TransactionDetailView: View {
         let id = transaction.id
         Task {
             do { try await env.accounts(context).setCategoryOverride(id: id, category: category) }
-            catch { errorText = errorMessage(error) }
+            catch { await handleCustomizeError(error) }
         }
     }
 
@@ -292,8 +316,39 @@ struct TransactionDetailView: View {
             do {
                 try await env.accounts(context).setTransactionFlags(
                     id: id, includeInSpending: includeInSpending, includeInCashFlow: includeInCashFlow)
-            } catch { errorText = errorMessage(error) }
+            } catch { await handleCustomizeError(error) }
         }
+    }
+
+    /// A customize action failed. If it's a pending row that the server no longer has, the charge posted —
+    /// run the "already posted" flow instead of a generic error.
+    private func handleCustomizeError(_ error: Error) async {
+        if transaction.pending, (error as? BackendError) == .notFound {
+            await handlePosted()
+        } else {
+            errorText = errorMessage(error)
+        }
+    }
+
+    /// Refresh (upsert-only, so we don't reap THIS still-displayed row), locate the posted twin by the
+    /// pending charge's plaid id, and raise the prompt.
+    private func handlePosted() async {
+        try? await env.accounts(context).refreshTransactions(accountId: transaction.accountId)
+        if let p1 = transaction.plaidTransactionId {
+            var descriptor = FetchDescriptor<Transaction>(
+                predicate: #Predicate { $0.pendingTransactionId == p1 && !$0.pending })
+            descriptor.fetchLimit = 1
+            postedTwin = (try? context.fetch(descriptor))?.first
+        }
+        showingPosted = true
+    }
+
+    /// After an items/link child sheet dismisses, relay its "transaction gone" signal into the posted flow.
+    private func handleSheetDismiss() {
+        loadLinkedExpense()
+        guard sheetDetectedGone else { return }
+        sheetDetectedGone = false
+        Task { await handlePosted() }
     }
 
     private func categorizeWithAI() async {

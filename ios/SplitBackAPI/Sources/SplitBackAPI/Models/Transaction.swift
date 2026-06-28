@@ -11,6 +11,9 @@ final class Transaction {
     @Attribute(.unique) var id: UUID
     var accountId: UUID?
     var plaidTransactionId: String?
+    /// On a posted row, the `plaidTransactionId` of the pending charge it replaced (Plaid's value). Lets the
+    /// app point a user from a since-posted pending transaction to its posted twin. Null otherwise.
+    var pendingTransactionId: String?
     var source: TransactionSource
     var details: String
     var amount: Decimal
@@ -44,6 +47,7 @@ final class Transaction {
         id: UUID,
         accountId: UUID? = nil,
         plaidTransactionId: String? = nil,
+        pendingTransactionId: String? = nil,
         source: TransactionSource,
         details: String,
         amount: Decimal,
@@ -62,6 +66,7 @@ final class Transaction {
         self.id = id
         self.accountId = accountId
         self.plaidTransactionId = plaidTransactionId
+        self.pendingTransactionId = pendingTransactionId
         self.source = source
         self.details = details
         self.amount = amount

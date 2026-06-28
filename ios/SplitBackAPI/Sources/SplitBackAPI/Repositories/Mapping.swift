@@ -180,6 +180,7 @@ enum Mapping {
             id: try uuid(r.id, field: "Transaction.id"),
             accountId: try optionalUUID(r.account_id, field: "Transaction.account_id"),
             plaidTransactionId: r.plaid_transaction_id,
+            pendingTransactionId: r.pending_transaction_id,
             source: transactionSource(r.source),
             details: r.description,
             amount: try decimal(r.amount, field: "Transaction.amount"),

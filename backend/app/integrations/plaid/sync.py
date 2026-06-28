@@ -74,12 +74,13 @@ async def _upsert_transaction(
         "date": fields["date"],
         "category": fields["category"],
         "pending": fields["pending"],
+        "pending_transaction_id": fields.get("pending_transaction_id"),
         "owner_identifier": owner_identifier,
     }
     update_cols = {
         k: values[k]
         for k in ("account_id", "description", "amount", "currency", "date", "category",
-                  "pending", "owner_identifier")
+                  "pending", "pending_transaction_id", "owner_identifier")
     }
     update_cols["updated_at"] = func.now()  # on_conflict bypasses onupdate; track last sync (see _upsert_account)
     stmt = (

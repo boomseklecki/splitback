@@ -6596,6 +6596,10 @@
             "type": "string",
             "title": "Plaid Transaction Id"
           },
+          "pending_transaction_id": {
+            "type": "string",
+            "title": "Pending Transaction Id"
+          },
           "source": {
             "$ref": "#/components/schemas/TransactionSource"
           },

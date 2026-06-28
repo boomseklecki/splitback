@@ -9,6 +9,9 @@ import UIKit
 /// `AccountRepository.setItems`. Only meaningful for outflows — the caller presents this for `amount > 0`.
 struct TransactionItemsView: View {
     let transaction: Transaction
+    /// Called when saving fails because the (pending) transaction no longer exists server-side — it posted.
+    /// The parent surfaces the "already posted" prompt; we just dismiss.
+    var onTransactionGone: () -> Void = {}
 
     @Environment(AppEnvironment.self) private var env
     @Environment(\.modelContext) private var context
@@ -26,8 +29,9 @@ struct TransactionItemsView: View {
     @State private var saving = false
     @State private var errorText: String?
 
-    init(transaction: Transaction) {
+    init(transaction: Transaction, onTransactionGone: @escaping () -> Void = {}) {
         self.transaction = transaction
+        self.onTransactionGone = onTransactionGone
         _items = State(initialValue: transaction.items
             .sorted { $0.addedOn ?? .distantPast < $1.addedOn ?? .distantPast }
             .map { ItemDraft(id: $0.id, name: $0.name, quantity: $0.quantity,
@@ -220,7 +224,12 @@ struct TransactionItemsView: View {
             do {
                 try await env.accounts(context).setItems(id: id, items: cleaned)
                 dismiss()
-            } catch { errorText = errorMessage(error) }
+            } catch {
+                if transaction.pending, (error as? BackendError) == .notFound {
+                    onTransactionGone()
+                    dismiss()
+                } else { errorText = errorMessage(error) }
+            }
         }
     }
 }

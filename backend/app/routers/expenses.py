@@ -17,7 +17,9 @@ from app.integrations.splitwise import client as sw_client
 from app.integrations.splitwise import writer as sw_writer
 from app.integrations.splitwise.mapper import SETTLEUP_CATEGORY
 from app.integrations.storage import minio_client
-from app.models import BackendType, Expense, ExpenseItem, ExpenseOverride, Group, GroupMember, Split
+from app.models import (
+    BackendType, Expense, ExpenseItem, ExpenseOverride, Group, GroupMember, Split, Transaction,
+)
 from app.services import notify as notify_svc
 from app.schemas.expense import (
     ExpenseCreate,
@@ -336,6 +338,10 @@ async def link_expense_transaction(
     if expense is None:
         raise HTTPException(status_code=404, detail="Expense not found")
     await assert_group_member(session, expense.group_id, caller)
+    # Validate the target transaction exists so linking a since-posted (deleted) pending row 404s cleanly
+    # instead of failing the FK on commit — the app keys its "already posted" prompt off this 404.
+    if body.transaction_id is not None and await session.get(Transaction, body.transaction_id) is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
     expense.transaction_id = body.transaction_id
     await session.commit()
     return await _load_detail(session, expense_id, caller)

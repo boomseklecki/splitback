@@ -24,6 +24,10 @@ class Transaction(UUIDMixin, TimestampMixin, Base):
     # Dedup key for imported-statement rows (e.g. an OFX FITID); unique per (account_id, external_transaction_id)
     # via a partial index (FITIDs are unique per account, not globally). Null for Plaid/manual entries.
     external_transaction_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # On a posted Plaid row, the `plaid_transaction_id` of the pending charge it replaced (Plaid's value, kept
+    # as a plain string — NOT a FK, since the pending row gets deleted). Lets the app point a user from a
+    # since-posted pending transaction to its posted twin (`pending_transaction_id == old.plaid_transaction_id`).
+    pending_transaction_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     source: Mapped[TransactionSource] = mapped_column(
         Enum(TransactionSource, name="transaction_source"), nullable=False
     )

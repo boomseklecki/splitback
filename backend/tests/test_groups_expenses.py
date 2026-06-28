@@ -214,6 +214,10 @@ async def test_expense_transaction_link_set_and_clear():
 
         # Missing expense → 404.
         assert _req("PUT", f"/expenses/{gid}/transaction-link", {"transaction_id": tid})[0] == 404
+
+        # Missing transaction (e.g. a since-posted pending row) → clean 404, not an FK 500.
+        missing_tid = "00000000-0000-0000-0000-0000000000aa"
+        assert _req("PUT", f"/expenses/{eid}/transaction-link", {"transaction_id": missing_tid})[0] == 404
     finally:
         if tid:
             async with async_session() as session:

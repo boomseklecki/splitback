@@ -58,6 +58,8 @@ class TransactionResponse(BaseModel):
     id: UUID
     account_id: UUID | None
     plaid_transaction_id: str | None
+    # On a posted row, the pending charge's plaid id it replaced (lets the app link to a since-posted pending).
+    pending_transaction_id: str | None = None
     source: TransactionSource
     description: str
     amount: Decimal

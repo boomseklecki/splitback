@@ -118,6 +118,8 @@ struct TransactionMatchView: View {
 /// Reverse flow: "link an existing expense to this transaction" — heuristic-ranked unlinked expenses.
 struct ExpenseLinkPickerView: View {
     let transaction: Transaction
+    /// Called when linking fails because the (pending) transaction no longer exists server-side — it posted.
+    var onTransactionGone: () -> Void = {}
 
     @Environment(AppEnvironment.self) private var env
     @Environment(\.modelContext) private var context
@@ -184,7 +186,12 @@ struct ExpenseLinkPickerView: View {
                 try await env.expenses(context).linkTransaction(expenseId: expense.id,
                                                                 transactionId: transaction.id)
                 dismiss()
-            } catch { errorText = errorMessage(error) }
+            } catch {
+                if transaction.pending, (error as? BackendError) == .notFound {
+                    onTransactionGone()
+                    dismiss()
+                } else { errorText = errorMessage(error) }
+            }
         }
     }
 }

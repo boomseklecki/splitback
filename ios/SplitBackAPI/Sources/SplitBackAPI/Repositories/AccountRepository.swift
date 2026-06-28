@@ -238,6 +238,7 @@ struct AccountRepository {
             ).first {
                 existing.accountId = try Mapping.optionalUUID(r.account_id, field: "Transaction.account_id")
                 existing.plaidTransactionId = r.plaid_transaction_id
+                existing.pendingTransactionId = r.pending_transaction_id
                 existing.source = Mapping.transactionSource(r.source)
                 existing.details = r.description
                 existing.amount = try Mapping.decimal(r.amount, field: "Transaction.amount")

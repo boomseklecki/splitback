@@ -158,6 +158,15 @@ async def test_apply_sync_carries_pending_data():
             assert post_id is not None
             assert await session.scalar(
                 select(func.count()).select_from(Transaction).where(Transaction.plaid_transaction_id == PEND)) == 0
+            # The pending charge's plaid id is persisted on the posted row (powers the "view posted twin" lookup)
+            # and survives a re-sync of the same posted row.
+            assert await session.scalar(
+                select(Transaction.pending_transaction_id).where(Transaction.id == post_id)) == PEND
+            await plaid_sync.apply_sync(
+                session, item, _accounts(),
+                {"added": [_txn(POST, pending_of=PEND)], "modified": [], "removed": [], "cursor": "c3"})
+            assert await session.scalar(
+                select(Transaction.pending_transaction_id).where(Transaction.id == post_id)) == PEND
             # Override carried forward onto the posted row.
             ov = (await session.scalars(
                 select(TransactionOverride).where(TransactionOverride.owner_identifier == OWNER))).all()
