@@ -23,6 +23,7 @@ struct InboxView: View {
     @State private var linkConfirm: Suggestion?
     @State private var categorizeConfirm: Suggestion?
     @State private var subscriptionConfirm: Suggestion?
+    @State private var recurringSplitConfirm: Suggestion?
 
     struct BudgetPrefill: Identifiable { let id = UUID(); let category: String; let amount: Decimal }
 
@@ -61,6 +62,9 @@ struct InboxView: View {
             .sheet(item: $subscriptionConfirm) { s in
                 SubscriptionConfirmSheet(suggestion: s) { accept(s) }
             }
+            .sheet(item: $recurringSplitConfirm) { s in
+                RecurringSplitConfirmSheet(suggestion: s) { accept(s) }
+            }
             .task { if !loaded { await reload(); loaded = true } }
             .refreshable { await reload() }
             .errorAlert($errorText)
@@ -91,8 +95,9 @@ struct InboxView: View {
             SuggestionCard(suggestion: s, accept: { categorizeConfirm = s }, dismiss: { fm in dismiss(s, fm) })
         case .subscription:
             SuggestionCard(suggestion: s, accept: { subscriptionConfirm = s }, dismiss: { fm in dismiss(s, fm) })
-        default:  // .recurringSplit — creates an expense; immediate-accept (confirm deferred)
-            SuggestionCard(suggestion: s, accept: { accept(s) }, dismiss: { fm in dismiss(s, fm) })
+        case .recurringSplit:
+            // Creates a shared expense — confirm (preview the split) before committing.
+            SuggestionCard(suggestion: s, accept: { recurringSplitConfirm = s }, dismiss: { fm in dismiss(s, fm) })
         }
     }
 
