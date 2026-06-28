@@ -62,6 +62,30 @@ struct AccountRepository {
         try upsertTransactions(try output.ok.body.json)
     }
 
+    /// Plaid drops a pending transaction when it posts (it returns a new posted row and lists the pending id in
+    /// `removed`, which the backend deletes). Our transaction refresh is append-only, so that dead pending row
+    /// lingers locally — a phantom in the account's Pending section that also double-counts in spending. Reap
+    /// it: refetch a recent window (pending are always recent) and delete any LOCAL pending row the server no
+    /// longer returns. Scoped to pending + the window so a truncated page can't take a posted row with it.
+    func reapStalePending(accountId: UUID? = nil, lookbackDays: Int = 45) async throws {
+        guard let since = Calendar.current.date(byAdding: .day, value: -lookbackDays, to: .now) else { return }
+        let responses = try await client.list_transactions_transactions_get(query: .init(
+            account_id: accountId?.uuidString,
+            since: Mapping.dateOnlyFormatter.string(from: since),
+            limit: 500, offset: 0)).ok.body.json
+        try upsertTransactions(responses)           // keep the window fresh while we're here
+        guard responses.count < 500 else { return }  // full page = window truncated; not safe to prune
+        let live = Set(try responses.map { try Mapping.uuid($0.id, field: "Transaction.id") })
+        let cutoff = Calendar.current.startOfDay(for: since)
+        let stale = try context.fetch(FetchDescriptor<Transaction>(
+            predicate: #Predicate { $0.pending && $0.date >= cutoff }))
+        for txn in stale where !live.contains(txn.id) {
+            if let accountId, txn.accountId != accountId { continue }
+            context.delete(txn)
+        }
+        try context.save()
+    }
+
     /// Creates a manual transaction (source=manual) and caches it.
     @discardableResult
     func createTransaction(_ draft: TransactionDraft) async throws -> UUID {

@@ -253,6 +253,7 @@ struct GoalsView: View {
         // Pull a generous window so the donut/budgets and Trends charts have history.
         let since = Calendar.current.date(byAdding: .month, value: -6, to: Date())
         try await env.accounts(context).refreshTransactions(since: since, limit: 500)
+        try await env.accounts(context).reapStalePending()  // clear pending rows Plaid dropped after posting
         try await env.goals(context).refresh()
         // Partner-shared goals (read-only) + the partner accounts that back any shared save goal, so its
         // progress can be shown. Best-effort: a failure here leaves the prior shared lists untouched.

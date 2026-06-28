@@ -49,6 +49,7 @@ struct PlaidRepository {
             let accounts = AccountRepository(client: client, context: context)
             try await accounts.refreshAccounts()
             try await accounts.refreshTransactions()
+            try await accounts.reapStalePending()  // drop pending rows Plaid removed after they posted
             return stats
         case let .unprocessableContent(error): throw BackendError.validation(BackendError.validationMessage(try? error.body.json))
         case let .undocumented(statusCode, _): throw BackendError.fromUndocumented(statusCode)

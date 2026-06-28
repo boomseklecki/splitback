@@ -136,11 +136,13 @@ struct TransactionsView: View {
                                        freshness: account.updatedAt, plaidItemId: account.plaidItemId,
                                        context: context) {
                     try await env.accounts(context).refreshTransactions(accountId: account.id)
+                    try await env.accounts(context).reapStalePending(accountId: account.id)
                 }
             } else {  // all transactions → list scope, all banks (freshness = last bank sync)
                 let freshness = (try? context.fetch(FetchDescriptor<Account>()))?.map(\.updatedAt).max()
                 await env.smartRefresh(source: .bank, freshness: freshness, context: context) {
                     try await env.accounts(context).refreshTransactions(accountId: nil)
+                    try await env.accounts(context).reapStalePending()
                 }
             }
         }
