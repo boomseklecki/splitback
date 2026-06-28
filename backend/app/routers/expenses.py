@@ -180,6 +180,10 @@ async def create_expense(
 ) -> Expense:
     group = await _get_group_or_404(session, body.group_id)
     await assert_group_member(session, body.group_id, caller)
+    # A since-posted (deleted) pending transaction → clean 404, not an FK 500 on commit (the app keys its
+    # "already posted" prompt off this). Matches link_expense_transaction.
+    if body.transaction_id is not None and await session.get(Transaction, body.transaction_id) is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
     if group.backend_type == BackendType.self_hosted:
         _validate_splits(body.amount, body.splits)
 

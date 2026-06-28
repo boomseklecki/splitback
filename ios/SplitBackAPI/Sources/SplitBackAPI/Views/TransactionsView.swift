@@ -313,6 +313,9 @@ struct ManualTransactionView: View {
 /// Presented from `TransactionDetailView`'s "Add to a Group".
 struct NewExpenseFromTransactionView: View {
     let transaction: Transaction
+    /// Relayed up when the create fails because this (pending) transaction posted — the parent raises the
+    /// "already posted" prompt after this sheet dismisses.
+    var onTransactionGone: () -> Void = {}
 
     @Environment(AppEnvironment.self) private var env
     @Environment(\.modelContext) private var context
@@ -324,6 +327,7 @@ struct NewExpenseFromTransactionView: View {
     @Query private var balanceRows: [GroupBalance]
     @State private var selectedGroupId: UUID?
     @State private var showingEditor = false
+    @State private var editorGone = false
     @State private var showSettled = false
     @State private var myNets: [UUID: Decimal] = [:]
     @State private var lastExpense: [UUID: GroupSummary.Last] = [:]
@@ -369,10 +373,13 @@ struct NewExpenseFromTransactionView: View {
                 loadLastExpenses()
             }
             .onChange(of: showSettled) { _, _ in loadLastExpenses() }
-            .sheet(isPresented: $showingEditor) {
+            .sheet(isPresented: $showingEditor, onDismiss: {
+                if editorGone { editorGone = false; onTransactionGone(); dismiss() }
+            }) {
                 if let selectedGroup {
                     ExpenseEditView(group: selectedGroup, members: memberIdentifiers,
-                                    prefill: .from(transaction))
+                                    prefill: .from(transaction),
+                                    onCreateTransactionGone: transaction.pending ? { editorGone = true } : nil)
                 }
             }
         }

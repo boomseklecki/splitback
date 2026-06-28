@@ -124,6 +124,12 @@ async def test_expense_validation():
         assert len(created["splits"]) == 2 and len(created["items"]) == 1
         assert sum(Decimal(str(s["owed_share"])) for s in created["splits"]) == Decimal("40.00")
 
+        # Non-existent transaction_id (e.g. a since-posted pending row) → clean 404, not an FK 500.
+        missing_txn = dict(payload)
+        missing_txn["transaction_id"] = "00000000-0000-0000-0000-0000000000bb"
+        status, _ = _req("POST", "/expenses", missing_txn)
+        assert status == 404, (status, _)
+
         # unbalanced -> 422
         bad = dict(payload)
         bad["splits"] = [

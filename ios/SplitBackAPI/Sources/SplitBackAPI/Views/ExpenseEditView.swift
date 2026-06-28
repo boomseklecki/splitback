@@ -17,6 +17,10 @@ struct ExpenseEditView: View {
 
     let editing: Expense?
     let attachImageData: Data?
+    /// When a *create* fails because the source transaction no longer exists server-side (a pending charge
+    /// that posted), the caller handles it (e.g. raises the "already posted" prompt) instead of a generic
+    /// error. Only set by the from-transaction flow; nil everywhere else.
+    let onCreateTransactionGone: (() -> Void)?
 
     @Environment(AppEnvironment.self) private var env
     @Environment(\.modelContext) private var context
@@ -63,9 +67,11 @@ struct ExpenseEditView: View {
     }
 
     init(group: ExpenseGroup, members: [String], editing: Expense? = nil,
-         prefill: ExpensePrefill? = nil, attachImageData: Data? = nil) {
+         prefill: ExpensePrefill? = nil, attachImageData: Data? = nil,
+         onCreateTransactionGone: (() -> Void)? = nil) {
         self.editing = editing
         self.attachImageData = attachImageData
+        self.onCreateTransactionGone = onCreateTransactionGone
         _group = State(initialValue: group)
         let people = members.isEmpty ? (editing?.splits.map(\.userIdentifier) ?? []) : members
         _participants = State(initialValue: people)
@@ -608,7 +614,9 @@ struct ExpenseEditView: View {
                 }
                 dismiss()
             } catch {
-                errorText = errorMessage(error)
+                if let onCreateTransactionGone, editing == nil, (error as? BackendError) == .notFound {
+                    onCreateTransactionGone(); dismiss()
+                } else { errorText = errorMessage(error) }
             }
         }
     }

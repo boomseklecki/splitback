@@ -221,8 +221,8 @@ struct TransactionDetailView: View {
             CategoryPickerView(current: effectiveCategory) { setOverride($0) }
         }
         // Re-resolve the linked expense after creating/linking one (no @Query to auto-update now).
-        .sheet(isPresented: $showingCreate, onDismiss: loadLinkedExpense) {
-            NewExpenseFromTransactionView(transaction: transaction)
+        .sheet(isPresented: $showingCreate, onDismiss: handleSheetDismiss) {
+            NewExpenseFromTransactionView(transaction: transaction) { sheetDetectedGone = true }
         }
         .sheet(isPresented: $showingLinkExpense, onDismiss: handleSheetDismiss) {
             ExpenseLinkPickerView(transaction: transaction) { sheetDetectedGone = true }
