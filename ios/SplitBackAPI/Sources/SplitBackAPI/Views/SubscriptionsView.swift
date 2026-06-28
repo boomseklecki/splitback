@@ -14,6 +14,7 @@ struct SubscriptionsView: View {
     @Query private var decisions: [SuggestionDecision]
 
     @State private var brandModel = SubscriptionBrandModel()
+    @State private var errorText: String?
 
     private var lookup: [String: String] { CategoryMapping.lookup(categoryMaps) }
 
@@ -114,6 +115,7 @@ struct SubscriptionsView: View {
             await brandModel.resolve(subs.map { ($0.id, $0.displayName) }
                                      + candidates.map { ($0.id, $0.displayName) })
         }
+        .errorAlert($errorText)
     }
 
     @ViewBuilder
@@ -141,7 +143,7 @@ struct SubscriptionsView: View {
     private func addRule(merchantKey: String, amount: Decimal, displayName: String, isSubscription: Bool) {
         context.insert(SubscriptionRule(merchantKey: merchantKey, amount: amount,
                                         isSubscription: isSubscription, displayName: displayName))
-        try? context.save()
+        do { try context.save() } catch { errorText = errorMessage(error) }
     }
 
     /// Decline a candidate through the same path the Inbox uses, so the two areas stay in lockstep:
@@ -150,7 +152,8 @@ struct SubscriptionsView: View {
         let name = brandModel.brand(key: c.id, displayName: c.displayName).name
         let sug = Suggestion(id: "sub:\(c.id)", kind: .subscription, title: name, subtitle: "",
                              icon: "repeat", acceptLabel: "Track", merchantKey: c.id, amount: c.amount)
-        try? env.suggestions(context).dismiss(sug, forMerchant: forMerchant)
+        do { try env.suggestions(context).dismiss(sug, forMerchant: forMerchant) }
+        catch { errorText = errorMessage(error) }
     }
 
     /// A compact card for the horizontal "Upcoming" gallery: logo, name, amount, and due date.

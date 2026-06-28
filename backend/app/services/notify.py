@@ -47,5 +47,6 @@ async def notify(session: AsyncSession, recipients: set[str], type: str, content
         await session.commit()
     except Exception:
         log.exception("notify failed")
+        await session.rollback()  # clear the failed tx so the caller's session stays usable (its write already committed)
         return
     push.enqueue(targets, "SplitBack", content)

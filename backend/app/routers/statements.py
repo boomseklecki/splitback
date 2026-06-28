@@ -1,6 +1,7 @@
 """Manual bank-statement (OFX) import — for accounts no aggregator can reach (e.g. Apple Card, which only
 offers a monthly Wallet export). The caller uploads the raw OFX bytes; we find-or-create a manual account and
 upsert its transactions, de-duped by FITID so re-importing an overlapping statement adds nothing new."""
+import logging
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -14,6 +15,8 @@ from app.integrations.statements.institutions import resolve_domain
 from app.models import Account, Transaction
 from app.models.enums import TransactionSource
 from app.schemas.statement import StatementImportResult
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(tags=["statements"])
 
@@ -83,13 +86,21 @@ async def import_ofx(session: AsyncSession, caller: str | None, data: bytes) -> 
     existing = set(await session.scalars(select(Transaction.external_transaction_id).where(
         Transaction.account_id == account.id, Transaction.external_transaction_id.in_(fitids))))
     new_txns = [t for t in parsed.transactions if t.fitid not in existing]
+    imported = 0
     for t in new_txns:
-        session.add(Transaction(
-            account_id=account.id, external_transaction_id=t.fitid, source=TransactionSource.manual,
-            description=t.description, amount=t.amount, currency=parsed.currency, date=t.date,
-            owner_identifier=caller))
+        # Per-row savepoint: a single bad row (e.g. a duplicate FITID within the same file) is skipped
+        # rather than rolling back the whole statement import.
+        try:
+            async with session.begin_nested():
+                session.add(Transaction(
+                    account_id=account.id, external_transaction_id=t.fitid, source=TransactionSource.manual,
+                    description=t.description, amount=t.amount, currency=parsed.currency, date=t.date,
+                    owner_identifier=caller))
+            imported += 1
+        except Exception:
+            log.warning("statement row import failed (fitid=%s); skipping", t.fitid, exc_info=True)
     await session.commit()
 
     return StatementImportResult(account_id=account.id, account_name=account.name,
-                                 imported=len(new_txns), skipped=len(parsed.transactions) - len(new_txns),
+                                 imported=imported, skipped=len(parsed.transactions) - len(new_txns),
                                  total=len(parsed.transactions))

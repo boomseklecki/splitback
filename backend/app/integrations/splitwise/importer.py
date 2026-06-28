@@ -4,6 +4,7 @@ Splitwise's sync client calls are run via asyncio.to_thread so they fit the
 async DB session.
 """
 import asyncio
+import logging
 from uuid import UUID
 
 from sqlalchemy import case, delete, func, select, text
@@ -25,6 +26,8 @@ from app.models import (
     User,
 )
 from app.models.enums import NotificationSource, UserSource
+
+log = logging.getLogger(__name__)
 
 
 async def _upsert_group(
@@ -391,13 +394,26 @@ async def sync_expenses(
     # (created_by / updated_by / each share) carry the SAME identifier we upsert, including any
     # existing user matched by splitwise_user_id/email.
     resolved: dict[str, str] = {}
+    imported = 0
+    failed = 0
     for expense in importable:
-        await _persist_expense(
-            session, expense, user_map,
-            group_cache=group_cache, resolved=resolved, seen_users=seen_users,
-        )
+        # Per-expense savepoint: one bad expense (mapping/integrity error) is skipped, not a whole-window
+        # rollback that loses every expense in the import.
+        try:
+            async with session.begin_nested():
+                await _persist_expense(
+                    session, expense, user_map,
+                    group_cache=group_cache, resolved=resolved, seen_users=seen_users,
+                )
+            imported += 1
+        except Exception:
+            failed += 1
+            log.warning("expense import failed (splitwise_id=%s); skipping",
+                        expense.get("splitwise_id"), exc_info=True)
 
     await session.commit()
+    stats["imported"] = imported  # actual successes (the pre-loop value was the projected count)
+    stats["failed"] = failed
     stats["deleted"] = deleted_count
     stats["users"] = len(seen_users)
     return stats

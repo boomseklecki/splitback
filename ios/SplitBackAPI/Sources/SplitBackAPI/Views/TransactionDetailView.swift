@@ -136,7 +136,7 @@ struct TransactionDetailView: View {
                         Button(rule.isSubscription ? "Remove from Subscriptions" : "Remove Exclusion",
                                role: .destructive) {
                             context.delete(rule)
-                            try? context.save()
+                            do { try context.save() } catch { errorText = errorMessage(error) }
                         }
                     } else {
                         Button { markAsSubscription() } label: {
@@ -299,7 +299,7 @@ struct TransactionDetailView: View {
         context.insert(SubscriptionRule(merchantKey: subscriptionMerchantKey, amount: transaction.amount,
                                         isSubscription: true,
                                         displayName: name.isEmpty ? transaction.details : name))
-        try? context.save()
+        do { try context.save() } catch { errorText = errorMessage(error) }
     }
 
     private func setOverride(_ category: String?) {

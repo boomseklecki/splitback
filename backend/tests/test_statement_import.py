@@ -71,6 +71,40 @@ async def test_reimport_dedups_by_fitid():
         await _purge()
 
 
+# A statement that repeats a FITID within the same file — the second occurrence violates the per-account
+# unique index. Before per-row savepoints this rolled back the WHOLE import (500); now the dup is skipped.
+_DUP_FITID_OFX = b"""OFXHEADER:100
+<OFX>
+<SIGNONMSGSRSV1><SONRS><FI><ORG>Dup Bank</ORG></FI></SONRS></SIGNONMSGSRSV1>
+<CREDITCARDMSGSRSV1><CCSTMTTRNRS><CCSTMTRS>
+<CURDEF>USD
+<CCACCTFROM><ACCTID>dup-acct-zzz</ACCTID></CCACCTFROM>
+<BANKTRANLIST>
+<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20260601<TRNAMT>-5.00<FITID>DUP-1<NAME>FIRST</STMTTRN>
+<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20260602<TRNAMT>-9.00<FITID>DUP-1<NAME>SECOND</STMTTRN>
+<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20260603<TRNAMT>-3.00<FITID>UNIQ-2<NAME>THIRD</STMTTRN>
+</BANKTRANLIST>
+</CCSTMTRS></CCSTMTTRNRS></CREDITCARDMSGSRSV1>
+</OFX>
+"""
+
+
+async def test_duplicate_fitid_in_one_file_skips_not_aborts():
+    await _purge()
+    try:
+        async with async_session() as s:
+            result = await import_ofx(s, OWNER, _DUP_FITID_OFX)  # must NOT raise
+        # 3 parsed, but the repeated DUP-1 can only land once → 2 rows imported, the rest still committed.
+        assert result.imported == 2, result
+        async with async_session() as s:
+            txns = (await s.scalars(select(Transaction).where(
+                Transaction.account_id == result.account_id))).all()
+            fitids = sorted(t.external_transaction_id for t in txns)
+        assert fitids == ["DUP-1", "UNIQ-2"]
+    finally:
+        await _purge()
+
+
 async def test_balance_follows_newest_statement():
     await _purge()
     try:

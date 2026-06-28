@@ -19,6 +19,7 @@ struct AccountsView: View {
     @AppStorage("accounts.sortMode") private var sortModeRaw = SortMode.balance.rawValue
 
     @State private var errorText: String?
+    @State private var refreshFailed = false
     @State private var showingManual = false
     @State private var linkSession: LinkSession?
     @State private var linking = false
@@ -72,6 +73,7 @@ struct AccountsView: View {
     var body: some View {
         NavigationStack {
             List {
+                if refreshFailed { Section { StaleNotice() } }
                 if accounts.isEmpty {
                     Section("Accounts") {
                         Text("No accounts yet. Link a bank in Settings.").foregroundStyle(.secondary)
@@ -223,19 +225,23 @@ struct AccountsView: View {
     /// Pull-to-refresh / on-appear: refresh cached accounts from the backend, then recompute the
     /// last-transaction dates. The Sync button does the heavier Plaid round-trip.
     private func reload() async {
+        refreshFailed = false
         await env.smartRefresh(source: .bank,
                                freshness: accounts.map(\.updatedAt).max(), context: context) {
             try await env.accounts(context).refreshAccounts()
         }
         loadLastTransactions()
-        sharedAccounts = (try? await env.accounts(context).sharedInAccounts()) ?? sharedAccounts
+        // Keep the cached list on failure (don't collapse offline), but flag it so the UI shows a quiet notice.
+        do { sharedAccounts = try await env.accounts(context).sharedInAccounts() }
+        catch { refreshFailed = true }
         if sortMode == .bank { await loadItems() }
     }
 
     /// Fetches the Plaid items (bank → accounts) used by the Bank sort. Best-effort; keeps the prior list
-    /// on failure so the grouping doesn't collapse offline.
+    /// on failure so the grouping doesn't collapse offline (flags a quiet stale notice).
     private func loadItems() async {
-        items = (try? await env.plaid(context).items()) ?? items
+        do { items = try await env.plaid(context).items() }
+        catch { refreshFailed = true }
     }
 
     /// Loads each account's most-recent transaction date with a single-row fetch per account, for the

@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -39,6 +40,8 @@ from app.schemas.splitwise import (
     SyncRequest,
     SyncResult,
 )
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/splitwise", tags=["splitwise"])
 
@@ -362,7 +365,10 @@ async def import_group_local(
     receipts_downloaded = 0
     for source_expense, clone in pairs:
         for receipt in source_expense.receipts:
-            await _copy_uploaded_receipt(session, receipt, clone.id)
+            try:
+                await _copy_uploaded_receipt(session, receipt, clone.id)
+            except Exception:  # best-effort: one bad receipt shouldn't roll back the whole group clone
+                log.warning("receipt copy failed during local import; skipping", exc_info=True)
         if download_receipts and token is not None and source_expense.splitwise_receipt_url:
             if await sw_receipts.download_to_minio(
                 session, expense_id=clone.id,
