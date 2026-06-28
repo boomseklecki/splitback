@@ -616,6 +616,13 @@ struct ExpenseEditView: View {
             } catch {
                 if let onCreateTransactionGone, editing == nil, (error as? BackendError) == .notFound {
                     onCreateTransactionGone(); dismiss()
+                } else if (error as? BackendError) == .notFound {
+                    // create/update 404s when something the expense refers to is gone — its group, or a linked
+                    // transaction (e.g. a pending charge that posted as a new one). Give a reasonable, actionable
+                    // message instead of the bare "Not found."
+                    errorText = "Couldn’t \(editing == nil ? "create" : "save") this expense — something it "
+                        + "refers to (its group or a linked transaction) no longer exists. "
+                        + "Pull to refresh and try again."
                 } else { errorText = errorMessage(error) }
             }
         }
