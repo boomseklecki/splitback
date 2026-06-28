@@ -6,14 +6,16 @@ it can be tested with a fake; `apply_sync` does the DB upserts/deletes.
 import asyncio
 from uuid import UUID
 
-from sqlalchemy import delete, func
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.integrations import logos
 from app.integrations.plaid import mapper
 from app.integrations.storage import minio_client
-from app.models import Account, PlaidItem, Transaction, TransactionSource
+from app.models import (
+    Account, Expense, PlaidItem, Transaction, TransactionItem, TransactionOverride, TransactionSource,
+)
 
 _INSTITUTION_FIELDS = (
     "institution_name", "institution_domain", "institution_color", "institution_status",
@@ -90,6 +92,38 @@ async def _upsert_transaction(
     await session.execute(stmt)
 
 
+async def _carry_pending_data(session: AsyncSession, transactions: list[dict]) -> None:
+    """When a pending charge posts, Plaid re-IDs the posted row and lists the pending id in `removed` (deleted
+    next, with an `ON DELETE CASCADE`/`SET NULL` that would drop the pending row's user data). Plaid's
+    `pending_transaction_id` links the posted row back to the pending one, so carry that user data forward
+    first: per-user overrides (category + budget toggles), receipt items, and any expense link."""
+    links = [
+        (t["pending_transaction_id"], t["plaid_transaction_id"])
+        for t in transactions if t.get("pending_transaction_id")
+    ]
+    for pending_plaid_id, posted_plaid_id in links:
+        by_plaid = dict((await session.execute(
+            select(Transaction.plaid_transaction_id, Transaction.id).where(
+                Transaction.plaid_transaction_id.in_([pending_plaid_id, posted_plaid_id])))).all())
+        old_id, new_id = by_plaid.get(pending_plaid_id), by_plaid.get(posted_plaid_id)
+        if not old_id or not new_id or old_id == new_id:
+            continue  # pending already reaped in a prior sync, or posted not found → nothing to carry
+        # Overrides are per-user (unique on owner+txn): re-point only owners who haven't already overridden
+        # the posted row, so we never clobber a categorization the user set after it posted.
+        taken = set((await session.scalars(select(TransactionOverride.owner_identifier).where(
+            TransactionOverride.transaction_id == new_id))).all())
+        for o in (await session.scalars(select(TransactionOverride).where(
+                TransactionOverride.transaction_id == old_id))).all():
+            if o.owner_identifier not in taken:
+                o.transaction_id = new_id
+        # Items + expense link have no per-user uniqueness → plain bulk re-point.
+        await session.execute(update(TransactionItem)
+                              .where(TransactionItem.transaction_id == old_id).values(transaction_id=new_id))
+        await session.execute(update(Expense)
+                              .where(Expense.transaction_id == old_id).values(transaction_id=new_id))
+    await session.flush()  # land the re-points before the `removed` DELETE / its cascade
+
+
 async def apply_sync(
     session: AsyncSession, item: PlaidItem, accounts: list[dict], sync_result: dict
 ) -> dict:
@@ -106,6 +140,9 @@ async def apply_sync(
             session, account_map, mapper.map_transaction(transaction),
             owner_identifier=item.user_identifier,
         )
+
+    # Carry pending-row user data onto the just-posted rows before the pending rows are removed below.
+    await _carry_pending_data(session, sync_result["added"] + sync_result["modified"])
 
     if sync_result["removed"]:
         await session.execute(

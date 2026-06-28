@@ -102,6 +102,9 @@ def _normalize_transaction(transaction: dict) -> dict:
         "date": transaction.get("date"),
         "category": _transaction_category(transaction),
         "pending": transaction.get("pending", False),
+        # On a posted transaction, points back to the pending transaction it replaced (used during sync to
+        # carry the pending row's user data — overrides, items, expense link — onto the posted row).
+        "pending_transaction_id": transaction.get("pending_transaction_id"),
     }
 
 
