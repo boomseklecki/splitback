@@ -179,6 +179,10 @@ async def test_expense_detail_patch_override_and_delete():
         assert len(patched["splits"]) == 1
         assert patched["splits"][0]["user_identifier"] == "matt"
 
+        # PATCH with a non-existent transaction_id (e.g. a since-posted pending row) → clean 404, not FK 500.
+        assert _req("PATCH", f"/expenses/{eid}",
+                    {"transaction_id": "00000000-0000-0000-0000-0000000000cc"})[0] == 404
+
         # per-user budget override (open mode: no caller, so it round-trips as null but the route works)
         status, body = _req("PATCH", f"/expenses/{eid}/override", {"include_in_spending": False})
         assert status == 200

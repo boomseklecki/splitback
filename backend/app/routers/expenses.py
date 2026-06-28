@@ -284,6 +284,10 @@ async def update_expense(
     target_group = await _get_group_or_404(session, body.group_id or expense.group_id)
     if body.group_id is not None:  # moving the expense — the caller must also be in the destination
         await assert_group_member(session, body.group_id, caller)
+    # A since-posted (deleted) pending transaction → clean 404, not an FK 500 on commit. Matches
+    # create_expense / link_expense_transaction.
+    if body.transaction_id is not None and await session.get(Transaction, body.transaction_id) is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
     new_amount = body.amount if body.amount is not None else expense.amount
     if target_group.backend_type == BackendType.self_hosted:
         splits_to_check = body.splits if body.splits is not None else expense.splits

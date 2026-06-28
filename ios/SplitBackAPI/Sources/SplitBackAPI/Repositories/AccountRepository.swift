@@ -119,12 +119,14 @@ struct AccountRepository {
     /// Find Related, or a subscription). The PATCHes run **concurrently** and every response is cached in a
     /// **single** save — so a card covering dozens of rows doesn't fan out into N sequential round-trips and N
     /// store writes (each of which re-runs every `@Query`, which is what made the Inbox jank after a bulk accept).
+    /// A transaction the server no longer has (404 — e.g. a pending row that posted & was reaped) is **skipped**
+    /// so one stale member can't fail the whole batch; the rest still apply. (The single-id overload keeps
+    /// throwing `.notFound` — `TransactionDetailView` uses it to raise the "already posted" prompt.)
     func setCategoryOverride(ids: [UUID], category: String?) async throws {
         guard !ids.isEmpty else { return }
-        guard ids.count > 1 else { return try await setCategoryOverride(id: ids[0], category: category) }
         let client = self.client
         let responses = try await withThrowingTaskGroup(
-            of: Components.Schemas.TransactionResponse.self
+            of: Components.Schemas.TransactionResponse?.self
         ) { group in
             for id in ids {
                 group.addTask {
@@ -135,12 +137,14 @@ struct AccountRepository {
                     case let .ok(ok): return try ok.body.json
                     case let .unprocessableContent(error):
                         throw BackendError.validation(BackendError.validationMessage(try? error.body.json))
+                    case .undocumented(404, _):
+                        return nil  // transaction gone (pending posted & reaped) — skip, apply to the rest
                     case let .undocumented(statusCode, _): throw BackendError.fromUndocumented(statusCode)
                     }
                 }
             }
             var out: [Components.Schemas.TransactionResponse] = []
-            for try await r in group { out.append(r) }
+            for try await r in group { if let r { out.append(r) } }
             return out
         }
         try upsertTransactions(responses)
