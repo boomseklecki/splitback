@@ -84,11 +84,22 @@ struct SettingsView: View {
                         ForEach(LinkSensitivity.allCases) { Text($0.label).tag($0.rawValue) }
                     }
                     .pickerStyle(.segmented)
+                    .onChange(of: linkSensitivityRaw) { Task { await env.pushLinkSensitivity() } }
                 } header: {
                     Text("Suggestions")
                 } footer: {
                     Text("How aggressively the Inbox suggests linking a bank charge to an expense. "
                          + "Looser shows more matches — you’ll still confirm each one before it links.")
+                }
+
+                Section {
+                    NavigationLink {
+                        NotificationSettingsView()
+                    } label: {
+                        Label("Notifications", systemImage: "bell.badge")
+                    }
+                } footer: {
+                    Text("Choose which activity shows in your Inbox and which pushes to your device.")
                 }
 
                 Section {

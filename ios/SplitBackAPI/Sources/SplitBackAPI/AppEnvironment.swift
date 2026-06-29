@@ -229,6 +229,7 @@ public final class AppEnvironment {
     var invites: InviteRepository { .init(client: client) }
     var connections: ConnectionRepository { .init(client: client) }
     var notifications: NotificationRepository { .init(client: client) }
+    var notificationPrefs: NotificationPrefsRepository { .init(client: client) }
     var institutions: InstitutionRepository { .init(client: client) }
     var devices: DeviceRepository { .init(client: client) }
     func statements(_ context: ModelContext) -> StatementRepository { .init(client: client, context: context) }
@@ -264,7 +265,9 @@ public final class AppEnvironment {
     /// after refreshes so the badge is current before the user opens the tab.
     func refreshInboxBadge(_ context: ModelContext) async {
         let suggestions = (try? await suggestions(context).current().count) ?? 0
-        let unread = (try? await notifications.list().filter { !$0.read }.count) ?? 0
+        let unread = (try? await notifications.list().filter {
+            !$0.read && !NotificationPrefs.shared.isHidden(type: $0._type, source: $0.source)
+        }.count) ?? 0
         inboxBadge = suggestions + unread
     }
     var serverSettings: ServerSettingsRepository { .init(client: client) }
@@ -289,11 +292,18 @@ public final class AppEnvironment {
         SuggestionSync.applyIfNewer(from: rows, context: context)
         OrderPreference.tabs.applyIfNewer(from: rows)
         OrderPreference.goals.applyIfNewer(from: rows)
+        LinkSensitivitySync.applyIfNewer(from: rows)
+        if let tokens = try? await notificationPrefs.fetch() { NotificationPrefs.shared.apply(tokens) }
     }
 
     /// Manual "Sync now" from Categories settings: restore a newer backup, else back up local.
     func syncCategoriesNow(_ context: ModelContext) async {
         await CategorySync.syncNow(context, client: client)
+    }
+
+    /// Back up the link-sensitivity choice to the preferences blob (call after the Settings picker changes).
+    func pushLinkSensitivity() async {
+        await LinkSensitivitySync.pushBestEffort(client: client)
     }
 
     /// Persist a new main-tab order locally (the TabView re-renders) and back it up to the preferences blob.

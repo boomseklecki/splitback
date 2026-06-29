@@ -184,8 +184,11 @@ struct InboxView: View {
     /// Pull the latest activity feed (Splitwise sync + the generic notifications list); keeps the prior feed
     /// on failure.
     private func loadActivity() async -> [Components.Schemas.NotificationResponse] {
+        if let tokens = try? await env.notificationPrefs.fetch() { NotificationPrefs.shared.apply(tokens) }
         _ = try? await env.splitwise.syncNotifications()
-        return (try? await env.notifications.list()) ?? activity
+        guard let all = try? await env.notifications.list() else { return activity }
+        // Hide kinds the user has feed-muted (the rows still exist server-side — the audit log is complete).
+        return all.filter { !NotificationPrefs.shared.isHidden(type: $0._type, source: $0.source) }
     }
 
     /// Accept a card with a light, synchronous cache recompute — never the full `reload()` (which re-runs the
@@ -224,7 +227,9 @@ struct InboxView: View {
         guard !n.read, let id = try? Mapping.uuid(n.id, field: "Notification.id") else { return }
         Task {
             try? await env.notifications.markRead(id: id)
-            activity = (try? await env.notifications.list()) ?? activity
+            if let all = try? await env.notifications.list() {
+                activity = all.filter { !NotificationPrefs.shared.isHidden(type: $0._type, source: $0.source) }
+            }
             updateBadge()
         }
     }

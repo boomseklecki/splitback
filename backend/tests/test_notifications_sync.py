@@ -5,7 +5,7 @@ from sqlalchemy import delete, select
 from app.db import async_session
 from app.integrations.splitwise import importer
 from app.integrations.splitwise.client import _clean_content
-from app.models import Notification, SplitwiseToken
+from app.models import Notification, NotificationMute, SplitwiseToken
 from app.models.enums import NotificationSource
 from app.services import sync
 
@@ -15,6 +15,7 @@ OWNER = "nsync-owner"
 async def _purge():
     async with async_session() as s:
         await s.execute(delete(Notification).where(Notification.owner_identifier == OWNER))
+        await s.execute(delete(NotificationMute).where(NotificationMute.owner_identifier == OWNER))
         await s.commit()
 
 
@@ -89,6 +90,27 @@ async def test_cold_start_lands_rows_without_pushing():
         await _sync([_note("c-1", "Alex added Dinner"), _note("c-3", "Pat added Tea")],
                     push=True, capture=captured)
         assert len(captured) == 1 and captured[0][1] == "Pat added Tea"   # only the new one, now non-cold
+    finally:
+        await _purge()
+
+
+async def test_push_mute_splitwise_source_keeps_feed_drops_push():
+    await _purge()
+    try:
+        async with async_session() as s:
+            # Seed a prior row (so it's not a cold start) + a source:splitwise PUSH mute.
+            s.add(Notification(owner_identifier=OWNER, source=NotificationSource.splitwise,
+                               splitwise_id="m-old", content="Sam added Coffee"))
+            s.add(NotificationMute(owner_identifier=OWNER, token="push:source:splitwise"))
+            await s.commit()
+        captured: list = []
+        await _sync([_note("m-new", "Alex added Dinner"), _note("m-old", "Sam added Coffee")],
+                    push=True, capture=captured)
+        assert captured == []                                   # push muted for splitwise → no alert
+        async with async_session() as s:
+            ids = set(await s.scalars(select(Notification.splitwise_id).where(
+                Notification.owner_identifier == OWNER)))
+        assert ids == {"m-old", "m-new"}                        # but the row still lands (feed intact)
     finally:
         await _purge()
 

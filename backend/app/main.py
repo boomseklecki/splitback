@@ -21,6 +21,7 @@ from app.routers import (
     institutions,
     invites,
     logos,
+    notification_mutes,
     notifications,
     plaid,
     preferences,
@@ -89,6 +90,7 @@ app.include_router(goals.router, dependencies=_protected)
 app.include_router(connections.router, dependencies=_protected)
 app.include_router(devices.router, dependencies=_protected)
 app.include_router(notifications.router, dependencies=_protected)
+app.include_router(notification_mutes.router, dependencies=_protected)
 app.include_router(preferences.router, dependencies=_protected)
 app.include_router(institutions.router, dependencies=_protected)  # reference data (OFX-importable banks)
 app.include_router(backups.router)  # each route self-gates with require_admin

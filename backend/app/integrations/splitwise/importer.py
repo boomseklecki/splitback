@@ -23,6 +23,7 @@ from app.models import (
     Group,
     GroupMember,
     Notification,
+    NotificationMute,
     Split,
     User,
 )
@@ -524,14 +525,20 @@ async def sync_notifications(
             Notification.source == NotificationSource.splitwise,
             Notification.splitwise_id.is_not(None))))
     first_sync = not existing
+    # The owner's PUSH mutes (feed rows are written regardless). source:splitwise mutes all; per-type too.
+    muted = set(await session.scalars(select(NotificationMute.token).where(
+        NotificationMute.owner_identifier == owner_identifier,
+        NotificationMute.token.like("push:%")))) if push else set()
+    splitwise_muted = "push:source:splitwise" in muted
     to_push: list[str] = []
     for note in notifications:
         swid = note.get("splitwise_id")
         if not swid:
             continue
         content = note.get("content") or ""
-        if push and not first_sync and swid not in existing and not content.lower().startswith("you "):
-            to_push.append(content)  # new partner activity (not my own action) → alert
+        if (push and not first_sync and swid not in existing and not content.lower().startswith("you ")
+                and not splitwise_muted and f"push:{note.get('type')}" not in muted):
+            to_push.append(content)  # new partner activity (not my own action), not push-muted → alert
         values = {
             "owner_identifier": owner_identifier,
             "source": NotificationSource.splitwise,

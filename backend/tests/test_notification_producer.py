@@ -8,7 +8,8 @@ from sqlalchemy import delete, select
 
 from app.db import async_session
 from app.models import (Account, BackendType, Connection, Expense, Goal, Group, GroupMember,
-                        Notification, User)
+                        Notification, NotificationMute, User)
+from app.services import notify as notify_svc
 from app.models.enums import NotificationSource, ShareLevel
 from app.routers.accounts import update_account
 from app.routers.connections import accept_connection, create_connection
@@ -25,6 +26,7 @@ ALICE, BOB = "ntp-alice", "ntp-bob"
 async def _purge():
     async with async_session() as s:
         await s.execute(delete(Notification).where(Notification.owner_identifier.in_([ALICE, BOB])))
+        await s.execute(delete(NotificationMute).where(NotificationMute.owner_identifier.in_([ALICE, BOB])))
         await s.execute(delete(Connection).where(
             Connection.requester_identifier.in_([ALICE, BOB]) | Connection.addressee_identifier.in_([ALICE, BOB])))
         await s.execute(delete(Goal).where(Goal.owner_identifier == ALICE))
@@ -118,6 +120,33 @@ async def test_local_expense_notifies_members_not_actor():
         assert "expense_added" in await _types(BOB)
         assert "expense_added" not in await _types(ALICE)            # actor excluded
     finally:
+        await _purge()
+
+
+async def test_push_mute_suppresses_push_keeps_feed_row():
+    await _purge(); await _seed_users()
+    async with async_session() as s:
+        g = Group(name="House", backend_type=BackendType.self_hosted)
+        s.add(g); await s.flush()
+        s.add_all([GroupMember(group_id=g.id, user_identifier=ALICE),
+                   GroupMember(group_id=g.id, user_identifier=BOB)])
+        s.add(NotificationMute(owner_identifier=BOB, token="push:expense_added"))  # Bob mutes push
+        await s.commit(); gid = g.id
+    pushed: list = []
+    orig = notify_svc.push.enqueue
+    notify_svc.push.enqueue = lambda owners, title, body: pushed.append(set(owners))
+    try:
+        async with async_session() as s:
+            await create_expense(ExpenseCreate(
+                group_id=gid, description="Dinner", amount=Decimal("100"), date=date(2026, 6, 1),
+                created_by=ALICE, splits=[
+                    SplitInput(user_identifier=ALICE, paid_share=Decimal("100"), owed_share=Decimal("50")),
+                    SplitInput(user_identifier=BOB, paid_share=Decimal("0"), owed_share=Decimal("50"))]),
+                caller=ALICE, session=s)
+        assert "expense_added" in await _types(BOB)                  # feed row still written (audit intact)
+        assert all(BOB not in owners for owners in pushed)           # but Bob is NOT pushed
+    finally:
+        notify_svc.push.enqueue = orig
         await _purge()
 
 

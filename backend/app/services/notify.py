@@ -7,11 +7,22 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import server_settings
-from app.models import GroupMember, Notification, User
+from app.models import GroupMember, Notification, NotificationMute, User
 from app.models.enums import NotificationSource
 from app.services import push
 
 log = logging.getLogger(__name__)
+
+
+async def push_muted_owners(session: AsyncSession, owners: set[str], type: str, source: str) -> set[str]:
+    """Of `owners`, those who've muted PUSH for this notification's type or its source (`push:` tokens).
+    `feed:` tokens are client-side display prefs and are intentionally ignored here."""
+    if not owners:
+        return set()
+    tokens = {f"push:{type}", f"push:source:{source}"}
+    return set(await session.scalars(
+        select(NotificationMute.owner_identifier).where(
+            NotificationMute.owner_identifier.in_(owners), NotificationMute.token.in_(tokens))))
 
 
 async def group_recipients(session: AsyncSession, group_id: UUID) -> set[str]:
@@ -35,6 +46,8 @@ async def notify(session: AsyncSession, recipients: set[str], type: str, content
         return
     try:
         retention = int(await server_settings.get(session, "notifications_retention_count"))
+        # Everyone gets the feed row (the audit log stays complete); only push goes to non-push-muted owners.
+        muted = await push_muted_owners(session, targets, type, NotificationSource.app.value)
         for owner in targets:
             session.add(Notification(owner_identifier=owner, source=NotificationSource.app,
                                      type=type, content=content))
@@ -49,4 +62,4 @@ async def notify(session: AsyncSession, recipients: set[str], type: str, content
         log.exception("notify failed")
         await session.rollback()  # clear the failed tx so the caller's session stays usable (its write already committed)
         return
-    push.enqueue(targets, "SplitBack", content)
+    push.enqueue(targets - muted, "SplitBack", content)

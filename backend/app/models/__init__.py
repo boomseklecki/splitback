@@ -20,6 +20,7 @@ from app.models.group_member import GroupMember
 from app.models.group_override import GroupOverride
 from app.models.invite import Invite
 from app.models.notification import Notification
+from app.models.notification_mute import NotificationMute
 from app.models.oauth_state import SplitwiseOAuthState
 from app.models.plaid_item import PlaidItem
 from app.models.receipt import Receipt
@@ -49,6 +50,7 @@ __all__ = [
     "GroupOverride",
     "Invite",
     "Notification",
+    "NotificationMute",
     "NotificationSource",
     "PlaidItem",
     "Receipt",

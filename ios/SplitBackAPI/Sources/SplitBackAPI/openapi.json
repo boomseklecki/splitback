@@ -3969,6 +3969,78 @@
         }
       }
     },
+    "/notification-prefs": {
+      "get": {
+        "tags": [
+          "notification-prefs"
+        ],
+        "summary": "Get Notification Prefs",
+        "description": "The caller's notification preference tokens (push/feed mutes). Empty = everything pushed + shown.",
+        "operationId": "get_notification_prefs_notification_prefs_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPrefs"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "notification-prefs"
+        ],
+        "summary": "Put Notification Prefs",
+        "description": "Replace the caller's full set of preference tokens (delete-all + insert).",
+        "operationId": "put_notification_prefs_notification_prefs_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationPrefs"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPrefs"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/preferences": {
       "get": {
         "tags": [
@@ -5936,6 +6008,23 @@
           "authenticated"
         ],
         "title": "MeResponse"
+      },
+      "NotificationPrefs": {
+        "properties": {
+          "tokens": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tokens"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tokens"
+        ],
+        "title": "NotificationPrefs",
+        "description": "The caller's notification preference tokens (`\"<channel>:<selector>\"`). Used for both the GET\nresponse and the PUT body (replace-set semantics)."
       },
       "NotificationResponse": {
         "properties": {
