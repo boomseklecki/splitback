@@ -1,60 +1,52 @@
 SplitBack backend deploy verification (uplink / Linux full-stack)
 ================================================================
 
-Commit tested:  8b1789a  (main HEAD)
+Commit tested:  dec82dd  (main HEAD)
 Date (UTC):     2026-06-29
-Migration head: 0040_pending_txn_id  (unchanged — no new migration)
+Migration head: 0041_notification_prefs   (NEW — upgraded 0040 -> 0041)
 
 Change in scope (backend + iOS contract, single commit):
-  8b1789a  Splitwise: fast notifications-only poll for near-real-time partner-activity push
-    - server_settings.py: new key notifications_poll_minutes (int, default 0); added to
-      ServerSettingsResponse + ServerSettingsUpdate schemas.
-    - services/notifications_scheduler.py (new): 60s-tick scheduler (run_scheduler), launched in
-      main.py lifespan (off unless notifications_poll_minutes > 0).
-    - services/sync.py: new sync_notifications_all; both splitwise loops now iterate detached value
-      tuples + UPDATE the cursor (fixes a latent multi-token MissingGreenlet on rollback).
-    - importer.sync_notifications: dropped `limit` param -> fetch min(retention, 100); cold-start
-      push guard.
-    - Regenerated ios/openapi.json + iOS ServerSettingsView control.
+  dec82dd  Notification preferences: per-user push/feed mute (two channels) + link-sensitivity sync
+    - migration 0041_notification_prefs (down_revision 0040_pending_txn_id): new notification_mutes
+      table (owner_identifier, token). Revision id 23 chars (<=32 OK).
+    - new model app/models/notification_mute.py (NotificationMute).
+    - router app/routers/notification_mutes.py (GET/PUT /notification-prefs), registered under
+      _protected in main.py; schema app/schemas/notification_mute.py.
+    - notify.py: push_muted_owners() — feed row written for ALL, push only to non-push-muted.
+    - importer.sync_notifications: drops push for push:source:splitwise / push:<type> mutes.
+    - regenerated ios/openapi.json + iOS (NotificationSettingsView, prefs cache,
+      link-sensitivity blob sync).
 
 BUILD / RESTART:  OK
-  - git merge --ff-only origin/main -> 8b1789a (clean).
+  - git merge --ff-only origin/main -> dec82dd (clean).
   - docker compose build api api-test -> built.
   - Recreated api (real, :8000) + db-test/api-test. Up.
-  - alembic current -> 0040_pending_txn_id (head); no migration applied.
 
-STARTUP (api logs): CLEAN
-  - "Application startup complete." / Uvicorn running; no tracebacks.
-  - main.py lifespan now launches 4 background tasks:
-      run_backup_scheduler, run_sync_scheduler, run_notifications_scheduler (NEW), run_demo_prune_scheduler.
-    notifications_scheduler is a no-op unless notifications_poll_minutes > 0.
+MIGRATION:  APPLIED on BOTH databases
+  - REAL api db:  0040_pending_txn_id -> 0041_notification_prefs  (head: 0041_notification_prefs)
+  - TEST db:      0040_pending_txn_id -> 0041_notification_prefs  (head: 0041_notification_prefs)
+    "notification_mutes (per-owner push/feed preferences)"
 
 IMPORT / WIRING SANITY (api-test):
   - app.main imports clean.
-  - notifications_scheduler.run_scheduler present.
-  - sync.sync_notifications_all present.
-  - importer.sync_notifications signature: (session, client, owner_identifier, retention,
-                                            access_token, push)   [`limit` dropped]
-  - server_settings schemas: notifications_poll_minutes present in BOTH Response and Update.
+  - models.notification_mute.NotificationMute present.
+  - services.notify.push_muted_owners present.
 
-CONTRACT (presence-check, per flattened-nullables memory):
-  - notifications_poll_minutes present in committed ios/openapi.json AND the live /openapi.json.
+CONTRACT / ROUTE (presence-check, per flattened-nullables memory):
+  - GET/PUT /notification-prefs present in live /openapi.json AND committed ios/openapi.json.
 
 TEST RUN (api-test stack, incl. HTTP/MinIO-dependent tests):  PASS
-  TOTAL passing: 219   FAIL: 0   (all modules green)
+  TOTAL passing: 223   FAIL: 0   (all modules green)
 
 Watch-list (all PASS):
-  test_notifications_sync ...... 7   (incl. test_sync_notifications_all_per_token_isolation)
-  test_notifications ........... 4
-  test_notification_producer ... 4
-  test_splitwise_auth .......... 3
-  test_splitwise_scoped_sync ... 4
-  test_server_settings ......... 4
+  test_notification_prefs ...... 2   (test_put_then_get_roundtrips_and_replaces)
+  test_notification_producer ... 5   (extended: push-mute keeps feed row, drops push)
+  test_notifications_sync ...... 8   (extended: splitwise push-mute)
 
 FAILURES: none.
 
-SUMMARY: PASS. 8b1789a builds, restarts with clean startup (4 background tasks incl. the new
-notifications poll), and passes the full backend suite (219/219). Migration head 0040 (untouched).
-New fast-poll surface verified: notifications_poll_minutes setting, run_scheduler, sync_notifications_all,
-sync_notifications limit-drop. Contract aligned. No Linux-side code changes; this file is the only
-commit from here.
+SUMMARY: PASS. dec82dd builds, migrates 0040 -> 0041 on both real and test DBs, restarts, and passes
+the full backend suite (223/223). New per-user notification-prefs surface verified: notification_mutes
+table, NotificationMute model, GET/PUT /notification-prefs route, push_muted_owners two-channel mute
+(feed-for-all, push-for-unmuted), splitwise push-mute drop. Contract aligned. No Linux-side code
+changes; this file is the only commit from here.
