@@ -24,4 +24,11 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate, UNUserNotification
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 willPresent notification: UNNotification) async
         -> UNNotificationPresentationOptions { [.banner, .sound, .badge] }
+
+    /// A tapped notification: route to its deep-link target (the NSE decrypted it into `userInfo["target"]`).
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                didReceive response: UNNotificationResponse) async {
+        let target = response.notification.request.content.userInfo["target"] as? [String: String]
+        await DeepLinkRouter.shared.set(type: target?["type"], id: target?["id"])
+    }
 }

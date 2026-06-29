@@ -213,7 +213,7 @@ async def create_expense(
             session, await notify_svc.group_recipients(session, body.group_id),
             "settle_up" if settle else "expense_added",
             f"{actor} recorded a settle-up" if settle else f"{actor} added “{body.description}”",
-            actor=caller)
+            actor=caller, entity_type="expense", entity_id=str(expense.id))
     return await _load_detail(session, expense.id, caller)
 
 
@@ -328,7 +328,8 @@ async def update_expense(
         actor = await notify_svc.display_name(session, caller)
         await notify_svc.notify(
             session, await notify_svc.group_recipients(session, expense.group_id),
-            "expense_edited", f"{actor} edited “{expense.description}”", actor=caller)
+            "expense_edited", f"{actor} edited “{expense.description}”", actor=caller,
+            entity_type="expense", entity_id=str(expense.id))
     return await _load_detail(session, expense_id, caller)
 
 

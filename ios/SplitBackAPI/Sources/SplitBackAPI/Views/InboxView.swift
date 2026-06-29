@@ -49,6 +49,7 @@ struct InboxView: View {
             }
             .navigationDestination(for: FriendRow.self) { FriendDetailView(friend: $0) }
             .navigationDestination(for: Goal.self) { GoalDetailView(goal: $0) }
+            .navigationDestination(for: NotificationTarget.self) { NotificationTargetView(target: $0) }
             .sheet(item: $budgetPrefill) { p in
                 GoalEditView(prefillCategory: p.category, prefillAmount: p.amount, prefillShared: true)
             }
@@ -123,7 +124,19 @@ struct InboxView: View {
         Button("Dismiss", role: .destructive) { dismiss(s, false) }
     }
 
+    @ViewBuilder
     private func activityRow(_ n: Components.Schemas.NotificationResponse) -> some View {
+        // App-native rows carry a deep-link target → tap drills into the entity (and marks read). Splitwise
+        // rows (no entity ref) keep the plain tap-to-read behavior.
+        if let target = NotificationTarget(type: n.entity_type, id: n.entity_id) {
+            NavigationLink(value: target) { activityRowContent(n) }
+                .simultaneousGesture(TapGesture().onEnded { markRead(n) })
+        } else {
+            activityRowContent(n).contentShape(Rectangle()).onTapGesture { markRead(n) }
+        }
+    }
+
+    private func activityRowContent(_ n: Components.Schemas.NotificationResponse) -> some View {
         HStack(spacing: 12) {
             Image(systemName: n.source == "splitwise" ? "dollarsign.circle" : "bell")
                 .font(.title3).foregroundStyle(n.read ? Color.secondary : Color.accentColor).frame(width: 28)
@@ -136,8 +149,6 @@ struct InboxView: View {
             Spacer()
             if !n.read { Circle().fill(.tint).frame(width: 8, height: 8) }
         }
-        .contentShape(Rectangle())
-        .onTapGesture { markRead(n) }
     }
 
     /// Progressive load: paint cached cards instantly, then stream in the activity feed, AI-derived cards, and

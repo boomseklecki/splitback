@@ -21,6 +21,7 @@ final class NotificationService: UNNotificationServiceExtension {
            let decrypted = PushCrypto.open(epk: epk, box: box, privateKey: privateKey) {
             content.title = decrypted.title
             content.body = decrypted.body
+            if let target = decrypted.target { content.userInfo["target"] = target }  // for the tap handler
         }
         contentHandler(content ?? request.content)
     }

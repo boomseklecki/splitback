@@ -10,10 +10,11 @@ public enum PushCrypto {
     static let salt = Data("SplitBack-push-v1".utf8)
     static let info = Data("SplitBack-push-v1".utf8)
 
-    /// Decrypts a sealed `{title, body}` payload. `epk`/`box` are base64; returns nil on any malformed input
-    /// or authentication failure (the extension then leaves the generic fallback alert in place).
-    public static func open(epk: String, box: String,
-                            privateKey: P256.KeyAgreement.PrivateKey) -> (title: String, body: String)? {
+    /// Decrypts a sealed `{title, body[, target]}` payload. `epk`/`box` are base64; returns nil on any
+    /// malformed input or authentication failure (the extension then leaves the generic fallback alert in
+    /// place). `target` is the optional deep-link payload (`{type, id}`) the extension surfaces into userInfo.
+    public static func open(epk: String, box: String, privateKey: P256.KeyAgreement.PrivateKey)
+        -> (title: String, body: String, target: [String: String]?)? {
         guard let epkData = Data(base64Encoded: epk), let boxData = Data(base64Encoded: box),
               let ephemeral = try? P256.KeyAgreement.PublicKey(x963Representation: epkData),
               let shared = try? privateKey.sharedSecretFromKeyAgreement(with: ephemeral) else { return nil }
@@ -21,8 +22,8 @@ public enum PushCrypto {
                                                  outputByteCount: 32)
         guard let sealedBox = try? AES.GCM.SealedBox(combined: boxData),       // nonce‖ciphertext‖tag
               let plaintext = try? AES.GCM.open(sealedBox, using: key),
-              let obj = try? JSONSerialization.jsonObject(with: plaintext) as? [String: String],
-              let title = obj["title"], let body = obj["body"] else { return nil }
-        return (title, body)
+              let obj = try? JSONSerialization.jsonObject(with: plaintext) as? [String: Any],
+              let title = obj["title"] as? String, let body = obj["body"] as? String else { return nil }
+        return (title, body, obj["target"] as? [String: String])
     }
 }

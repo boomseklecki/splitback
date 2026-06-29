@@ -23,6 +23,17 @@ def test_seal_open_roundtrip():
     assert out == {"title": "SplitBack", "body": "Alice added 'Dinner'"}
 
 
+def test_seal_includes_optional_deeplink_target():
+    priv, pub = _keypair()
+    target = {"type": "expense", "id": "11111111-1111-1111-1111-111111111111"}
+    sealed = crypto_push.seal("SplitBack", "Alice added 'Dinner'", pub, target=target)
+    out = crypto_push._open(sealed["epk"], sealed["box"], priv)
+    assert out == {"title": "SplitBack", "body": "Alice added 'Dinner'", "target": target}
+    # No target → key omitted (back-compat with older NSE builds).
+    plain = crypto_push.seal("t", "b", pub)
+    assert "target" not in crypto_push._open(plain["epk"], plain["box"], priv)
+
+
 def test_epk_is_x963_uncompressed_point():
     _, pub = _keypair()
     sealed = crypto_push.seal("t", "b", pub)

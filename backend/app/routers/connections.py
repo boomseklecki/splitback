@@ -114,7 +114,8 @@ async def accept_connection(
     await session.commit()
     actor = await notify_svc.display_name(session, caller or conn.addressee_identifier)
     await notify_svc.notify(session, {conn.requester_identifier}, "connection_accepted",
-                            f"{actor} accepted your connection request", actor=caller)
+                            f"{actor} accepted your connection request", actor=caller,
+                            entity_type="friend", entity_id=(caller or conn.addressee_identifier))
     by_id = {u.identifier: u for u in await session.scalars(
         select(User).where(User.identifier.in_(
             [conn.requester_identifier, conn.addressee_identifier])))}

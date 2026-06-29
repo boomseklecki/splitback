@@ -143,7 +143,8 @@ async def update_account(
         if was_private and account.share_level != ShareLevel.private:
             actor = await notify_svc.display_name(session, caller)
             await notify_svc.notify(session, await audience(session, caller), "account_shared",
-                                    f"{actor} shared an account: {account.name}", actor=caller)
+                                    f"{actor} shared an account: {account.name}", actor=caller,
+                                    entity_type="account", entity_id=str(account.id))
     if "display_name" in fields:
         # Empty/whitespace resets to Plaid's name.
         name = (fields["display_name"] or "").strip()

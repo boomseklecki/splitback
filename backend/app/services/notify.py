@@ -39,8 +39,10 @@ async def display_name(session: AsyncSession, identifier: str | None) -> str:
 
 
 async def notify(session: AsyncSession, recipients: set[str], type: str, content: str,
-                 actor: str | None = None) -> None:
-    """Insert an `app` notification per recipient (minus the actor), prune to retention, push. Never raises."""
+                 actor: str | None = None, entity_type: str | None = None,
+                 entity_id: str | None = None) -> None:
+    """Insert an `app` notification per recipient (minus the actor), prune to retention, push. Never raises.
+    `entity_type`/`entity_id` are the deep-link target (the Inbox row + a tapped push route to it)."""
     targets = {r for r in recipients if r and r != actor}
     if not targets:
         return
@@ -50,7 +52,8 @@ async def notify(session: AsyncSession, recipients: set[str], type: str, content
         muted = await push_muted_owners(session, targets, type, NotificationSource.app.value)
         for owner in targets:
             session.add(Notification(owner_identifier=owner, source=NotificationSource.app,
-                                     type=type, content=content))
+                                     type=type, content=content,
+                                     entity_type=entity_type, entity_id=entity_id))
         await session.flush()
         for owner in targets:
             keep = (select(Notification.id).where(Notification.owner_identifier == owner)
@@ -62,4 +65,5 @@ async def notify(session: AsyncSession, recipients: set[str], type: str, content
         log.exception("notify failed")
         await session.rollback()  # clear the failed tx so the caller's session stays usable (its write already committed)
         return
-    push.enqueue(targets - muted, "SplitBack", content)
+    target = {"type": entity_type, "id": entity_id} if (entity_type and entity_id) else None
+    push.enqueue(targets - muted, "SplitBack", content, target=target)

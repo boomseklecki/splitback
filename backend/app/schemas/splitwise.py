@@ -79,5 +79,8 @@ class NotificationResponse(BaseModel):
     content: str
     created_at: datetime
     read: bool
+    # Deep-link target (app-native rows only): the entity this is about + its id. Null for Splitwise rows.
+    entity_type: str | None = None
+    entity_id: str | None = None
 
     model_config = {"from_attributes": True}

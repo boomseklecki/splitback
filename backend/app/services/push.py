@@ -26,11 +26,12 @@ _FALLBACK_TITLE = "SplitBack"
 _FALLBACK_BODY = "New activity"
 
 
-def enqueue(owners: set[str], title: str, body: str) -> None:
-    """Schedules a best-effort push to the owners' devices, without blocking the request."""
+def enqueue(owners: set[str], title: str, body: str, target: dict | None = None) -> None:
+    """Schedules a best-effort push to the owners' devices, without blocking the request. `target` is an
+    optional deep-link payload ({type, id}) sealed into the E2E push for the tap handler to route on."""
     if not settings.push_configured or not owners:
         return
-    asyncio.create_task(_send(set(owners), title, body))
+    asyncio.create_task(_send(set(owners), title, body, target))
 
 
 async def _post(client: httpx.AsyncClient, payload: dict) -> list[str]:
@@ -47,7 +48,7 @@ async def _post(client: httpx.AsyncClient, payload: dict) -> list[str]:
     return []
 
 
-async def _send(owners: set[str], title: str, body: str) -> None:
+async def _send(owners: set[str], title: str, body: str, target: dict | None = None) -> None:
     try:
         async with async_session() as session:
             devices = list(await session.scalars(
@@ -58,7 +59,7 @@ async def _send(owners: set[str], title: str, body: str) -> None:
             for dt in devices:
                 if dt.public_key:
                     try:
-                        sealed = crypto_push.seal(title, body, base64.b64decode(dt.public_key))
+                        sealed = crypto_push.seal(title, body, base64.b64decode(dt.public_key), target=target)
                         messages.append({"token": dt.token, **sealed})
                         continue
                     except Exception:

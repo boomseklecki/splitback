@@ -123,6 +123,49 @@ async def test_local_expense_notifies_members_not_actor():
         await _purge()
 
 
+async def _row(owner: str, type: str) -> Notification | None:
+    async with async_session() as s:
+        return await s.scalar(select(Notification).where(
+            Notification.owner_identifier == owner, Notification.type == type))
+
+
+async def test_notifications_carry_deeplink_entity_ref():
+    await _purge(); await _seed_users()
+    async with async_session() as s:
+        g = Group(name="House", backend_type=BackendType.self_hosted)
+        s.add(g); await s.flush()
+        s.add_all([GroupMember(group_id=g.id, user_identifier=ALICE),
+                   GroupMember(group_id=g.id, user_identifier=BOB)])
+        await s.commit(); gid = g.id
+    try:
+        async with async_session() as s:
+            exp = await create_expense(ExpenseCreate(
+                group_id=gid, description="Dinner", amount=Decimal("100"), date=date(2026, 6, 1),
+                created_by=ALICE, splits=[
+                    SplitInput(user_identifier=ALICE, paid_share=Decimal("100"), owed_share=Decimal("50")),
+                    SplitInput(user_identifier=BOB, paid_share=Decimal("0"), owed_share=Decimal("50"))]),
+                caller=ALICE, session=s)
+        row = await _row(BOB, "expense_added")
+        assert row is not None and row.entity_type == "expense" and row.entity_id == str(exp.id)
+    finally:
+        await _purge()
+
+
+async def test_connection_accept_links_to_friend_and_request_has_none():
+    await _purge(); await _seed_users()
+    try:
+        async with async_session() as s:
+            conn = await create_connection(ConnectionCreate(identifier=BOB), caller=ALICE, session=s)
+        req = await _row(BOB, "connection_request")
+        assert req is not None and req.entity_type is None and req.entity_id is None   # pending → no link
+        async with async_session() as s:
+            await accept_connection(conn.id, caller=BOB, session=s)
+        acc = await _row(ALICE, "connection_accepted")
+        assert acc is not None and acc.entity_type == "friend" and acc.entity_id == BOB  # now friends → link
+    finally:
+        await _purge()
+
+
 async def test_push_mute_suppresses_push_keeps_feed_row():
     await _purge(); await _seed_users()
     async with async_session() as s:
@@ -134,7 +177,7 @@ async def test_push_mute_suppresses_push_keeps_feed_row():
         await s.commit(); gid = g.id
     pushed: list = []
     orig = notify_svc.push.enqueue
-    notify_svc.push.enqueue = lambda owners, title, body: pushed.append(set(owners))
+    notify_svc.push.enqueue = lambda owners, title, body, target=None: pushed.append(set(owners))
     try:
         async with async_session() as s:
             await create_expense(ExpenseCreate(

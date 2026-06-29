@@ -8,6 +8,7 @@ public struct RootView: View {
     @Environment(\.modelContext) private var context
     @State private var checking = true
     @State private var plaidSession = PlaidLinkSession.shared
+    @State private var router = DeepLinkRouter.shared
     @AppStorage("appearance") private var appearanceRaw = AppearanceMode.system.rawValue
 
     public init() {}
@@ -30,6 +31,19 @@ public struct RootView: View {
                     AuthGateView(isLaunchGate: true)
                 case .ready:
                     MainTabView()
+                        // A tapped push routes here: present the target's detail as a modal (sidesteps the
+                        // per-tab navigation stacks). Only in the authenticated app.
+                        .sheet(item: Binding(get: { router.pending },
+                                             set: { router.pending = $0 })) { target in
+                            NavigationStack {
+                                NotificationTargetView(target: target)
+                                    .toolbar {
+                                        ToolbarItem(placement: .cancellationAction) {
+                                            Button("Done") { router.pending = nil }
+                                        }
+                                    }
+                            }
+                        }
                 }
             }
             .task {

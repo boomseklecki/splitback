@@ -43,7 +43,8 @@ async def create_goal(
     if goal.shared:
         actor = await notify_svc.display_name(session, caller)
         await notify_svc.notify(session, await audience(session, caller), "goal_shared",
-                                f"{actor} shared a budget: {goal.name}", actor=caller)
+                                f"{actor} shared a budget: {goal.name}", actor=caller,
+                                entity_type="goal", entity_id=str(goal.id))
     goal.shared_by = goal.shared_by_identifier = None
     return goal
 
@@ -105,7 +106,8 @@ async def update_goal(
     if goal.shared and not was_shared:
         actor = await notify_svc.display_name(session, caller)
         await notify_svc.notify(session, await audience(session, caller), "goal_shared",
-                                f"{actor} shared a budget: {goal.name}", actor=caller)
+                                f"{actor} shared a budget: {goal.name}", actor=caller,
+                                entity_type="goal", entity_id=str(goal.id))
     goal.shared_by = goal.shared_by_identifier = None
     return goal
 

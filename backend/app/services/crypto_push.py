@@ -29,14 +29,19 @@ def _derive_key(shared: bytes) -> bytes:
     return HKDF(algorithm=hashes.SHA256(), length=32, salt=_SALT, info=_INFO).derive(shared)
 
 
-def seal(title: str, body: str, recipient_pub_x963: bytes) -> dict[str, str]:
-    """Seals `{title, body}` to a recipient's P-256 public key. Returns base64 `epk` + `box`."""
+def seal(title: str, body: str, recipient_pub_x963: bytes,
+         target: dict | None = None) -> dict[str, str]:
+    """Seals `{title, body[, target]}` to a recipient's P-256 public key. Returns base64 `epk` + `box`.
+    `target` is an optional deep-link payload (`{type, id}`) the device surfaces for the tap handler."""
     recipient_pub = ec.EllipticCurvePublicKey.from_encoded_point(_CURVE, recipient_pub_x963)
     ephemeral = ec.generate_private_key(_CURVE)
     shared = ephemeral.exchange(ec.ECDH(), recipient_pub)
     key = _derive_key(shared)
     nonce = os.urandom(12)
-    plaintext = json.dumps({"title": title, "body": body}).encode()
+    payload = {"title": title, "body": body}
+    if target:
+        payload["target"] = target
+    plaintext = json.dumps(payload).encode()
     box = nonce + AESGCM(key).encrypt(nonce, plaintext, None)  # nonce‖ciphertext‖tag
     epk = ephemeral.public_key().public_bytes(
         serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint)

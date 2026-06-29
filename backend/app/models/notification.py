@@ -35,6 +35,10 @@ class Notification(UUIDMixin, Base):
     # Splitwise notification type code / app event type.
     type: Mapped[str | None] = mapped_column(String(32), nullable=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    # Deep-link target for app-native rows: what entity this is about + its id (a UUID string for
+    # expense/account/goal/group, or a friend identifier for connections). Null for Splitwise-synced rows.
+    entity_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    entity_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
