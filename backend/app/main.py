@@ -34,6 +34,7 @@ from app.routers import (
 )
 from app.services.backup_scheduler import run_scheduler as run_backup_scheduler
 from app.services.demo_prune_scheduler import run_scheduler as run_demo_prune_scheduler
+from app.services.notifications_scheduler import run_scheduler as run_notifications_scheduler
 from app.services.sync_scheduler import run_scheduler as run_sync_scheduler
 
 
@@ -51,6 +52,7 @@ async def lifespan(app: FastAPI):
     tasks = [
         asyncio.create_task(run_backup_scheduler()),
         asyncio.create_task(run_sync_scheduler()),
+        asyncio.create_task(run_notifications_scheduler()),  # fast notifications-only poll (off unless enabled)
         asyncio.create_task(run_demo_prune_scheduler()),
     ]
     try:

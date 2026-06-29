@@ -33,6 +33,9 @@ REGISTRY: dict[str, tuple[type, object]] = {
     "refresh_splitwise_stale_minutes": (int, 15),   # any Splitwise pull-to-refresh
     # Notifications: cap stored per-owner notifications to the most recent N (prune on each sync).
     "notifications_retention_count": (int, 100),
+    # Fast notifications-only poll cadence (minutes); 0 = off. Makes Splitwise partner-activity pushes
+    # near-real-time instead of waiting for the slow full-sync interval.
+    "notifications_poll_minutes": (int, 0),
 }
 
 

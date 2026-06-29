@@ -6,7 +6,7 @@ context. Per-item/per-token failures are isolated and logged so one bad integrat
 import logging
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import server_settings
@@ -41,35 +41,60 @@ async def sync_all_plaid(session: AsyncSession) -> int:
 async def sync_all_splitwise(session: AsyncSession) -> int:
     """Incremental sync of every stored Splitwise token (groups + users + expenses), advancing each token's
     cursor. Returns the number of tokens synced."""
-    tokens = (await session.scalars(select(SplitwiseToken))).all()
+    # Iterate detached value tuples (not ORM instances): a per-token rollback expires every loaded instance,
+    # so holding ORM rows across the loop would break the next token's attribute access on the async session.
+    tokens = (await session.execute(select(
+        SplitwiseToken.user_identifier, SplitwiseToken.access_token, SplitwiseToken.expenses_synced_at))).all()
     synced = 0
-    for token in tokens:
+    for owner, access_token, expenses_synced_at in tokens:
         try:
-            client = sw_client.make_client(token.access_token)
-            updated_after = token.expenses_synced_at.isoformat() if token.expenses_synced_at else None
+            client = sw_client.make_client(access_token)
+            updated_after = expenses_synced_at.isoformat() if expenses_synced_at else None
             started = datetime.now(timezone.utc)
             await importer.sync_groups(session, client, settings.splitwise_user_map)
             await importer.sync_users(session, client, settings.splitwise_user_map)
             await importer.sync_expenses(
                 session, client, settings.splitwise_user_map, updated_after=updated_after, dry_run=False
             )
-            token.expenses_synced_at = started
+            await session.execute(update(SplitwiseToken)
+                                  .where(SplitwiseToken.user_identifier == owner)
+                                  .values(expenses_synced_at=started))
             await session.commit()
             synced += 1
         except Exception:
             await session.rollback()
-            log.exception("Scheduled Splitwise sync failed for token %s", token.user_identifier)
+            log.exception("Scheduled Splitwise sync failed for token %s", owner)
             continue
         # Notifications are a separate best-effort step (sync_notifications commits on its own, and pushes new
         # partner activity) — its failure must not roll back the expense cursor just committed above.
         try:
             retention = int(await server_settings.get(session, "notifications_retention_count"))
             await importer.sync_notifications(
-                session, client, token.user_identifier,
-                retention=retention, access_token=token.access_token, limit=20, push=True)
+                session, client, owner, retention=retention, access_token=access_token, push=True)
         except Exception:
             await session.rollback()
-            log.exception("Scheduled Splitwise notification sync failed for token %s", token.user_identifier)
+            log.exception("Scheduled Splitwise notification sync failed for token %s", owner)
+    return synced
+
+
+async def sync_notifications_all(session: AsyncSession) -> int:
+    """Fast, notifications-only fan-out: pull each Splitwise token's recent notifications (and push new
+    partner activity) WITHOUT the expensive groups/users/expenses sync. Per-token isolation (rollback +
+    continue). Returns the number of tokens synced."""
+    # Detached value tuples (see sync_all_splitwise): a per-token rollback expires loaded ORM instances.
+    tokens = (await session.execute(
+        select(SplitwiseToken.user_identifier, SplitwiseToken.access_token))).all()
+    retention = int(await server_settings.get(session, "notifications_retention_count"))
+    synced = 0
+    for owner, access_token in tokens:
+        try:
+            client = sw_client.make_client(access_token)
+            await importer.sync_notifications(
+                session, client, owner, retention=retention, access_token=access_token, push=True)
+            synced += 1
+        except Exception:
+            await session.rollback()
+            log.exception("Notifications poll failed for token %s", owner)
     return synced
 
 

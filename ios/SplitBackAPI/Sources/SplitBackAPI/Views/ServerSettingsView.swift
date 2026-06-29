@@ -22,6 +22,7 @@ struct ServerSettingsView: View {
     @State private var refreshPlaidStale = 60
     @State private var refreshSplitwiseStale = 15
     @State private var notificationsRetention = 100
+    @State private var notificationsPollMinutes = 0
 
     var body: some View {
         Form {
@@ -97,10 +98,14 @@ struct ServerSettingsView: View {
             Section {
                 Stepper("Keep newest \(notificationsRetention)",
                         value: $notificationsRetention, in: 10...1000, step: 10)
+                Stepper("Live notification poll: \(pollLabel(notificationsPollMinutes))",
+                        value: $notificationsPollMinutes, in: 0...60)
             } header: {
                 Text("Notifications")
             } footer: {
-                Text("How many notifications to keep per person; older ones are pruned on each sync.")
+                Text("Keep: how many notifications to retain per person (older are pruned on each sync). "
+                     + "Live poll: how often to check Splitwise just for new activity so partner-activity "
+                     + "pushes arrive promptly instead of waiting for the full auto-sync. 0 = off.")
             }
 
             Section {
@@ -134,6 +139,7 @@ struct ServerSettingsView: View {
 
     private func intervalLabel(_ hours: Int) -> String { hours <= 0 ? "Off" : "every \(hours)h" }
     private func staleLabel(_ minutes: Int) -> String { minutes <= 0 ? "always sync" : "\(minutes) min" }
+    private func pollLabel(_ minutes: Int) -> String { minutes <= 0 ? "Off" : "every \(minutes) min" }
 
     private func apply(_ s: Components.Schemas.ServerSettingsResponse) {
         serverName = s.public_hostname
@@ -147,6 +153,7 @@ struct ServerSettingsView: View {
         refreshPlaidStale = s.refresh_plaid_stale_minutes
         refreshSplitwiseStale = s.refresh_splitwise_stale_minutes
         notificationsRetention = s.notifications_retention_count
+        notificationsPollMinutes = s.notifications_poll_minutes
     }
 
     private func load() async {
@@ -171,7 +178,8 @@ struct ServerSettingsView: View {
                     backups_retention_min_keep: backupsRetentionMinKeep,
                     refresh_plaid_stale_minutes: refreshPlaidStale,
                     refresh_splitwise_stale_minutes: refreshSplitwiseStale,
-                    notifications_retention_count: notificationsRetention))
+                    notifications_retention_count: notificationsRetention,
+                    notifications_poll_minutes: notificationsPollMinutes))
                 apply(updated)
                 await env.loadRefreshThresholds()  // apply the new thresholds to the running app
                 saved = true

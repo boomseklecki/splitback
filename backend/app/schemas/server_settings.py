@@ -14,6 +14,7 @@ class ServerSettingsResponse(BaseModel):
     refresh_plaid_stale_minutes: int
     refresh_splitwise_stale_minutes: int
     notifications_retention_count: int
+    notifications_poll_minutes: int
 
 
 class ServerSettingsUpdate(BaseModel):
@@ -29,3 +30,4 @@ class ServerSettingsUpdate(BaseModel):
     refresh_plaid_stale_minutes: int | None = None
     refresh_splitwise_stale_minutes: int | None = None
     notifications_retention_count: int | None = None
+    notifications_poll_minutes: int | None = None

@@ -103,12 +103,12 @@ async def callback(code: str, state: str, session: AsyncSession = Depends(get_se
     await session.delete(pending)
     await session.commit()
 
-    # Seed the activity feed with the last 20 notifications so a freshly connected account isn't empty.
-    # Best-effort: never let it break the OAuth redirect. push=False — the backfill must not flood the device.
+    # Seed the activity feed so a freshly connected account isn't empty (up to the retention window, for
+    # auditing). Best-effort: never let it break the OAuth redirect. push=False — the backfill must not flood.
     try:
         retention = int(await server_settings.get(session, "notifications_retention_count"))
         await importer.sync_notifications(
-            session, client, bind, retention=retention, access_token=access_token, limit=20, push=False)
+            session, client, bind, retention=retention, access_token=access_token, push=False)
     except Exception:
         await session.rollback()
 

@@ -6263,6 +6263,10 @@
           "notifications_retention_count": {
             "type": "integer",
             "title": "Notifications Retention Count"
+          },
+          "notifications_poll_minutes": {
+            "type": "integer",
+            "title": "Notifications Poll Minutes"
           }
         },
         "type": "object",
@@ -6277,7 +6281,8 @@
           "backups_retention_min_keep",
           "refresh_plaid_stale_minutes",
           "refresh_splitwise_stale_minutes",
-          "notifications_retention_count"
+          "notifications_retention_count",
+          "notifications_poll_minutes"
         ],
         "title": "ServerSettingsResponse",
         "description": "The full server-settings registry resolved to current values."
@@ -6327,6 +6332,10 @@
           "notifications_retention_count": {
             "type": "integer",
             "title": "Notifications Retention Count"
+          },
+          "notifications_poll_minutes": {
+            "type": "integer",
+            "title": "Notifications Poll Minutes"
           }
         },
         "type": "object",

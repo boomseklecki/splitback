@@ -497,30 +497,40 @@ async def sync_friends(
     return {"friends": len(friends)}
 
 
+# Cap on how many notifications we pull from Splitwise per sync. The fetch count tracks `retention` (so the
+# audit log fills to what the operator keeps) but is bounded here to keep payloads + the API call sane.
+_MAX_FETCH = 100
+
+
 async def sync_notifications(
     session: AsyncSession, client, owner_identifier: str, *, retention: int,
-    access_token: str | None = None, limit: int | None = None, push: bool = False
+    access_token: str | None = None, push: bool = False
 ) -> dict:
     """Pull the owner's recent Splitwise notifications into the generic notifications table (deduped by
-    splitwise_id) and prune to the newest `retention` rows for that owner. Commits.
+    splitwise_id) and prune to the newest `retention` rows for that owner. Commits. Fetches up to
+    `min(retention, _MAX_FETCH)` so the kept audit window fills, rather than a fixed small batch.
 
     When `push` is set, fire a device push for genuinely *new* notifications that aren't the owner's own
-    actions ("You added …") — so the owner is alerted to partner activity but never to their own or to the
-    initial backfill. `push=False` (connect-time backfill, manual pull-to-refresh) never pushes."""
-    notifications = await asyncio.to_thread(sw_client.fetch_notifications, client, access_token, limit)
-    # Which splitwise_ids do we already have? Anything not here is new this sync (the push delta).
+    actions ("You added …") — so the owner is alerted to partner activity but never to their own, the
+    initial backfill, or the owner's first-ever sync. `push=False` (connect backfill, pull-to-refresh)
+    never pushes."""
+    fetch_n = min(retention, _MAX_FETCH)
+    notifications = await asyncio.to_thread(sw_client.fetch_notifications, client, access_token, fetch_n)
+    # Which splitwise_ids do we already have? Anything not here is new this sync (the push delta). When the
+    # owner has none yet, this is a cold start — land the rows but don't push the whole historical batch.
     existing = set(await session.scalars(
         select(Notification.splitwise_id).where(
             Notification.owner_identifier == owner_identifier,
             Notification.source == NotificationSource.splitwise,
             Notification.splitwise_id.is_not(None))))
+    first_sync = not existing
     to_push: list[str] = []
     for note in notifications:
         swid = note.get("splitwise_id")
         if not swid:
             continue
         content = note.get("content") or ""
-        if push and swid not in existing and not content.lower().startswith("you "):
+        if push and not first_sync and swid not in existing and not content.lower().startswith("you "):
             to_push.append(content)  # new partner activity (not my own action) → alert
         values = {
             "owner_identifier": owner_identifier,
