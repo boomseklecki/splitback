@@ -122,6 +122,37 @@ struct GroupRepository {
         }
     }
 
+    /// Removes several members concurrently, then refreshes the member list ONCE (vs N delete + N refetch via
+    /// `removeMember`). A 404 is treated as already-removed (silent skip). Surfaces the first real error after
+    /// the refresh, so a partial failure still leaves the list reconciled.
+    func removeMembers(groupId: UUID, identifiers: [String]) async throws {
+        guard !identifiers.isEmpty else { return }
+        let client = self.client
+        let firstError = await withTaskGroup(of: Error?.self) { group in
+            for identifier in identifiers {
+                group.addTask {
+                    do {
+                        let output = try await client
+                            .remove_member_groups__group_id__members__user_identifier__delete(
+                                path: .init(group_id: groupId.uuidString, user_identifier: identifier))
+                        switch output {
+                        case .noContent: return nil
+                        case let .unprocessableContent(error):
+                            return BackendError.validation(BackendError.validationMessage(try? error.body.json))
+                        case .undocumented(404, _): return nil   // already removed — skip
+                        case let .undocumented(statusCode, _): return BackendError.fromUndocumented(statusCode)
+                        }
+                    } catch { return error }
+                }
+            }
+            var first: Error?
+            for await e in group { if let e, first == nil { first = e } }
+            return first
+        }
+        try await refreshMembers(groupId: groupId)
+        if let firstError { throw firstError }
+    }
+
     /// Clones an already-imported Splitwise group into a new self-hosted group (archives the source).
     /// Returns the new local group's id. Caller should refresh groups + expenses afterward.
     @discardableResult

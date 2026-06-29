@@ -27,6 +27,35 @@ struct ReceiptRepository {
         }
     }
 
+    /// Uploads several images concurrently and refreshes the expense ONCE (vs N upload + N refetch via
+    /// `upload`). Returns how many failed plus the last error, so the caller can surface partial failures.
+    func uploadMany(expenseId: UUID, images: [Data]) async -> (failed: Int, lastError: Error?) {
+        guard !images.isEmpty else { return (0, nil) }
+        let client = self.client
+        let errors = await withTaskGroup(of: Error?.self) { group in
+            for imageData in images {
+                group.addTask {
+                    do {
+                        let output = try await client.upload_receipt_expenses__expense_id__receipts_post(
+                            path: .init(expense_id: expenseId.uuidString),
+                            body: .binary(HTTPBody(imageData)))
+                        switch output {
+                        case .created: return nil
+                        case let .unprocessableContent(error):
+                            return BackendError.validation(BackendError.validationMessage(try? error.body.json))
+                        case let .undocumented(statusCode, _): return BackendError.fromUndocumented(statusCode)
+                        }
+                    } catch { return error }
+                }
+            }
+            var out: [Error] = []
+            for await e in group { if let e { out.append(e) } }
+            return out
+        }
+        try? await ExpenseRepository(client: client, context: context).refreshDetail(id: expenseId)
+        return (errors.count, errors.last)
+    }
+
     /// Fetches a receipt's raw image bytes (with the stored content type) for rendering.
     func imageData(receiptId: UUID) async throws -> Data {
         let output = try await client.download_receipt_receipts__receipt_id__content_get(
