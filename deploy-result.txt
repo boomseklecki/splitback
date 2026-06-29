@@ -1,41 +1,33 @@
 SplitBack backend deploy verification (uplink / Linux full-stack)
 ================================================================
 
-Commit tested:  7b4e897  (main HEAD, + 1 test-only fix committed here)
+Commit tested:  a95aeb2  (main HEAD)
 Date (UTC):     2026-06-29
-Migration head: 0040_pending_txn_id  (unchanged — no new migration this round)
+Migration head: 0040_pending_txn_id  (unchanged — no new migration)
 
-Main change in scope:
-  7b4e897  Unified Accounts management. Backend part: DELETE /accounts/{id} and Plaid delete_item
-           now HARD-DELETE the account(s)' transactions (incl. items/overrides cascade) instead of
-           orphaning them (was SET NULL). Bulk of the commit is iOS.
+Change in scope (backend-only):
+  a95aeb2  OFX<->Plaid duplicate guard.
+    - app/routers/statements.py: import_ofx gained force=False + a pre-create guard;
+      POST /statements/import gained a `force` query param.
+    - app/schemas/statement.py: StatementImportResult.plaid_conflict: bool = False.
+    - tests/test_statement_import.py: new test_plaid_linked_card_guards_then_forces.
 
 BUILD / RESTART:  OK
-  - git pull --ff-only to 7b4e897 (clean).
+  - git pull --ff-only to a95aeb2 (clean).
   - docker compose build api api-dev api-demo api-test -> built.
   - Recreated api (real, :8000), api-dev, api-demo, db-test+api-test. All healthy.
   - alembic upgrade head -> no-op (already 0040_pending_txn_id).
-  - import sanity: app.main + accounts/plaid routers import clean.
+  - import sanity: app.main + statements router import clean; StatementImportResult.plaid_conflict present.
 
 TEST RUN (api-test stack, incl. HTTP/MinIO-dependent tests):  PASS
-  TOTAL passing: 199   FAIL: 0   (46 modules, all green)
+  TOTAL passing: 200   FAIL: 0   (46 modules, all green)
 
-Watch-list (all PASS):
-  test_account_delete (NEW) ... 2  (DELETE /accounts hard-deletes its transactions + items/overrides
-                                    cascade, not orphaned; Plaid delete_item removes item + accounts +
-                                    their transactions)
-  account router tests ........ green (test_plaid_items_manual, test_plaid_sync_account, test_goals,
-                                       test_include_overrides, test_account_overrides)
-  plaid router tests .......... green (test_plaid_sync, test_plaid_items_manual, test_plaid_mapper)
+Watch:
+  test_statement_import ...... 6  (incl. NEW test_plaid_linked_card_guards_then_forces:
+                                   OFX import of a Plaid-linked card returns plaid_conflict, then
+                                   ?force= proceeds)
 
-FIX APPLIED (test-only, committed here):
-  test_plaid_items_manual::test_plaid_item_list_and_unlink still asserted the OLD behavior — that a
-  transaction SURVIVES an item unlink with account_id=NULL. delete_item now hard-deletes those
-  transactions, so the row is gone. Updated the assertion to `tx is None`. (The Mac added
-  test_account_delete for the new behavior but didn't update this existing orphan-era assertion.)
+FAILURES: none.
 
-FAILURES: none (after the test fix).
-
-SUMMARY: PASS. 7b4e897 builds, restarts, and passes the full backend suite (199/199) on the running
-stack. Migration head 0040 (untouched). One test-only fix was needed (stale assertion) and is committed
-alongside this sentinel.
+SUMMARY: PASS. a95aeb2 builds, restarts, and passes the full backend suite (200/200) on the running
+stack. Migration head 0040 (untouched). No Linux-side code changes; this file is the only commit from here.
