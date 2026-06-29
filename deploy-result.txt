@@ -1,52 +1,52 @@
 SplitBack backend deploy verification (uplink / Linux full-stack)
 ================================================================
 
-Commit tested:  dec82dd  (main HEAD)
+Commit tested:  cb71950  (main HEAD)
 Date (UTC):     2026-06-29
-Migration head: 0041_notification_prefs   (NEW — upgraded 0040 -> 0041)
+Migration head: 0042_notification_entity   (NEW — upgraded 0041 -> 0042)
 
-Change in scope (backend + iOS contract, single commit):
-  dec82dd  Notification preferences: per-user push/feed mute (two channels) + link-sensitivity sync
-    - migration 0041_notification_prefs (down_revision 0040_pending_txn_id): new notification_mutes
-      table (owner_identifier, token). Revision id 23 chars (<=32 OK).
-    - new model app/models/notification_mute.py (NotificationMute).
-    - router app/routers/notification_mutes.py (GET/PUT /notification-prefs), registered under
-      _protected in main.py; schema app/schemas/notification_mute.py.
-    - notify.py: push_muted_owners() — feed row written for ALL, push only to non-push-muted.
-    - importer.sync_notifications: drops push for push:source:splitwise / push:<type> mutes.
-    - regenerated ios/openapi.json + iOS (NotificationSettingsView, prefs cache,
-      link-sensitivity blob sync).
+Change in scope (backend + iOS contract, single commit; NO relay change):
+  cb71950  Activity-feed deep-linking: tap an Inbox row OR a push -> the entity's detail
+    - migration 0042_notification_entity (down_revision 0041_notification_prefs): adds nullable
+      entity_type / entity_id to notifications. Revision id 24 chars (<=32 OK).
+    - Notification model + NotificationResponse schema gain entity_type / entity_id.
+    - notify() gains entity_type/entity_id params + threads a deep-link target into push.enqueue;
+      crypto_push.seal gains optional `target` (sealed INSIDE the E2E box -> no relay change).
+    - call sites in expenses.py / accounts.py / goals.py / connections.py pass the entity ref.
+    - regenerated ios/openapi.json + iOS (NSE, router, Inbox nav, DeepLinkRouter, NotificationTarget).
 
 BUILD / RESTART:  OK
-  - git merge --ff-only origin/main -> dec82dd (clean).
+  - git merge --ff-only origin/main -> cb71950 (clean).
   - docker compose build api api-test -> built.
   - Recreated api (real, :8000) + db-test/api-test. Up.
 
 MIGRATION:  APPLIED on BOTH databases
-  - REAL api db:  0040_pending_txn_id -> 0041_notification_prefs  (head: 0041_notification_prefs)
-  - TEST db:      0040_pending_txn_id -> 0041_notification_prefs  (head: 0041_notification_prefs)
-    "notification_mutes (per-owner push/feed preferences)"
+  - REAL api db:  0041_notification_prefs -> 0042_notification_entity  (head: 0042_notification_entity)
+  - TEST db:      0041_notification_prefs -> 0042_notification_entity  (head: 0042_notification_entity)
+    "notification entity_type/entity_id (deep-link target)"
+
+RELAY:  UNTOUCHED  (git diff relay/ empty; seal target is sealed inside the E2E box).
 
 IMPORT / WIRING SANITY (api-test):
   - app.main imports clean.
-  - models.notification_mute.NotificationMute present.
-  - services.notify.push_muted_owners present.
+  - Notification model carries entity_type + entity_id columns.
+  - services.notify.notify gained params: entity_type, entity_id.
+  - services.crypto_push.seal signature: (title, body, recipient_pub_x963, target)   [new `target`]
 
-CONTRACT / ROUTE (presence-check, per flattened-nullables memory):
-  - GET/PUT /notification-prefs present in live /openapi.json AND committed ios/openapi.json.
+CONTRACT (presence-check, per flattened-nullables memory):
+  - NotificationResponse has entity_type + entity_id in live /openapi.json AND committed ios/openapi.json.
 
 TEST RUN (api-test stack, incl. HTTP/MinIO-dependent tests):  PASS
-  TOTAL passing: 223   FAIL: 0   (all modules green)
+  TOTAL passing: 226   FAIL: 0   (all modules green)
 
 Watch-list (all PASS):
-  test_notification_prefs ...... 2   (test_put_then_get_roundtrips_and_replaces)
-  test_notification_producer ... 5   (extended: push-mute keeps feed row, drops push)
-  test_notifications_sync ...... 8   (extended: splitwise push-mute)
+  test_crypto_push ............. 5   (incl. seal `target` roundtrip / test_seal_open_roundtrip)
+  test_notification_producer ... 7   (rows carry entity refs; connection_request none / accept -> friend)
 
 FAILURES: none.
 
-SUMMARY: PASS. dec82dd builds, migrates 0040 -> 0041 on both real and test DBs, restarts, and passes
-the full backend suite (223/223). New per-user notification-prefs surface verified: notification_mutes
-table, NotificationMute model, GET/PUT /notification-prefs route, push_muted_owners two-channel mute
-(feed-for-all, push-for-unmuted), splitwise push-mute drop. Contract aligned. No Linux-side code
-changes; this file is the only commit from here.
+SUMMARY: PASS. cb71950 builds, migrates 0041 -> 0042 on both real and test DBs, restarts, and passes
+the full backend suite (226/226). Activity-feed deep-linking verified end to end on the backend:
+notification entity_type/entity_id columns + schema, notify() entity params, crypto_push.seal target
+(sealed in the E2E box -> relay untouched). Contract aligned. No Linux-side code changes; this file is
+the only commit from here.
