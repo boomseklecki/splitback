@@ -207,7 +207,7 @@ struct TransactionItemsView: View {
         for (index, item) in items.enumerated() where !item.name.isEmpty {
             let tempId = UUID()
             idToIndex[tempId] = index
-            mapperItems.append(.init(id: tempId, description: item.name, rawCategory: item.category))
+            mapperItems.append(.init(id: tempId, description: item.name, rawCategory: item.category, current: nil))
         }
         let refined = await CategoryMapper.refine(mapperItems, allowed: spendCategories.map(\.name))
         for (id, category) in refined {

@@ -67,7 +67,9 @@ enum SuggestionEngine {
                 title: g.title, subtitle: "\(g.current ?? "Uncategorized") → \(g.suggested)\(suffix)",
                 icon: "sparkles", acceptLabel: "Use \(g.suggested)",
                 transactionId: g.ids.first, transactionIds: g.ids,
-                category: g.suggested, currentCategory: g.current, sortDate: g.sortDate)
+                category: g.suggested, currentCategory: g.current,
+                merchantKey: SubscriptionDetector.merchantKey(g.title),  // enables "Never for this merchant"
+                sortDate: g.sortDate)
         }
     }
 

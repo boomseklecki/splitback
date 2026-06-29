@@ -138,6 +138,27 @@ final class SuggestionEngineTests: XCTestCase {
         XCTAssertFalse(fuel?.subtitle.contains("transactions") ?? true)  // no count suffix for a single txn
     }
 
+    func testNeverForMerchantSilencesAllRecategorizeButNotSubscription() {
+        // A recategorize card now carries a merchantKey → "Never for this merchant" dismissal blocks ALL
+        // recategorize cards for that merchant (e.g. Amazon → any category), kept separate from subscriptions.
+        let amzn = "AMZN MKTP US"
+        let key = SubscriptionDetector.merchantKey(amzn)
+        let txns = [txn(amzn, 10, category: "GENERAL_SERVICES", ai: "Shopping"),
+                    txn(amzn, 25, category: "GENERAL_SERVICES", ai: "Groceries")]   // two different suggestions
+        XCTAssertEqual(generate(transactions: txns).filter { $0.kind == .categorize }.count, 2)
+
+        // Dismiss "for merchant" uses the categorize scope key "recat:<key>".
+        let dismiss = SuggestionDecision(key: "recat:\(key)", decision: "dismissed")
+        XCTAssertTrue(generate(transactions: txns, decisions: [dismiss])
+            .filter { $0.kind == .categorize }.isEmpty)                 // every recategorize card silenced
+
+        // The same merchant's subscription card (scope "merchant:<key>") is unaffected.
+        let cal = Calendar.current
+        let charges = (0..<4).map { i in txn(amzn, 9.99, date: cal.date(byAdding: .day, value: -30 * i, to: Date())!) }
+        let subs = generate(transactions: charges, decisions: [dismiss]).filter { $0.kind == .subscription }
+        XCTAssertTrue(subs.contains { $0.merchantKey == key })
+    }
+
     func testSplitPassesPartitionByKind() {
         // generateCategorize → only categorize cards; generateDeterministic → never categorize (link/sub/rsplit).
         let cat = SuggestionEngine.generateCategorize(

@@ -355,7 +355,7 @@ struct TransactionDetailView: View {
         categorizing = true
         defer { categorizing = false }
         let item = CategoryMapper.Item(id: transaction.id, description: transaction.details,
-                                       rawCategory: transaction.category)
+                                       rawCategory: transaction.category, current: nil)
         let result = await CategoryMapper.refine([item], allowed: spendCategories.map(\.name))
         guard let category = result[transaction.id] else { return }  // keep prior if the model abstains
         setOverride(category)

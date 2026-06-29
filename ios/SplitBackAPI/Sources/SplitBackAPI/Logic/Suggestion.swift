@@ -37,6 +37,9 @@ struct Suggestion: Identifiable, Equatable {
         }
     }
 
-    /// The "never for this merchant" decision key, when the suggestion is merchant-scoped.
-    var merchantScopeKey: String? { merchantKey.map { "merchant:\($0)" } }
+    /// The "never for this merchant" decision key, when the suggestion is merchant-scoped. Kind-namespaced so
+    /// silencing recategorize for a merchant doesn't also silence its subscription / recurring-split cards.
+    var merchantScopeKey: String? {
+        merchantKey.map { kind == .categorize ? "recat:\($0)" : "merchant:\($0)" }
+    }
 }

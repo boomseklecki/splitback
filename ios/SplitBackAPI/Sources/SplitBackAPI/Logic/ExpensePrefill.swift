@@ -47,7 +47,7 @@ struct ExpensePrefill {
         let m = merchant.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !m.isEmpty, !categories.isEmpty else { return nil }
         let mapped = await CategoryMapper.refine(
-            [.init(id: UUID(), description: m, rawCategory: hint)], allowed: categories)
+            [.init(id: UUID(), description: m, rawCategory: hint, current: nil)], allowed: categories)
         return mapped.values.first
     }
 

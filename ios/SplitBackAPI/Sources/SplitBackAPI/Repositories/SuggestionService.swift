@@ -100,6 +100,9 @@ struct SuggestionService {
         // ONCE — many imported rows share a merchant, so this covers far more transactions per run and avoids
         // re-classifying identical descriptions.
         let allowed = (try? context.fetch(FetchDescriptor<SpendCategory>()))?.map(\.name) ?? CanonicalCategory.all
+        // The model anchors on the current category, so resolve it per merchant (cheap; reuses the label map).
+        let maps = (try? context.fetch(FetchDescriptor<CategoryMap>())) ?? []
+        let lookup = CategoryMapping.lookup(maps), sources = CategoryMapping.sources(maps)
         var byDescription: [String: [Transaction]] = [:]
         var order: [String] = []
         for t in pending {
@@ -109,7 +112,10 @@ struct SuggestionService {
         }
         let batchKeys = order.prefix(Self.aiBatch)
         let items = batchKeys.compactMap { key -> CategoryMapper.Item? in
-            byDescription[key]?.first.map { .init(id: $0.id, description: $0.details, rawCategory: $0.category) }
+            byDescription[key]?.first.map { t in
+                .init(id: t.id, description: t.details, rawCategory: t.category,
+                      current: CategoryMapping.resolve(for: t, lookup: lookup, sources: sources).category)
+            }
         }
         let result = await CategoryMapper.refine(items, allowed: allowed)
         for key in batchKeys {

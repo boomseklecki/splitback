@@ -89,7 +89,7 @@ struct BankCategoriesView: View {
                 suggestions.map { (raw: $0.key, canonical: $0.value) }, source: "ondevice")
         } catch { errorText = errorMessage(error) }
         let items = refinable.map {
-            CategoryMapper.Item(id: $0.id, description: $0.details, rawCategory: $0.category)
+            CategoryMapper.Item(id: $0.id, description: $0.details, rawCategory: $0.category, current: nil)
         }
         let refined = await CategoryMapper.refine(items, allowed: allowed)
         guard !refined.isEmpty else { return }

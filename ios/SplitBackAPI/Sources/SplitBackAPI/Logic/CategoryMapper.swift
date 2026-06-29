@@ -1,6 +1,16 @@
 import Foundation
 #if canImport(FoundationModels)
 import FoundationModels
+
+/// Guided-generation result: the chosen category + whether a change from the current one is clearly warranted.
+@available(iOS 26, *)
+@Generable
+struct Refinement {
+    @Guide(description: "The single best category, chosen only from the allowed list.")
+    var category: String
+    @Guide(description: "True only if a category DIFFERENT from the current one is clearly more accurate.")
+    var changeIsClear: Bool
+}
 #endif
 
 /// Maps raw Plaid category labels to canonical categories using Apple's on-device Foundation Models
@@ -17,38 +27,48 @@ enum CategoryMapper {
         return false
     }
 
-    /// One transaction to refine: its id, merchant description, and Plaid category label.
+    /// One transaction to refine: its id, merchant description, the Plaid category label, and the **current**
+    /// canonical category (so the model can anchor on it and abstain unless a change is clearly better).
     struct Item: Sendable {
         let id: UUID
         let description: String
         let rawCategory: String?
+        let current: String?
     }
 
-    /// Refines vague transactions using the **merchant description** (plus the Plaid category as a hint)
-    /// — more accurate than the bare category for buckets like "General Merchandise / Other". Returns
-    /// {transactionId: canonical} for the ones it could confidently place.
+    /// Refines transactions using the **merchant description** (plus the Plaid category as a hint), anchored on
+    /// the **current** category: only returns a *different* category when the model is confident it's clearly
+    /// more accurate — so an already-decent label (e.g. Amazon → "Shopping") isn't second-guessed. Returns
+    /// {transactionId: canonical} only for those confident, changed placements.
     static func refine(_ items: [Item], allowed: [String] = CanonicalCategory.all) async -> [UUID: String] {
         #if canImport(FoundationModels)
         if #available(iOS 26, *), case .available = SystemLanguageModel.default.availability {
             let instructions = """
-            You categorize bank transactions into a fixed taxonomy from the merchant/description. Reply \
-            with ONLY the single best-matching category name from the allowed list — no punctuation, no \
-            explanation.
+            You categorize bank transactions into a fixed taxonomy from the merchant/description. Each \
+            transaction already has a current category — keep it unless a DIFFERENT allowed category is clearly \
+            more accurate. Choose only from the allowed list.
             """
             var result: [UUID: String] = [:]
             for item in items {
                 let session = LanguageModelSession(instructions: instructions)
                 let hint = item.rawCategory.map { " (bank category: \($0))" } ?? ""
+                // Anchored (a real current category) → abstain unless a different one is clearly better.
+                // Unanchored (nil/empty current, e.g. a fresh receipt) → just classify and take a confident match.
+                let anchor = item.current.flatMap { $0.isEmpty ? nil : $0 }
                 let prompt = """
                 Allowed categories: \(allowed.joined(separator: ", ")).
                 Transaction: "\(item.description)"\(hint).
-                Best category:
+                Current category: \(anchor ?? "Uncategorized").
+                Pick the best category, and set changeIsClear to true only if a DIFFERENT category is clearly \
+                more accurate than the current one.
                 """
-                guard let response = try? await session.respond(to: prompt) else { continue }
-                let text = response.content.trimmingCharacters(in: .whitespacesAndNewlines)
-                if let match = allowed.first(where: { $0.caseInsensitiveCompare(text) == .orderedSame }) {
-                    result[item.id] = match
+                guard let r = try? await session.respond(to: prompt, generating: Refinement.self).content,
+                      let match = allowed.first(where: { $0.caseInsensitiveCompare(r.category) == .orderedSame })
+                else { continue }
+                if let anchor, !(r.changeIsClear && match.caseInsensitiveCompare(anchor) != .orderedSame) {
+                    continue   // keep the current category — no confident, different improvement
                 }
+                result[item.id] = match
             }
             return result
         }
