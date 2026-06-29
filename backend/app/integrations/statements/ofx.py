@@ -11,6 +11,15 @@ _STMTTRN = re.compile(r"<STMTTRN>(.*?)</STMTTRN>", re.I | re.S)
 _LEDGERBAL = re.compile(r"<LEDGERBAL>(.*?)</LEDGERBAL>", re.I | re.S)
 _AVAILBAL = re.compile(r"<AVAILBAL>(.*?)</AVAILBAL>", re.I | re.S)
 
+# Some banks put the payment *method* in <NAME> ("DEBIT CARD PURCHASE 1234") and the real merchant in
+# <MEMO>; others do the opposite, and most put the merchant in <NAME>. We can't blindly swap (that would
+# break the common case), so we detect method-boilerplate NAMEs and prefer/combine MEMO for those.
+_METHOD_BOILERPLATE = re.compile(
+    r"\b(?:DEBIT|CREDIT|CHECK)\s*CARD|\bCHECKCARD|\bPURCHASE\s+AUTHORIZED|\bPOS\b|\bPOINT\s+OF\s+SALE|"
+    r"\bACH\b|\b(?:E?\s*-?\s*)?TRANSFER\b|\bWITHDRAWAL\b|\bDEPOSIT\b|\bPREAUTH|\bRECURRING\s+PAYMENT|"
+    r"\bBILL\s*PAY|\bDIRECT\s+(?:DEP|DEBIT)|\bELECTRONIC|\bWEB\s+PMT|\bONLINE\s+(?:PMT|PAYMENT)",
+    re.I)
+
 
 @dataclass
 class ParsedTxn:
@@ -36,6 +45,27 @@ def _leaf(tag: str, text: str) -> str | None:
     leaves) and XML (`<TAG>value</TAG>`) alike, since we stop at the next `<`."""
     m = re.search(rf"<{tag}>([^<\r\n]*)", text, re.I)
     return m.group(1).strip() if m else None
+
+
+def _describe(name: str | None, memo: str | None) -> str:
+    """The most useful merchant description from a transaction's <NAME>/<MEMO>.
+
+    Default: prefer NAME (where most banks put the merchant). But when NAME is payment-method boilerplate
+    ("DEBIT CARD PURCHASE …") and MEMO carries something else, lead with MEMO and append the rest so no
+    detail is lost — covering the banks that flip the two fields without regressing the common case.
+    """
+    name = (name or "").strip()
+    memo = (memo or "").strip()
+    if not name and not memo:
+        return "Transaction"
+    if name and memo and name.lower() != memo.lower():
+        primary, secondary = (memo, name) if _METHOD_BOILERPLATE.search(name) else (name, memo)
+        # When one field subsumes the other, keep the cleaner primary (the merchant) — avoids
+        # "STARBUCKS — STARBUCKS" and "STARBUCKS — POS DEBIT STARBUCKS".
+        if secondary.lower() in primary.lower() or primary.lower() in secondary.lower():
+            return primary
+        return f"{primary} — {secondary}"
+    return name or memo
 
 
 def _parse_date(value: str | None) -> date | None:
@@ -80,13 +110,13 @@ def parse(content: bytes | str) -> ParsedStatement:
         # Prefer the transaction (purchase) date when the institution emits it; fall back to the posted/
         # settled date. Note: Apple Card's OFX carries only DTPOSTED, so this is a no-op there.
         when = _parse_date(_leaf("DTUSER", block)) or _parse_date(_leaf("DTPOSTED", block))
-        name = _leaf("NAME", block) or _leaf("MEMO", block) or "Transaction"
+        description = _describe(_leaf("NAME", block), _leaf("MEMO", block))
         if not fitid or amount_raw is None or when is None:
             continue
         try:
             amount = -Decimal(amount_raw)  # flip: OFX debit (−) → SplitBack outflow (+)
         except InvalidOperation:
             continue
-        txns.append(ParsedTxn(fitid=fitid, date=when, amount=amount, description=name[:512]))
+        txns.append(ParsedTxn(fitid=fitid, date=when, amount=amount, description=description[:512]))
     return ParsedStatement(org=org, acctid=acctid, currency=currency, ledger_balance=ledger_balance,
                            available_balance=available_balance, ledger_as_of=ledger_as_of, transactions=txns)

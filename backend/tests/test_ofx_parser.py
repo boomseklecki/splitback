@@ -78,6 +78,36 @@ def test_falls_back_to_memo_when_no_name():
     assert t.description == "FROM MEMO"
 
 
+def test_name_memo_flipped_bank_prefers_merchant_in_memo():
+    # Some banks put the payment *method* in NAME and the merchant in MEMO. Lead with the merchant.
+    block = ("<OFX><STMTTRN><DTPOSTED>20260601<TRNAMT>-4.50<FITID>X"
+             "<NAME>DEBIT CARD PURCHASE 1234<MEMO>STARBUCKS #123 SEATTLE</STMTTRN></OFX>")
+    t = ofx.parse(block).transactions[0]
+    assert t.description.startswith("STARBUCKS #123 SEATTLE")        # merchant first, not the method
+    assert "STARBUCKS" in t.description
+
+
+def test_boilerplate_name_containing_merchant_collapses_to_merchant():
+    # NAME is boilerplate that *includes* the MEMO merchant → just the clean merchant, no duplication.
+    block = ("<OFX><STMTTRN><DTPOSTED>20260601<TRNAMT>-4.50<FITID>X"
+             "<NAME>POS DEBIT STARBUCKS<MEMO>STARBUCKS</STMTTRN></OFX>")
+    t = ofx.parse(block).transactions[0]
+    assert t.description == "STARBUCKS"
+
+
+def test_normal_bank_keeps_name_and_appends_complementary_memo():
+    # Common case: NAME holds the merchant (not boilerplate). Keep it; append MEMO detail when distinct.
+    block = ("<OFX><STMTTRN><DTPOSTED>20260601<TRNAMT>-9.99<FITID>X"
+             "<NAME>STREAMING CO<MEMO>monthly</STMTTRN></OFX>")
+    t = ofx.parse(block).transactions[0]
+    assert t.description == "STREAMING CO — monthly"
+
+
+def test_name_only_unchanged():
+    block = "<OFX><STMTTRN><DTPOSTED>20260601<TRNAMT>-1.00<FITID>X<NAME>WHOLE FOODS</STMTTRN></OFX>"
+    assert ofx.parse(block).transactions[0].description == "WHOLE FOODS"
+
+
 def test_skips_incomplete_rows():
     block = "<OFX><STMTTRN><TRNAMT>-1.00<NAME>NO FITID</STMTTRN></OFX>"  # missing FITID + date
     assert ofx.parse(block).transactions == []
