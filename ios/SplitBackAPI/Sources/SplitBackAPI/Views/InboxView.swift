@@ -90,7 +90,7 @@ struct InboxView: View {
             // to a minimal row only if the friend hasn't been cached yet.
             NavigationLink(value: friendRow(for: s)) { cardLabel(s) }
                 .swipeActions { dismissButton(s) }
-        case .overspend:
+        case .overspend, .nearingBudget:
             if let goal = goals.first(where: { $0.id == s.goalId }) {
                 NavigationLink(value: goal) { cardLabel(s) }.swipeActions { dismissButton(s) }
             }

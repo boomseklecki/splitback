@@ -145,7 +145,7 @@ struct SuggestionService {
             try context.save()
         case .recurringSplit:
             try await acceptRecurringSplit(s)
-        case .sharedBudgetCandidate, .settleUp, .overspend:
+        case .sharedBudgetCandidate, .settleUp, .overspend, .nearingBudget:
             break  // navigate-only — the inbox view handles these
         }
     }

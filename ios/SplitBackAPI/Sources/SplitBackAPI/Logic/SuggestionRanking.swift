@@ -19,7 +19,7 @@ enum SuggestionRanking {
         switch kind {
         case .link, .recurringSplit: return 4            // dedupe / shared-expense actions — most useful
         case .categorize: return 3                        // makes budgets/goals/trends meaningful
-        case .overspend, .settleUp, .sharedBudgetCandidate: return 2   // budget + settle-up nudges
+        case .overspend, .nearingBudget, .settleUp, .sharedBudgetCandidate: return 2   // budget + settle-up nudges
         case .subscription: return 1                      // least useful (informational)
         }
     }
@@ -38,7 +38,7 @@ enum SuggestionRanking {
         case .recurringSplit: return 1.0                  // template-taught — high signal
         case .categorize: return min(Double(max(s.transactionIds.count, 1)) / 10.0, 1.0)
         case .subscription: return 0.5
-        case .overspend, .settleUp, .sharedBudgetCandidate: return 0.6
+        case .overspend, .nearingBudget, .settleUp, .sharedBudgetCandidate: return 0.6
         }
     }
 

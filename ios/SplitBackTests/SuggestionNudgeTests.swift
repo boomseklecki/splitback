@@ -63,6 +63,53 @@ final class SuggestionNudgeTests: XCTestCase {
         XCTAssertTrue(under.isEmpty)
     }
 
+    private func foodTxn(_ amount: Decimal) -> (Account, Transaction) {
+        let a = Account(id: UUID(), name: "Checking", type: "checking", balance: 0, currency: "USD",
+                        createdAt: Date(), updatedAt: Date())
+        let t = Transaction(id: UUID(), accountId: a.id, source: .plaid, details: "Dinner",
+                            amount: amount, currency: "USD", date: Date(), category: "FOOD_AND_DRINK",
+                            createdAt: Date(), updatedAt: Date())
+        return (a, t)
+    }
+
+    func testNearingBudgetAndMutualExclusionWithOverspend() {
+        let (a, t) = foodTxn(90)   // 90 of a 100 budget = 90% → nearing, not over
+        let cards = nudges(goals: [goal("Dining", target: 100, shared: false)], transactions: [t], accounts: [a])
+        XCTAssertEqual(cards.filter { $0.kind == .nearingBudget }.count, 1)
+        XCTAssertTrue(cards.filter { $0.kind == .overspend }.isEmpty)
+        XCTAssertTrue(cards.first { $0.kind == .nearingBudget }?.subtitle.contains("90%") ?? false)
+
+        // Under 85% → neither card.
+        let (a2, t2) = foodTxn(50)
+        let none = nudges(goals: [goal("Dining", target: 100, shared: false)], transactions: [t2], accounts: [a2])
+        XCTAssertTrue(none.contains { $0.kind == .nearingBudget || $0.kind == .overspend } == false)
+    }
+
+    func testNearingDismissalIsMonthScoped() {
+        let (a, t) = foodTxn(90)
+        let goals = [goal("Dining", target: 100, shared: false)]
+        let card = nudges(goals: goals, transactions: [t], accounts: [a]).first { $0.kind == .nearingBudget }!
+        XCTAssertTrue(card.id.hasPrefix("nearing:\(goals[0].id.uuidString):"))   // month-scoped id
+
+        // Dismissing this month's card silences it...
+        let dismissed = nudges(goals: goals, transactions: [t], accounts: [a],
+                               decisions: [SuggestionDecision(key: card.id, decision: "dismissed")])
+        XCTAssertTrue(dismissed.filter { $0.kind == .nearingBudget }.isEmpty)
+        // ...but an un-scoped (or other-month) key does NOT — so next month re-surfaces.
+        let stale = nudges(goals: goals, transactions: [t], accounts: [a],
+                           decisions: [SuggestionDecision(key: "nearing:\(goals[0].id.uuidString)",
+                                                          decision: "dismissed")])
+        XCTAssertEqual(stale.filter { $0.kind == .nearingBudget }.count, 1)
+    }
+
+    func testNearingSharedHousehold() {
+        let g = UUID()
+        let cards = nudges(goals: [goal("Dining", target: 100, shared: true)],
+                           expenses: [sharedExpense(g, category: "Dining", splits: [(me, 45), (alex, 45)])],
+                           groupMembers: members(g, [me, alex]), partners: [alex])
+        XCTAssertEqual(cards.filter { $0.kind == .nearingBudget }.count, 1)   // combined 90 of 100
+    }
+
     func testSettleUp() {
         let over = nudges(friendNets: [(identifier: alex, name: "Alex", net: 20)])
             .filter { $0.kind == .settleUp }

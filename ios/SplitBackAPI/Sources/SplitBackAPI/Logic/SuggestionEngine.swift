@@ -162,7 +162,9 @@ extension SuggestionEngine {
             }
         }
 
-        // Overspend — a spend goal already over its limit this month (own via GoalProgress, shared via household).
+        // Budget nudges — a spend goal nearing (≥85%) or over its limit this month (own via GoalProgress,
+        // shared via household). Ids are month-scoped so a dismissal only silences this month's card.
+        let monthKey = Self.monthKey(month)
         for goal in spendGoals {
             guard let category = goal.category else { continue }
             let spent: Decimal = (goal.shared && me != nil)
@@ -170,11 +172,23 @@ extension SuggestionEngine {
                                            sharedGroupIds: sharedGroupIds, viewer: me!, partners: partners).combined
                 : GoalProgress.spent(for: category, in: month, transactions: transactions,
                                      accounts: accounts, lookup: lookup, expenses: expenses, me: me)
-            guard spent > goal.targetAmount else { continue }
-            out.append(Suggestion(
-                id: "overspend:\(goal.id.uuidString)", kind: .overspend, title: goal.name,
-                subtitle: "Over budget: \(spent.formatted(.currency(code: "USD"))) of \(goal.targetAmount.formatted(.currency(code: "USD")))",
-                icon: "exclamationmark.triangle", acceptLabel: "View", goalId: goal.id))
+            let amounts = "\(spent.formatted(.currency(code: "USD"))) of \(goal.targetAmount.formatted(.currency(code: "USD")))"
+            switch GoalProgress.budgetStatus(spent: spent, target: goal.targetAmount) {
+            case .over:
+                out.append(Suggestion(
+                    id: "overspend:\(goal.id.uuidString):\(monthKey)", kind: .overspend, title: goal.name,
+                    subtitle: "Over budget: \(amounts)",
+                    icon: "exclamationmark.triangle", acceptLabel: "View", goalId: goal.id))
+            case .nearing:
+                let pct = goal.targetAmount > 0
+                    ? Int((NSDecimalNumber(decimal: spent / goal.targetAmount).doubleValue * 100).rounded()) : 0
+                out.append(Suggestion(
+                    id: "nearing:\(goal.id.uuidString):\(monthKey)", kind: .nearingBudget, title: goal.name,
+                    subtitle: "At \(pct)% of budget: \(amounts)",
+                    icon: "gauge.medium", acceptLabel: "View", goalId: goal.id))
+            case .under:
+                break
+            }
         }
 
         // Settle up — a friend balance past the threshold.
@@ -193,5 +207,11 @@ extension SuggestionEngine {
     /// Rounds a spend figure up to a tidy budget target (nearest 10).
     private static func roundedTarget(_ amount: Decimal) -> Decimal {
         Decimal((NSDecimalNumber(decimal: amount).doubleValue / 10).rounded(.up) * 10)
+    }
+
+    /// A stable per-month key ("YYYY-MM") for month-scoped budget-nudge dismissals.
+    private static func monthKey(_ month: Date) -> String {
+        let c = SpendingAnalytics.spendCalendar.dateComponents([.year, .month], from: month)
+        return String(format: "%04d-%02d", c.year ?? 0, c.month ?? 0)
     }
 }

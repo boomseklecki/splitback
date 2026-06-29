@@ -5,7 +5,7 @@ import Foundation
 struct Suggestion: Identifiable, Equatable {
     enum Kind: String {
         case categorize, link, subscription, recurringSplit          // actionable (accept mutates)
-        case sharedBudgetCandidate, settleUp, overspend              // nudges (accept navigates/prefills)
+        case sharedBudgetCandidate, settleUp, overspend, nearingBudget  // nudges (accept navigates/prefills)
     }
 
     let id: String
@@ -32,7 +32,7 @@ struct Suggestion: Identifiable, Equatable {
     /// Nudge kinds navigate (or open a prefilled editor) instead of mutating on accept.
     var navigates: Bool {
         switch kind {
-        case .sharedBudgetCandidate, .settleUp, .overspend: return true
+        case .sharedBudgetCandidate, .settleUp, .overspend, .nearingBudget: return true
         default: return false
         }
     }
