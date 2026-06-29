@@ -138,6 +138,46 @@ final class SuggestionEngineTests: XCTestCase {
         XCTAssertFalse(fuel?.subtitle.contains("transactions") ?? true)  // no count suffix for a single txn
     }
 
+    func testSplitPassesPartitionByKind() {
+        // generateCategorize → only categorize cards; generateDeterministic → never categorize (link/sub/rsplit).
+        let cat = SuggestionEngine.generateCategorize(
+            transactions: [txn("Store", 10, category: "GENERAL_SERVICES", ai: "Shopping")],
+            lookup: [:], sources: [:])
+        XCTAssertFalse(cat.isEmpty)
+        XCTAssertTrue(cat.allSatisfy { $0.kind == .categorize })
+
+        let e = expense("Dinner", 50, category: "Dining", splits: [(me, 50)])
+        let det = SuggestionEngine.generateDeterministic(
+            transactions: [txn("Dinner", 50, date: e.date)], expenses: [e], templates: [], rules: [],
+            subscriptions: [], me: me)
+        XCTAssertTrue(det.allSatisfy { $0.kind != .categorize })
+        XCTAssertTrue(det.contains { $0.kind == .link })
+    }
+
+    @MainActor
+    func testDeterministicCacheMemoizesAndInvalidates() {
+        let cache = SuggestionAnalysisCache()
+        let t = txn("Netflix", 15.99)
+        var computes = 0
+        func det(_ txns: [Transaction], threshold: Double = SuggestionEngine.defaultLinkThreshold) -> [Suggestion] {
+            cache.deterministicSuggestions(transactions: txns, expenses: [], me: me, rules: [], templates: [],
+                                           asOf: Date(), linkThreshold: threshold) {
+                computes += 1
+                return SuggestionEngine.generateDeterministic(
+                    transactions: txns, expenses: [], templates: [], rules: [], subscriptions: [], me: me,
+                    linkThreshold: threshold)
+            }
+        }
+        _ = det([t]); _ = det([t])
+        XCTAssertEqual(computes, 1)                         // repeat call is a cache hit
+        t.aiSuggestedCategory = "Streaming"; _ = det([t])
+        XCTAssertEqual(computes, 1)                         // AI-opinion change doesn't invalidate the det memo
+        _ = det([t, txn("Spotify", 9.99)])
+        XCTAssertEqual(computes, 2)                         // a new transaction invalidates
+        _ = det([t], threshold: 0.70)
+        XCTAssertEqual(computes, 3)                         // linkThreshold change invalidates
+    }
+
     func testDistributeRoundsToExactTotal() {
         let parts = SuggestionService.distribute(100, fractions: [me: 0.5, alex: 0.5])
         XCTAssertEqual(parts.reduce(Decimal(0)) { $0 + $1.1 }, 100)

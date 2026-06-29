@@ -32,17 +32,31 @@ struct SuggestionService {
         let decisions = try context.fetch(FetchDescriptor<SuggestionDecision>())
         let lookup = CategoryMapping.lookup(maps), sources = CategoryMapping.sources(maps)
 
-        // Subscription cadence is the heaviest pass and unaffected by partner/category/dismissal churn — memoize
-        // it (cache shared via AppEnvironment), falling back to a direct analyze if no cache was injected.
-        let subscriptions = analysisCache?.subscriptions(
-            transactions: transactions, expenses: expenses, lookup: lookup, me: me, rules: rules, asOf: Date())
-            ?? SubscriptionDetector.analyze(
-                transactions: transactions, expenses: expenses, lookup: lookup, me: me, rules: rules).subscriptions
+        let asOf = Date(), linkThreshold = LinkSensitivity.current().threshold
 
-        var result = SuggestionEngine.generate(
-            transactions: transactions, expenses: expenses, lookup: lookup, sources: sources,
-            templates: templates, rules: rules, subscriptions: subscriptions, decisions: decisions, me: me,
-            linkThreshold: LinkSensitivity.current().threshold)
+        // The deterministic pass (Link + Subscription + Recurring-split) is the heavy one and depends only on
+        // transactions/expenses/templates/rules/linkThreshold — memoize the whole thing (shared via
+        // AppEnvironment) so the 3-paints-per-reload + accept/dismiss/AI churn reuse it. Subscriptions feed it
+        // via their own (narrower) memo. The volatile categorize pass + nudges recompute each call (cheap).
+        func freshSubscriptions() -> [Subscription] {
+            analysisCache?.subscriptions(transactions: transactions, expenses: expenses, lookup: lookup,
+                                         me: me, rules: rules, asOf: asOf)
+                ?? SubscriptionDetector.analyze(transactions: transactions, expenses: expenses,
+                                                lookup: lookup, me: me, rules: rules).subscriptions
+        }
+        func computeDeterministic() -> [Suggestion] {
+            SuggestionEngine.generateDeterministic(
+                transactions: transactions, expenses: expenses, templates: templates, rules: rules,
+                subscriptions: freshSubscriptions(), me: me, asOf: asOf, linkThreshold: linkThreshold)
+        }
+        let deterministic = analysisCache?.deterministicSuggestions(
+            transactions: transactions, expenses: expenses, me: me, rules: rules, templates: templates,
+            asOf: asOf, linkThreshold: linkThreshold, compute: computeDeterministic) ?? computeDeterministic()
+
+        var result = SuggestionEngine.filterDismissed(
+            SuggestionEngine.generateCategorize(transactions: transactions, lookup: lookup, sources: sources)
+                + deterministic,
+            decisions: decisions)
 
         // Read the cached Friend balances (snapshot from the last /friends sync); names from the directory.
         let directory = (try? context.fetch(FetchDescriptor<User>())) ?? []
@@ -75,9 +89,11 @@ struct SuggestionService {
     /// without Apple Intelligence.
     func refreshAI() async {
         guard CategoryMapper.isAvailable else { return }
-        let pending = (try? context.fetch(FetchDescriptor<Transaction>()))?
-            .filter { $0.amount > 0 && $0.aiSuggestedCategory == nil }
-            .sorted { $0.date > $1.date } ?? []
+        // Fetch only the not-yet-processed rows (incremental — skips everything already classified), newest
+        // first; the cheap amount>0 outflow filter stays in-memory (Decimal isn't predicate-friendly).
+        var descriptor = FetchDescriptor<Transaction>(predicate: #Predicate { $0.aiSuggestedCategory == nil })
+        descriptor.sortBy = [SortDescriptor(\.date, order: .reverse)]
+        let pending = ((try? context.fetch(descriptor)) ?? []).filter { $0.amount > 0 }
         guard !pending.isEmpty else { return }
 
         // Suggest from the user's own categories (not just canonical), and classify each unique description
