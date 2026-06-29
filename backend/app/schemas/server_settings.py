@@ -6,6 +6,7 @@ class ServerSettingsResponse(BaseModel):
     invites_open_to_members: bool
     public_hostname: str
     splitwise_receipt_download_enabled: bool
+    splitwise_receipt_backfill_enabled: bool
     sync_interval_hours: int
     backup_interval_hours: int
     backups_retention_days: int
@@ -20,6 +21,7 @@ class ServerSettingsUpdate(BaseModel):
     invites_open_to_members: bool | None = None
     public_hostname: str | None = None
     splitwise_receipt_download_enabled: bool | None = None
+    splitwise_receipt_backfill_enabled: bool | None = None
     sync_interval_hours: int | None = None
     backup_interval_hours: int | None = None
     backups_retention_days: int | None = None

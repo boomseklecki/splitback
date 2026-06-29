@@ -3,15 +3,16 @@ import logging
 from datetime import datetime, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.auth import require_auth
+from app.auth.scope import caller_group_ids
 from app import server_settings
 from app.config import settings
-from app.db import get_session
+from app.db import async_session, get_session
 from app.integrations.splitwise import client as sw_client
 from app.integrations.splitwise import importer
 from app.integrations.splitwise import receipts as sw_receipts
@@ -34,6 +35,7 @@ from app.schemas.splitwise import (
     LocalImportResult,
     NotificationResponse,
     ReceiptDownloadResult,
+    ReceiptDownloadStarted,
     SplitwiseImportRequest,
     SplitwiseImportResult,
     SplitwiseStatus,
@@ -428,3 +430,34 @@ async def download_group_receipts(
             skipped += 1
     await session.commit()
     return ReceiptDownloadResult(downloaded=downloaded, skipped=skipped, enabled=True)
+
+
+async def _run_download_all(group_ids: list[UUID], access_token: str) -> None:
+    """Background worker for download-all: own session, newest-first, rate-limited, committed incrementally."""
+    async with async_session() as session:
+        try:
+            ids = await sw_receipts.pending_receipt_expense_ids(session, group_ids)
+            count = await sw_receipts.download_pending(session, ids, access_token)
+            log.info("download-all receipts: downloaded %d of %d pending", count, len(ids))
+        except Exception:
+            await session.rollback()
+            log.exception("download-all receipts background task failed")
+
+
+@router.post("/receipts/download-all", response_model=ReceiptDownloadStarted)
+async def download_all_receipts(
+    background: BackgroundTasks,
+    caller: str | None = Depends(require_auth),
+    session: AsyncSession = Depends(get_session),
+) -> ReceiptDownloadStarted:
+    """Kick off a one-time, best-effort download of every not-yet-downloaded Splitwise receipt across the
+    caller's groups (newest-first, rate-limited). Runs in the BACKGROUND so the caller can navigate away.
+    Gated by SPLITWISE_RECEIPT_BACKFILL_ENABLED; idempotent (a re-tap just skips ones already present)."""
+    if not await server_settings.get(session, "splitwise_receipt_backfill_enabled"):
+        return ReceiptDownloadStarted(enabled=False, started=False, pending=0)
+    group_ids = await caller_group_ids(session, caller) if caller \
+        else list(await session.scalars(select(Group.id)))
+    token = await _select_token(session, caller)
+    pending = len(await sw_receipts.pending_receipt_expense_ids(session, group_ids))
+    background.add_task(_run_download_all, group_ids, token.access_token)
+    return ReceiptDownloadStarted(enabled=True, started=True, pending=pending)

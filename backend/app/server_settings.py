@@ -19,7 +19,8 @@ from app.models import ServerSetting
 REGISTRY: dict[str, tuple[type, object]] = {
     "invites_open_to_members": (bool, False),
     "public_hostname": (str, ""),
-    "splitwise_receipt_download_enabled": (bool, False),
+    "splitwise_receipt_download_enabled": (bool, False),   # convert-to-local + per-group receipt download
+    "splitwise_receipt_backfill_enabled": (bool, False),   # the bulk download-all button + scheduled auto-backfill
     "sync_interval_hours": (int, 0),
     "backup_interval_hours": (int, 0),
     "backups_retention_days": (int, 30),

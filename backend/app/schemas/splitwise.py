@@ -27,6 +27,14 @@ class ReceiptDownloadResult(BaseModel):
     enabled: bool
 
 
+class ReceiptDownloadStarted(BaseModel):
+    """The bulk download-all kickoff: the work runs in the background (the caller can leave). `pending` is how
+    many receipts were queued; `enabled` is false (nothing started) when the backfill setting is off."""
+    enabled: bool
+    started: bool
+    pending: int
+
+
 class SplitwiseImportRequest(BaseModel):
     since: str | None = None  # dated_after, e.g. 2020-01-01
     until: str | None = None  # dated_before

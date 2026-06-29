@@ -12,6 +12,9 @@ struct ServerSettingsView: View {
     @State private var serverName = ""
     @State private var invitesOpenToMembers = false
     @State private var splitwiseReceiptDownload = false
+    @State private var splitwiseReceiptBackfill = false
+    @State private var downloadingReceipts = false
+    @State private var downloadSummary: String?
     @State private var syncIntervalHours = 0
     @State private var backupIntervalHours = 0
     @State private var backupsRetentionDays = 30
@@ -39,8 +42,28 @@ struct ServerSettingsView: View {
                 Text("Off: only admins can create invite links. On: any enrolled member can.")
             }
 
-            Section("Splitwise") {
-                Toggle("Download Splitwise receipts", isOn: $splitwiseReceiptDownload)
+            Section {
+                Toggle("Download receipts on import to local", isOn: $splitwiseReceiptDownload)
+                Toggle("Download all + auto-backfill receipts", isOn: $splitwiseReceiptBackfill)
+                Button { downloadAllReceipts() } label: {
+                    HStack {
+                        Label(downloadingReceipts ? "Starting…" : "Download all receipts now",
+                              systemImage: "arrow.down.circle")
+                        Spacer()
+                        if downloadingReceipts { ProgressView() }
+                    }
+                }
+                .disabled(!splitwiseReceiptBackfill || downloadingReceipts || !loaded)
+                if let downloadSummary {
+                    Text(downloadSummary).font(.caption).foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Splitwise receipts")
+            } footer: {
+                Text("Import-to-local downloads a group's receipts only when you convert it to a local group. "
+                     + "All + auto-backfill enables the button below (a one-time background pull of every "
+                     + "not-yet-saved receipt, newest first) and trickles new ones in during scheduled syncs. "
+                     + "Save before using the button.")
             }
 
             Section {
@@ -94,6 +117,21 @@ struct ServerSettingsView: View {
         .task { if !loaded { await load() } }
     }
 
+    private func downloadAllReceipts() {
+        downloadingReceipts = true
+        downloadSummary = nil
+        Task {
+            defer { downloadingReceipts = false }
+            do {
+                let result = try await env.splitwise.downloadAllReceipts()
+                downloadSummary = result.enabled
+                    ? "Downloading \(result.pending.formatted()) receipt\(result.pending == 1 ? "" : "s") in the "
+                        + "background — you can leave this screen."
+                    : "Turn on “Download all + auto-backfill” and Save first."
+            } catch { errorText = errorMessage(error) }
+        }
+    }
+
     private func intervalLabel(_ hours: Int) -> String { hours <= 0 ? "Off" : "every \(hours)h" }
     private func staleLabel(_ minutes: Int) -> String { minutes <= 0 ? "always sync" : "\(minutes) min" }
 
@@ -101,6 +139,7 @@ struct ServerSettingsView: View {
         serverName = s.public_hostname
         invitesOpenToMembers = s.invites_open_to_members
         splitwiseReceiptDownload = s.splitwise_receipt_download_enabled
+        splitwiseReceiptBackfill = s.splitwise_receipt_backfill_enabled
         syncIntervalHours = s.sync_interval_hours
         backupIntervalHours = s.backup_interval_hours
         backupsRetentionDays = s.backups_retention_days
@@ -125,6 +164,7 @@ struct ServerSettingsView: View {
                     invites_open_to_members: invitesOpenToMembers,
                     public_hostname: serverName,
                     splitwise_receipt_download_enabled: splitwiseReceiptDownload,
+                    splitwise_receipt_backfill_enabled: splitwiseReceiptBackfill,
                     sync_interval_hours: syncIntervalHours,
                     backup_interval_hours: backupIntervalHours,
                     backups_retention_days: backupsRetentionDays,

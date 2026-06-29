@@ -27,6 +27,21 @@ struct SplitwiseService {
         }
     }
 
+    /// Kicks off a one-time, background download of every not-yet-downloaded Splitwise receipt (newest-first,
+    /// rate-limited, server-side — the caller can navigate away). Returns whether it was enabled (the backfill
+    /// setting must be on) and how many receipts were queued.
+    @discardableResult
+    func downloadAllReceipts() async throws -> (enabled: Bool, pending: Int) {
+        let output = try await client.download_all_receipts_splitwise_receipts_download_all_post()
+        switch output {
+        case let .ok(ok):
+            let json = try ok.body.json
+            return (json.enabled, json.pending)
+        case let .undocumented(statusCode, _):
+            throw BackendError.fromUndocumented(statusCode)
+        }
+    }
+
     /// Runs the cold-backfill import with the stored token; returns the number of expenses imported.
     @discardableResult
     func runImport() async throws -> Int {

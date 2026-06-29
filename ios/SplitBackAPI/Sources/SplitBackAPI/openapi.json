@@ -3402,6 +3402,33 @@
         }
       }
     },
+    "/splitwise/receipts/download-all": {
+      "post": {
+        "tags": [
+          "splitwise"
+        ],
+        "summary": "Download All Receipts",
+        "description": "Kick off a one-time, best-effort download of every not-yet-downloaded Splitwise receipt across the\ncaller's groups (newest-first, rate-limited). Runs in the BACKGROUND so the caller can navigate away.\nGated by SPLITWISE_RECEIPT_BACKFILL_ENABLED; idempotent (a re-tap just skips ones already present).",
+        "operationId": "download_all_receipts_splitwise_receipts_download_all_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReceiptDownloadStarted"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/goals": {
       "post": {
         "tags": [
@@ -5955,6 +5982,30 @@
         ],
         "title": "ReceiptDownloadResult"
       },
+      "ReceiptDownloadStarted": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "started": {
+            "type": "boolean",
+            "title": "Started"
+          },
+          "pending": {
+            "type": "integer",
+            "title": "Pending"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enabled",
+          "started",
+          "pending"
+        ],
+        "title": "ReceiptDownloadStarted",
+        "description": "The bulk download-all kickoff: the work runs in the background (the caller can leave). `pending` is how\nmany receipts were queued; `enabled` is false (nothing started) when the backfill setting is off."
+      },
       "ReceiptResponse": {
         "properties": {
           "id": {
@@ -6068,6 +6119,10 @@
             "type": "boolean",
             "title": "Splitwise Receipt Download Enabled"
           },
+          "splitwise_receipt_backfill_enabled": {
+            "type": "boolean",
+            "title": "Splitwise Receipt Backfill Enabled"
+          },
           "sync_interval_hours": {
             "type": "integer",
             "title": "Sync Interval Hours"
@@ -6102,6 +6157,7 @@
           "invites_open_to_members",
           "public_hostname",
           "splitwise_receipt_download_enabled",
+          "splitwise_receipt_backfill_enabled",
           "sync_interval_hours",
           "backup_interval_hours",
           "backups_retention_days",
@@ -6126,6 +6182,10 @@
           "splitwise_receipt_download_enabled": {
             "type": "boolean",
             "title": "Splitwise Receipt Download Enabled"
+          },
+          "splitwise_receipt_backfill_enabled": {
+            "type": "boolean",
+            "title": "Splitwise Receipt Backfill Enabled"
           },
           "sync_interval_hours": {
             "type": "integer",

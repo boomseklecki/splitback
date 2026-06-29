@@ -4,14 +4,66 @@ Splitwise receipts live behind an authenticated API URL, so they can't be loaded
 lost when a group is converted to local. This persists a local copy (mirrors the receipt upload path).
 """
 import asyncio
+import logging
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.integrations.splitwise import client as sw_client
 from app.integrations.storage import minio_client
-from app.models import Receipt
+from app.models import Expense, Receipt
+
+log = logging.getLogger(__name__)
+
+# Politeness throttle for the bulk/backfill receipt pulls so we don't hammer Splitwise's image host.
+RECEIPT_FETCH_DELAY = 0.4   # seconds between fetches
+BACKFILL_MAX_PER_RUN = 50   # cap for one scheduled backfill pass (the one-time button is uncapped)
+
+
+async def pending_receipt_expense_ids(
+    session: AsyncSession, group_ids: list[UUID], limit: int | None = None
+) -> list[UUID]:
+    """Expense ids in `group_ids` that have a Splitwise receipt URL but no downloaded `Receipt` yet, newest
+    transaction first (so the bulk/backfill pulls the most recent receipts first). Empty when no groups."""
+    if not group_ids:
+        return []
+    stmt = (
+        select(Expense.id)
+        .where(
+            Expense.group_id.in_(group_ids),
+            Expense.splitwise_receipt_url.is_not(None),
+            ~select(Receipt.id).where(Receipt.expense_id == Expense.id).exists(),
+        )
+        .order_by(Expense.date.desc())
+    )
+    if limit is not None:
+        stmt = stmt.limit(limit)
+    return list(await session.scalars(stmt))
+
+
+async def download_pending(
+    session: AsyncSession, expense_ids: list[UUID], access_token: str, rate_delay: float = RECEIPT_FETCH_DELAY
+) -> int:
+    """Download receipts for the given expense ids, best-effort + rate-limited, committing every ~10 so a
+    timeout/restart keeps progress. Re-checks each expense (skips one that gained a receipt meanwhile).
+    Returns the count downloaded."""
+    downloaded = 0
+    for i, eid in enumerate(expense_ids):
+        expense = await session.scalar(
+            select(Expense).where(Expense.id == eid).options(selectinload(Expense.receipts)))
+        if expense is None or expense.receipts or not expense.splitwise_receipt_url:
+            continue
+        if await download_to_minio(session, expense_id=eid,
+                                   receipt_url=expense.splitwise_receipt_url, access_token=access_token):
+            downloaded += 1
+        if (i + 1) % 10 == 0:
+            await session.commit()
+        await asyncio.sleep(rate_delay)
+    await session.commit()
+    return downloaded
 
 
 async def download_to_minio(
