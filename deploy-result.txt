@@ -1,52 +1,47 @@
 SplitBack backend deploy verification (uplink / Linux full-stack)
 ================================================================
 
-Commit tested:  cb71950  (main HEAD)
+Commit tested:  d620809  (main HEAD)
 Date (UTC):     2026-06-29
-Migration head: 0042_notification_entity   (NEW — upgraded 0041 -> 0042)
+Migration head: 0043_notifications_pushed_at   (NEW — upgraded 0042 -> 0043)
 
-Change in scope (backend + iOS contract, single commit; NO relay change):
-  cb71950  Activity-feed deep-linking: tap an Inbox row OR a push -> the entity's detail
-    - migration 0042_notification_entity (down_revision 0041_notification_prefs): adds nullable
-      entity_type / entity_id to notifications. Revision id 24 chars (<=32 OK).
-    - Notification model + NotificationResponse schema gain entity_type / entity_id.
-    - notify() gains entity_type/entity_id params + threads a deep-link target into push.enqueue;
-      crypto_push.seal gains optional `target` (sealed INSIDE the E2E box -> no relay change).
-    - call sites in expenses.py / accounts.py / goals.py / connections.py pass the entity ref.
-    - regenerated ios/openapi.json + iOS (NSE, router, Inbox nav, DeepLinkRouter, NotificationTarget).
+Change in scope (backend + iOS, single commit; NO relay change, NO OpenAPI change):
+  d620809  Inbox refinements: fix churning push (watermark), All-Activity screen, transaction deep-link
+    - migration 0043_notifications_pushed_at (down_revision 0042_notification_entity): adds
+      splitwise_tokens.notifications_pushed_at (push watermark). Revision id 28 chars (<=32 OK).
+    - importer.sync_notifications: push churn fix — push only notifications newer than the per-token
+      watermark, advance it every sync (decoupled from the retention prune). Softened summary wording.
+    - tests/test_notifications_sync.py reworked for the watermark (incl. a no-repush regression test).
+    - iOS-only: ActivityView (All-Activity screen) + transaction deep-link target.
 
 BUILD / RESTART:  OK
-  - git merge --ff-only origin/main -> cb71950 (clean).
+  - git merge --ff-only origin/main -> d620809 (clean).
   - docker compose build api api-test -> built.
   - Recreated api (real, :8000) + db-test/api-test. Up.
 
 MIGRATION:  APPLIED on BOTH databases
-  - REAL api db:  0041_notification_prefs -> 0042_notification_entity  (head: 0042_notification_entity)
-  - TEST db:      0041_notification_prefs -> 0042_notification_entity  (head: 0042_notification_entity)
-    "notification entity_type/entity_id (deep-link target)"
+  - REAL api db:  0042_notification_entity -> 0043_notifications_pushed_at  (head: 0043_notifications_pushed_at)
+  - TEST db:      0042_notification_entity -> 0043_notifications_pushed_at  (head: 0043_notifications_pushed_at)
+    "splitwise_tokens.notifications_pushed_at (push watermark)"
 
-RELAY:  UNTOUCHED  (git diff relay/ empty; seal target is sealed inside the E2E box).
+RELAY:    UNTOUCHED  (git diff relay/ empty).
+OPENAPI:  UNCHANGED  (git diff ios/openapi.json empty).
 
 IMPORT / WIRING SANITY (api-test):
   - app.main imports clean.
-  - Notification model carries entity_type + entity_id columns.
-  - services.notify.notify gained params: entity_type, entity_id.
-  - services.crypto_push.seal signature: (title, body, recipient_pub_x963, target)   [new `target`]
-
-CONTRACT (presence-check, per flattened-nullables memory):
-  - NotificationResponse has entity_type + entity_id in live /openapi.json AND committed ios/openapi.json.
+  - SplitwiseToken model carries notifications_pushed_at column.
 
 TEST RUN (api-test stack, incl. HTTP/MinIO-dependent tests):  PASS
-  TOTAL passing: 226   FAIL: 0   (all modules green)
+  TOTAL passing: 227   FAIL: 0   (all modules green)
 
 Watch-list (all PASS):
-  test_crypto_push ............. 5   (incl. seal `target` roundtrip / test_seal_open_roundtrip)
-  test_notification_producer ... 7   (rows carry entity refs; connection_request none / accept -> friend)
+  test_notifications_sync ...... 9   (reworked for the watermark; incl.
+                                       test_resync_updates_content_without_repush no-repush regression,
+                                       test_sync_notifications_all_per_token_isolation)
 
 FAILURES: none.
 
-SUMMARY: PASS. cb71950 builds, migrates 0041 -> 0042 on both real and test DBs, restarts, and passes
-the full backend suite (226/226). Activity-feed deep-linking verified end to end on the backend:
-notification entity_type/entity_id columns + schema, notify() entity params, crypto_push.seal target
-(sealed in the E2E box -> relay untouched). Contract aligned. No Linux-side code changes; this file is
-the only commit from here.
+SUMMARY: PASS. d620809 builds, migrates 0042 -> 0043 on both real and test DBs, restarts, and passes
+the full backend suite (227/227). Push-churn fix verified: per-token notifications_pushed_at watermark
+column + watermark-gated push (no-repush regression green). No relay change, no OpenAPI change. No
+Linux-side code changes; this file is the only commit from here.
