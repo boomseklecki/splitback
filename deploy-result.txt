@@ -1,41 +1,46 @@
 SplitBack backend deploy verification (uplink / Linux full-stack)
 ================================================================
 
-Commit tested:  a68d73f  (main HEAD)
+Commit tested:  6ae2b96  (main HEAD)
 Date (UTC):     2026-06-29
 Migration head: 0040_pending_txn_id  (unchanged — no new migration)
 
-Changes in scope (backend-only):
-  dc099fb  OFX import branding from Intuit FIDIR: scripts/refresh_fidir.py +
-           committed institutions_data.json (read at runtime; no live Intuit fetch);
-           institutions.py rewritten (curated overrides + exact-name match); statements.py wiring;
-           new tests/test_institutions.py + extended test_statement_import.py.
-  d87f20f  Supported-banks directory: GET /institutions?q=&limit= (routers/institutions.py +
-           schemas/institution.py), registered under _protected.
-  a68d73f  OFX parser: smarter NAME/MEMO merchant description (banks that flip the fields);
-           parser-only ofx.py change + 4 new test_ofx_parser cases.
+Change in scope (backend-only, single commit):
+  6ae2b96  Splitwise notifications: connect-time backfill, scheduler sync + delta push, HTML cleanup
+    - client.py: fetch_notifications gains `limit`; _clean_content strips HTML in both normalizers.
+    - importer.sync_notifications: `limit` + `push` flag (delta push of new non-self notifications).
+    - splitwise_auth callback: connect-time backfill of last 20 (push=False).
+    - sync.py scheduler: per-token notification sync after expense commit (push=True), isolated.
+    - new tests/test_notifications_sync.py; test_splitwise_auth + test_splitwise_scoped_sync updated
+      for the new fetch_notifications arity.
 
 BUILD / RESTART:  OK
-  - git pull --ff-only to a68d73f (clean).
-  - docker compose build api api-dev api-demo api-test -> built (institutions_data.json, 844 KB, in image).
-  - Recreated api (real, :8000), api-dev, api-demo, db-test+api-test. All healthy.
-  - alembic upgrade head -> no-op (already 0040_pending_txn_id).
-  - import sanity: app.main + institutions/statements routers import clean.
+  - git merge --ff-only origin/main -> 6ae2b96 (clean).
+  - docker compose build api api-test -> built.
+  - Recreated api (real, :8000) + db-test/api-test. Up.
+  - alembic current -> 0040_pending_txn_id (head); no migration applied.
 
-FEATURE WIRING (verified):
-  - GET /institutions ............ present in live OpenAPI spec
-  - FIDIR dataset loads .......... resolve_domain("Chase") -> chase.com (committed JSON read at runtime)
+IMPORT / WIRING SANITY (api-test):
+  - app.main imports clean.
+  - client.fetch_notifications signature: (client, access_token, limit)        [new `limit`]
+  - client._clean_content present
+  - importer.sync_notifications signature: (session, client, owner_identifier, retention,
+                                            access_token, limit, push)          [new `limit`, `push`]
 
 TEST RUN (api-test stack, incl. HTTP/MinIO-dependent tests):  PASS
-  TOTAL passing: 212   FAIL: 0   (47 modules, all green)
+  TOTAL passing: 216   FAIL: 0   (all modules green)
 
 Watch-list (all PASS):
-  test_ofx_parser ...... 12  (incl. the 4 new NAME/MEMO-flip cases)
-  test_institutions .... 7   (curated overrides + exact-name match into the FIDIR dataset)
-  test_statement_import  green (extended)
+  test_notifications_sync ...... 4   (incl. test_push_only_new_non_self,
+                                       test_resync_updates_content_without_repush)
+  test_notifications ........... 4
+  test_notification_producer ... 4
+  test_splitwise_auth .......... 3   (incl. test_start_binds_state_to_caller)
+  test_splitwise_scoped_sync ... 4   (new fetch_notifications arity)
 
 FAILURES: none.
 
-SUMMARY: PASS. a68d73f builds, restarts, and passes the full backend suite (212/212) on the running
-stack. Migration head 0040 (untouched). No live-fetch dependency (institutions_data.json committed +
-read at runtime). No Linux-side code changes; this file is the only commit from here.
+SUMMARY: PASS. 6ae2b96 builds, restarts, and passes the full backend suite (216/216) on the running
+stack. Migration head 0040 (untouched). New notification-sync surface verified: fetch_notifications/
+sync_notifications gained limit+push, connect-time backfill + scheduler delta-push wired. No Linux-side
+code changes; this file is the only commit from here.
