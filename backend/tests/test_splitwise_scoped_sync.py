@@ -160,7 +160,7 @@ async def test_sync_notifications_upserts_and_prunes():
 
     notes = [_note(i) for i in range(1, 6)]  # 5 notifications, ascending dates
     orig = c.fetch_notifications
-    c.fetch_notifications = lambda client, access_token=None: notes
+    c.fetch_notifications = lambda client, access_token=None, limit=None: notes
     try:
         async with async_session() as s:
             await importer.sync_notifications(s, object(), TOKEN_USER, retention=3)

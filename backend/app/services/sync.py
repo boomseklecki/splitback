@@ -59,6 +59,17 @@ async def sync_all_splitwise(session: AsyncSession) -> int:
         except Exception:
             await session.rollback()
             log.exception("Scheduled Splitwise sync failed for token %s", token.user_identifier)
+            continue
+        # Notifications are a separate best-effort step (sync_notifications commits on its own, and pushes new
+        # partner activity) — its failure must not roll back the expense cursor just committed above.
+        try:
+            retention = int(await server_settings.get(session, "notifications_retention_count"))
+            await importer.sync_notifications(
+                session, client, token.user_identifier,
+                retention=retention, access_token=token.access_token, limit=20, push=True)
+        except Exception:
+            await session.rollback()
+            log.exception("Scheduled Splitwise notification sync failed for token %s", token.user_identifier)
     return synced
 
 

@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import require_auth, tokens
 from app.auth.identity import resolve_user
 from app.db import get_session
+from app import server_settings
+from app.integrations.splitwise import importer
 from app.integrations.splitwise.client import get_current_user, make_client
 from app.integrations.splitwise.oauth import build_authorize_url, exchange_code
 from app.integrations.splitwise.pkce import (
@@ -100,5 +102,15 @@ async def callback(code: str, state: str, session: AsyncSession = Depends(get_se
     )
     await session.delete(pending)
     await session.commit()
+
+    # Seed the activity feed with the last 20 notifications so a freshly connected account isn't empty.
+    # Best-effort: never let it break the OAuth redirect. push=False — the backfill must not flood the device.
+    try:
+        retention = int(await server_settings.get(session, "notifications_retention_count"))
+        await importer.sync_notifications(
+            session, client, bind, retention=retention, access_token=access_token, limit=20, push=False)
+    except Exception:
+        await session.rollback()
+
     # Hand the JWT back to the iOS app via the custom scheme it catches in ASWebAuthenticationSession.
     return RedirectResponse(f"splitback://auth?token={tokens.issue(user)}")

@@ -3,6 +3,8 @@
 Keeping the read layer dict-based decouples the mapper from the package and makes
 both independently testable.
 """
+import html
+import re
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 import requests
@@ -451,16 +453,20 @@ def fetch_expense(client: Splitwise, expense_id: str) -> dict | None:
     return _normalize_expense(expense)
 
 
-def fetch_notifications(client: Splitwise, access_token: str | None = None) -> list[dict]:
+def fetch_notifications(
+    client: Splitwise, access_token: str | None = None, limit: int | None = None
+) -> list[dict]:
     """The authenticated user's recent Splitwise notifications (mentions, added/updated expenses,
-    settle-ups, etc.), normalized to `{splitwise_id, type, content, created_at}`.
+    settle-ups, etc.), normalized to `{splitwise_id, type, content, created_at}`. `limit` caps how many
+    the API returns (Splitwise defaults to a small batch).
 
     The `splitwise` SDK doesn't reliably expose `getNotifications()` across versions (its
     `__getattr__` masks that — see `_method`), and even when present its typed parser raises
     (e.g. KeyError 'url' on a notification whose `source` has no url), so prefer it but fall back
     to the REST endpoint on ANY failure — mirroring `fetch_receipt_bytes`."""
     try:
-        notifications = _method(client, "getNotifications")
+        notifications = _method(client, "getNotifications", limit=limit) if limit else _method(
+            client, "getNotifications")
     except Exception:
         notifications = None  # SDK typed-parse blew up (e.g. source missing 'url') → use REST below
     if notifications is not None:
@@ -470,17 +476,28 @@ def fetch_notifications(client: Splitwise, access_token: str | None = None) -> l
     resp = requests.get(
         f"{_API_BASE}/get_notifications",
         headers={"Authorization": f"Bearer {access_token}"},
+        params={"limit": limit} if limit else None,
         timeout=30,
     )
     resp.raise_for_status()
     return [_normalize_notification_dict(n) for n in (resp.json().get("notifications") or [])]
 
 
+_TAG = re.compile(r"<[^>]+>")
+
+
+def _clean_content(raw: str | None) -> str:
+    """Splitwise notification `content` is HTML (`<strong>Alex</strong> added &quot;Dinner&quot;`). Strip
+    tags + decode entities → plain text for display."""
+    text = html.unescape(raw or "")
+    return " ".join(_TAG.sub("", text).split())
+
+
 def _normalize_notification_obj(n) -> dict:
     return {
         "splitwise_id": _str_or_none(_method(n, "getId")),
         "type": _str_or_none(_method(n, "getType")),
-        "content": _method(n, "getContent") or "",
+        "content": _clean_content(_method(n, "getContent")),
         "created_at": _method(n, "getCreatedAt"),
     }
 
@@ -489,6 +506,6 @@ def _normalize_notification_dict(n: dict) -> dict:
     return {
         "splitwise_id": _str_or_none(n.get("id")),
         "type": _str_or_none(n.get("type")),
-        "content": n.get("content") or "",
+        "content": _clean_content(n.get("content")),
         "created_at": n.get("created_at"),
     }

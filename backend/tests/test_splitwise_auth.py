@@ -37,7 +37,13 @@ async def test_login_has_empty_user_binding():
 
 
 async def test_callback_binds_caller_or_resolved():
-    saved = (sw_auth.exchange_code, sw_auth.make_client, sw_auth.get_current_user, sw_auth.resolve_user)
+    saved = (sw_auth.exchange_code, sw_auth.make_client, sw_auth.get_current_user, sw_auth.resolve_user,
+             sw_auth.importer.sync_notifications)
+
+    async def _noop_sync(*a, **k):  # the connect-time notification backfill isn't what this test exercises
+        return {}
+
+    sw_auth.importer.sync_notifications = _noop_sync
 
     async def fake_resolve(session, **kwargs):
         user = await session.scalar(select(User).where(User.identifier == "swresolved-zzz"))
@@ -74,7 +80,8 @@ async def test_callback_binds_caller_or_resolved():
             assert (await s.scalar(select(SplitwiseToken)
                                    .where(SplitwiseToken.user_identifier == "swresolved-zzz"))) is not None
         finally:
-            sw_auth.exchange_code, sw_auth.make_client, sw_auth.get_current_user, sw_auth.resolve_user = saved
+            (sw_auth.exchange_code, sw_auth.make_client, sw_auth.get_current_user, sw_auth.resolve_user,
+             sw_auth.importer.sync_notifications) = saved
             await s.execute(delete(SplitwiseToken)
                             .where(SplitwiseToken.user_identifier.in_(["alice-zzz", "swresolved-zzz"])))
             await s.execute(delete(SplitwiseOAuthState)

@@ -15,6 +15,7 @@ from sqlalchemy.orm import selectinload
 from app.integrations.splitwise import client as sw_client
 from app.integrations.splitwise import mapper
 from app.integrations.storage import minio_client
+from app.services.push import enqueue as push_enqueue
 from app.models import (
     BackendType,
     Expense,
@@ -497,20 +498,36 @@ async def sync_friends(
 
 
 async def sync_notifications(
-    session: AsyncSession, client, owner_identifier: str, *, retention: int, access_token: str | None = None
+    session: AsyncSession, client, owner_identifier: str, *, retention: int,
+    access_token: str | None = None, limit: int | None = None, push: bool = False
 ) -> dict:
     """Pull the owner's recent Splitwise notifications into the generic notifications table (deduped by
-    splitwise_id) and prune to the newest `retention` rows for that owner. Commits."""
-    notifications = await asyncio.to_thread(sw_client.fetch_notifications, client, access_token)
+    splitwise_id) and prune to the newest `retention` rows for that owner. Commits.
+
+    When `push` is set, fire a device push for genuinely *new* notifications that aren't the owner's own
+    actions ("You added …") — so the owner is alerted to partner activity but never to their own or to the
+    initial backfill. `push=False` (connect-time backfill, manual pull-to-refresh) never pushes."""
+    notifications = await asyncio.to_thread(sw_client.fetch_notifications, client, access_token, limit)
+    # Which splitwise_ids do we already have? Anything not here is new this sync (the push delta).
+    existing = set(await session.scalars(
+        select(Notification.splitwise_id).where(
+            Notification.owner_identifier == owner_identifier,
+            Notification.source == NotificationSource.splitwise,
+            Notification.splitwise_id.is_not(None))))
+    to_push: list[str] = []
     for note in notifications:
-        if not note.get("splitwise_id"):
+        swid = note.get("splitwise_id")
+        if not swid:
             continue
+        content = note.get("content") or ""
+        if push and swid not in existing and not content.lower().startswith("you "):
+            to_push.append(content)  # new partner activity (not my own action) → alert
         values = {
             "owner_identifier": owner_identifier,
             "source": NotificationSource.splitwise,
-            "splitwise_id": note["splitwise_id"],
+            "splitwise_id": swid,
             "type": note.get("type"),
-            "content": note.get("content") or "",
+            "content": content,
             "created_at": mapper._parse_datetime(note.get("created_at")),
         }
         stmt = (
@@ -536,6 +553,12 @@ async def sync_notifications(
         .where(Notification.id.not_in(keep))
     )
     await session.commit()
+    if to_push:  # after the commit — best-effort, mirrors notify(); no-op when the owner has no device token
+        if len(to_push) <= 3:
+            for body in to_push:
+                push_enqueue({owner_identifier}, "SplitBack", body)
+        else:
+            push_enqueue({owner_identifier}, "SplitBack", f"{len(to_push)} new updates in your shared groups")
     return {"notifications": len(notifications)}
 
 
