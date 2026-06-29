@@ -24,6 +24,8 @@ struct SettingsView: View {
     @State private var importingStatement = false
     @State private var statementBusy = false
     @State private var statementSummary: String?
+    @State private var pendingStatementImport: PendingStatementImport?
+    struct PendingStatementImport: Identifiable { let id = UUID(); let data: Data; let accountName: String }
     @State private var splitwiseConnectURL: IdentifiableURL?
     @State private var showingSignIn = false
     @State private var items: [Components.Schemas.PlaidItemResponse] = []
@@ -295,6 +297,21 @@ struct SettingsView: View {
                 .ignoresSafeArea()
             }
             .errorAlert($errorText)
+            .confirmationDialog(
+                "Already linked via Plaid?",
+                isPresented: Binding(get: { pendingStatementImport != nil },
+                                     set: { if !$0 { pendingStatementImport = nil } }),
+                titleVisibility: .visible
+            ) {
+                Button("Import anyway", role: .destructive) {
+                    if let p = pendingStatementImport { forceImportStatement(p) }
+                }
+            } message: {
+                Text(pendingStatementImport.map {
+                    "This card looks already linked via Plaid as “\($0.accountName)”. Importing makes a "
+                    + "separate, duplicate account that double-counts in spending."
+                } ?? "")
+            }
             .confirmationDialog("Switch to this server?", isPresented: $confirmingSwitch,
                                 titleVisibility: .visible) {
                 Button("Switch", role: .destructive) {
@@ -388,10 +405,28 @@ struct SettingsView: View {
             do {
                 let data = try Data(contentsOf: url)
                 let r = try await env.statements(context).importOFX(data)
-                statementSummary = "Imported \(r.imported.formatted()) of \(r.total.formatted()) "
-                    + "transaction\(r.total == 1 ? "" : "s") into \(r.account_name)."
+                if r.plaid_conflict == true {
+                    pendingStatementImport = PendingStatementImport(data: data, accountName: r.account_name)
+                } else {
+                    statementSummary = statementImportSummary(r)
+                }
             } catch { errorText = errorMessage(error) }
         }
+    }
+
+    private func forceImportStatement(_ p: PendingStatementImport) {
+        pendingStatementImport = nil
+        statementBusy = true
+        Task {
+            defer { statementBusy = false }
+            do { statementSummary = statementImportSummary(try await env.statements(context).importOFX(p.data, force: true)) }
+            catch { errorText = errorMessage(error) }
+        }
+    }
+
+    private func statementImportSummary(_ r: Components.Schemas.StatementImportResult) -> String {
+        "Imported \(r.imported.formatted()) of \(r.total.formatted()) "
+            + "transaction\(r.total == 1 ? "" : "s") into \(r.account_name)."
     }
 
     /// Global Plaid sync across all linked banks (moved here from the Accounts tab).

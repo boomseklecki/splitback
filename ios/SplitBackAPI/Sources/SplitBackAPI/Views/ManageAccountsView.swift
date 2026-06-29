@@ -23,9 +23,25 @@ struct ManageAccountsView: View {
     @State private var statementSummary: String?
     @State private var showingNewAccount = false
     @State private var showingManualTxn = false
+    @State private var pendingImport: PendingImport?
 
     struct UnlinkTarget: Identifiable { let id: String; let name: String }
     struct LinkSession: Identifiable { let id = UUID(); let token: String }
+    /// An OFX import the server flagged as a likely Plaid duplicate — stashed so "Import anyway" re-sends the
+    /// same bytes (force) without re-prompting the file picker.
+    struct PendingImport: Identifiable { let id = UUID(); let data: Data; let accountName: String }
+
+    /// (mask|domain) keys of the linked-bank accounts, to spot an imported account that's the same card.
+    private var plaidIdentities: Set<String> {
+        Set(accounts.filter(\.isPlaid).compactMap { a in
+            guard let m = a.mask, let d = a.institutionDomain, !d.isEmpty else { return nil }
+            return "\(m)|\(d)"
+        })
+    }
+    private func likelyDuplicate(_ a: Account) -> Bool {
+        guard let m = a.mask, let d = a.institutionDomain, !d.isEmpty else { return false }
+        return plaidIdentities.contains("\(m)|\(d)")
+    }
 
     private var imported: [Account] { accounts.filter(\.isImported) }
     private var manual: [Account] { accounts.filter(\.isManual) }
@@ -70,7 +86,7 @@ struct ManageAccountsView: View {
             // 2) Imported (OFX) — grouped by institution; header `+` imports another statement.
             ForEach(importedByInstitution, id: \.name) { group in
                 Section {
-                    ForEach(group.accounts) { account in deletableRow(account) }
+                    ForEach(group.accounts) { account in importedRow(account) }
                 } header: {
                     institutionHeader(name: group.name, domain: group.domain,
                                       systemImage: "doc.text", addLabel: "Import statement") {
@@ -142,15 +158,28 @@ struct ManageAccountsView: View {
         } message: {
             Text("Deletes this account and all its transactions. This can't be undone.")
         }
+        .confirmationDialog(
+            "Already linked via Plaid?",
+            isPresented: Binding(get: { pendingImport != nil }, set: { if !$0 { pendingImport = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Import anyway", role: .destructive) { if let p = pendingImport { forceImport(p) } }
+        } message: {
+            Text(pendingImport.map {
+                "This card looks already linked via Plaid as “\($0.accountName)”. Importing makes a separate, "
+                + "duplicate account that double-counts in spending."
+            } ?? "")
+        }
         .task { if items.isEmpty { await loadItems() } }
         .errorAlert($errorText)
     }
 
     // MARK: Rows
 
-    /// Shared row content: name, kind · mask, last-updated, balance. Opens the account editor on tap.
+    /// Shared row content: name, kind · mask, last-updated, an optional footnote, and balance. Opens the
+    /// account editor on tap.
     @ViewBuilder
-    private func accountRow(_ account: Account) -> some View {
+    private func accountRow(_ account: Account, footnote: String? = nil) -> some View {
         NavigationLink {
             AccountEditView(account: account)
         } label: {
@@ -160,6 +189,10 @@ struct ManageAccountsView: View {
                     Text(account.kind.label + (account.maskLabel.map { " · \($0)" } ?? ""))
                         .font(.caption).foregroundStyle(.secondary)
                     UpdatedAgo(date: account.updatedAt)
+                    if let footnote {
+                        Label(footnote, systemImage: "exclamationmark.triangle")
+                            .font(.caption2).foregroundStyle(.orange)
+                    }
                 }
                 Spacer()
                 Text(account.balance.formatted(.currency(code: account.currency)))
@@ -168,7 +201,7 @@ struct ManageAccountsView: View {
         }
     }
 
-    /// An imported/manual row with a destructive delete swipe (deletes the account + all its transactions).
+    /// A manual row with a destructive delete swipe (deletes the account + all its transactions).
     @ViewBuilder
     private func deletableRow(_ account: Account) -> some View {
         accountRow(account).swipeActions(edge: .trailing) {
@@ -176,6 +209,23 @@ struct ManageAccountsView: View {
                 Label("Delete", systemImage: "trash")
             }
         }
+    }
+
+    /// An imported row: delete swipe + (when it looks like a Plaid duplicate) a "possible duplicate" hint and an
+    /// "Exclude from spending" swipe that drops its transactions from spend/cash-flow analytics (reuses the
+    /// per-account include flags — non-destructive).
+    @ViewBuilder
+    private func importedRow(_ account: Account) -> some View {
+        let dup = likelyDuplicate(account)
+        accountRow(account, footnote: dup ? "Possible duplicate of a linked bank" : nil)
+            .swipeActions(edge: .trailing) {
+                Button(role: .destructive) { confirmingDelete = account } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+                if dup {
+                    Button { exclude(account) } label: { Label("Exclude", systemImage: "eye.slash") }.tint(.orange)
+                }
+            }
     }
 
     // MARK: Headers
@@ -308,9 +358,35 @@ struct ManageAccountsView: View {
             do {
                 let data = try Data(contentsOf: url)
                 let r = try await env.statements(context).importOFX(data)
-                statementSummary = "Imported \(r.imported.formatted()) of \(r.total.formatted()) "
-                    + "transaction\(r.total == 1 ? "" : "s") into \(r.account_name)."
+                if r.plaid_conflict == true {
+                    pendingImport = PendingImport(data: data, accountName: r.account_name)  // confirm, then force
+                } else {
+                    statementSummary = importedSummary(r)
+                }
             } catch { errorText = errorMessage(error) }
+        }
+    }
+
+    private func forceImport(_ p: PendingImport) {
+        pendingImport = nil
+        Task {
+            do { statementSummary = importedSummary(try await env.statements(context).importOFX(p.data, force: true)) }
+            catch { errorText = errorMessage(error) }
+        }
+    }
+
+    private func importedSummary(_ r: Components.Schemas.StatementImportResult) -> String {
+        "Imported \(r.imported.formatted()) of \(r.total.formatted()) "
+            + "transaction\(r.total == 1 ? "" : "s") into \(r.account_name)."
+    }
+
+    /// Non-destructively drop a duplicate account's transactions from spending/cash-flow (reuses the per-account
+    /// include flags).
+    private func exclude(_ account: Account) {
+        let id = account.id
+        Task {
+            do { try await env.accounts(context).update(id: id, includeInSpending: false, includeInCashFlow: false) }
+            catch { errorText = errorMessage(error) }
         }
     }
 }

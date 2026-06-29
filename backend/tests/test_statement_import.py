@@ -3,7 +3,7 @@ de-dups transactions by FITID on re-import. Balances follow the newest DTASOF. D
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 
 from app.db import async_session
 from app.models import Account, Transaction
@@ -101,6 +101,34 @@ async def test_duplicate_fitid_in_one_file_skips_not_aborts():
                 Transaction.account_id == result.account_id))).all()
             fitids = sorted(t.external_transaction_id for t in txns)
         assert fitids == ["DUP-1", "UNIQ-2"]
+    finally:
+        await _purge()
+
+
+async def test_plaid_linked_card_guards_then_forces():
+    # SAMPLE's ACCTID ends 4321 and ORG "Apple Card" → apple.com. A Plaid account matching (mask, domain) for
+    # this owner means the card is already linked → guard the import, then force creates the separate account.
+    await _purge()
+    try:
+        async with async_session() as s:
+            s.add(Account(name="Apple Card", owner_identifier=OWNER, plaid_account_id="p-zzz",
+                          mask="4321", institution_domain="apple.com", currency="USD", balance=Decimal(0)))
+            await s.commit()
+        async with async_session() as s:
+            guarded = await import_ofx(s, OWNER, SAMPLE.encode())                 # force=False (default)
+        assert guarded.plaid_conflict is True and guarded.imported == 0
+        async with async_session() as s:
+            n = await s.scalar(select(func.count()).select_from(Account)
+                               .where(Account.owner_identifier == OWNER))
+        assert n == 1                                                             # no duplicate created
+
+        async with async_session() as s:
+            forced = await import_ofx(s, OWNER, SAMPLE.encode(), force=True)      # import anyway
+        assert forced.plaid_conflict is False and forced.imported == 3
+        async with async_session() as s:
+            n = await s.scalar(select(func.count()).select_from(Account)
+                               .where(Account.owner_identifier == OWNER))
+        assert n == 2                                                             # plaid + the new imported one
     finally:
         await _purge()
 

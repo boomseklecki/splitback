@@ -2307,17 +2307,23 @@
         ],
         "summary": "Import Statement",
         "operationId": "import_statement_statements_import_post",
-        "requestBody": {
-          "content": {
-            "application/x-ofx": {
-              "schema": {
-                "type": "string",
-                "format": "binary"
-              }
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "force",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Force"
             }
-          },
-          "required": true
-        },
+          }
+        ],
         "responses": {
           "201": {
             "description": "Successful Response",
@@ -2328,13 +2334,29 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
           }
         },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
+        "requestBody": {
+          "content": {
+            "application/x-ofx": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          },
+          "required": true
+        }
       }
     },
     "/me": {
@@ -6397,6 +6419,11 @@
           "total": {
             "type": "integer",
             "title": "Total"
+          },
+          "plaid_conflict": {
+            "type": "boolean",
+            "title": "Plaid Conflict",
+            "default": false
           }
         },
         "type": "object",

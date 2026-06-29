@@ -30,21 +30,37 @@ _OFX_BODY = {
              openapi_extra={"requestBody": _OFX_BODY})
 async def import_statement(
     request: Request,
+    force: bool = False,
     caller: str | None = Depends(require_auth),
     session: AsyncSession = Depends(get_session),
 ) -> StatementImportResult:
     data = await request.body()
     if not data:
         raise HTTPException(status_code=400, detail="Empty request body")
-    return await import_ofx(session, caller, data)
+    return await import_ofx(session, caller, data, force=force)
 
 
-async def import_ofx(session: AsyncSession, caller: str | None, data: bytes) -> StatementImportResult:
+async def import_ofx(session: AsyncSession, caller: str | None, data: bytes,
+                     force: bool = False) -> StatementImportResult:
     """Parse an OFX statement and upsert it into a find-or-created manual account. Split from the route so
     it's unit-testable without constructing a `Request`."""
     parsed = ofx.parse(data)
     if not parsed.transactions and not parsed.acctid:
         raise HTTPException(status_code=422, detail="Not a recognizable OFX statement")
+
+    # Guard: if this card is already linked via Plaid, don't silently create a duplicate manual account —
+    # surface the conflict so the caller can confirm (force=True to import anyway). Match on the one safe
+    # cross-source signal: owner + last-4 mask + institution domain.
+    mask = (parsed.acctid or "")[-4:] or None
+    domain = resolve_domain(parsed.org)
+    if not force and mask and domain:
+        plaid_match = await session.scalar(select(Account).where(
+            Account.owner_identifier == caller, Account.plaid_account_id.is_not(None),
+            Account.mask == mask, Account.institution_domain == domain))
+        if plaid_match is not None:
+            return StatementImportResult(
+                account_id=plaid_match.id, account_name=plaid_match.name,
+                imported=0, skipped=0, total=len(parsed.transactions), plaid_conflict=True)
 
     # Find-or-create the manual account this statement belongs to. Prefer the stable OFX account id (ACCTID);
     # if there's no match, adopt a prior name-keyed import of this card that has no external id yet (backfill
