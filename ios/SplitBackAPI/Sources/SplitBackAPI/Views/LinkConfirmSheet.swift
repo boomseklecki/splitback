@@ -24,16 +24,24 @@ struct LinkConfirmSheet: View {
             List {
                 if let expense, let transaction {
                     Section("Expense") {
-                        SuggestionRecordRow(title: expense.details, amount: expense.amount,
-                                            currency: expense.currency, date: expense.date,
-                                            category: expense.category,
-                                            source: groupName, sourceIcon: "person.2")
+                        NavigationLink {
+                            LazyView(ExpenseDetailView(expense: expense))
+                        } label: {
+                            SuggestionRecordRow(title: expense.details, amount: expense.amount,
+                                                currency: expense.currency, date: expense.date,
+                                                category: expense.category,
+                                                source: groupName, sourceIcon: "person.2")
+                        }
                     }
                     Section {
-                        SuggestionRecordRow(title: transaction.details, amount: transaction.amount,
-                                            currency: transaction.currency, date: transaction.date,
-                                            category: transaction.category,
-                                            source: accountName, sourceIcon: "building.columns")
+                        NavigationLink {
+                            LazyView(TransactionDetailView(transaction: transaction))
+                        } label: {
+                            SuggestionRecordRow(title: transaction.details, amount: transaction.amount,
+                                                currency: transaction.currency, date: transaction.date,
+                                                category: transaction.category,
+                                                source: accountName, sourceIcon: "building.columns")
+                        }
                     } header: {
                         HStack {
                             Text("Bank transaction")

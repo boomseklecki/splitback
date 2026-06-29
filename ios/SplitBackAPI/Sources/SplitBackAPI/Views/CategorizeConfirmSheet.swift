@@ -44,10 +44,14 @@ struct CategorizeConfirmSheet: View {
                     }
                     Section("Transactions (\(transactions.count))") {
                         ForEach(transactions) { t in
-                            SuggestionRecordRow(title: t.details, amount: t.amount,
-                                                currency: t.currency, date: t.date,
-                                                source: t.accountId.flatMap { accountNames[$0] },
-                                                sourceIcon: "building.columns")
+                            NavigationLink {
+                                LazyView(TransactionDetailView(transaction: t))
+                            } label: {
+                                SuggestionRecordRow(title: t.details, amount: t.amount,
+                                                    currency: t.currency, date: t.date,
+                                                    source: t.accountId.flatMap { accountNames[$0] },
+                                                    sourceIcon: "building.columns")
+                            }
                         }
                     }
                 } else {

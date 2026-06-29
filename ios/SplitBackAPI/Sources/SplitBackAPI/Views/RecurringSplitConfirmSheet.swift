@@ -38,10 +38,14 @@ struct RecurringSplitConfirmSheet: View {
             List {
                 if let transaction, let template {
                     Section {
-                        SuggestionRecordRow(
-                            title: transaction.details, amount: transaction.amount,
-                            currency: transaction.currency, date: transaction.date,
-                            category: template.category, source: groupName, sourceIcon: "person.2")
+                        NavigationLink {
+                            LazyView(TransactionDetailView(transaction: transaction))
+                        } label: {
+                            SuggestionRecordRow(
+                                title: transaction.details, amount: transaction.amount,
+                                currency: transaction.currency, date: transaction.date,
+                                category: template.category, source: groupName, sourceIcon: "person.2")
+                        }
                     }
                     Section {
                         // You front the charge (the accept sets your paidShare to the full amount); everyone
