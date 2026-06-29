@@ -61,9 +61,25 @@ enum AccountKind: CaseIterable {
         if holdingsSubtypes.contains(key) { return .holdings }
         return .cashFlow
     }
+
+    /// A Plaid subtype string that classifies back to this kind — used when creating a manual account (the
+    /// create endpoint takes `type`, and `kind` is derived from it).
+    var representativeSubtype: String {
+        switch self {
+        case .cashFlow: return "checking"
+        case .liability: return "credit"
+        case .holdings: return "investment"
+        }
+    }
 }
 
 extension Account {
+    /// Source of this account, for grouping in the Accounts screen. (The iOS model has no `externalAccountId`,
+    /// so an imported (OFX) account is told apart from a manual one by having institution metadata.)
+    var isPlaid: Bool { plaidAccountId != nil }
+    var isImported: Bool { !isPlaid && (institutionName.map { !$0.isEmpty } ?? false) }
+    var isManual: Bool { !isPlaid && !isImported }
+
     /// The account's classification — a user override (`kindOverride`) wins, otherwise it's derived from
     /// the Plaid subtype.
     var kind: AccountKind {

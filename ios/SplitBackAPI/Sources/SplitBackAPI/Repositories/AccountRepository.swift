@@ -86,6 +86,41 @@ struct AccountRepository {
         try context.save()
     }
 
+    /// Creates a manual account (plaid_account_id null) and caches it. `type` is a Plaid subtype string that
+    /// the app classifies into a kind (see `AccountKind.representativeSubtype`).
+    @discardableResult
+    func createAccount(name: String, type: String?, balance: Decimal, currency: String?) async throws -> UUID {
+        let output = try await client.create_account_accounts_post(
+            body: .json(Mapping.accountCreate(name: name, type: type, balance: balance, currency: currency)))
+        switch output {
+        case let .created(created):
+            let response = try created.body.json
+            try upsertAccounts([response])
+            return try Mapping.uuid(response.id, field: "Account.id")
+        case let .unprocessableContent(error): throw BackendError.validation(BackendError.validationMessage(try? error.body.json))
+        case let .undocumented(statusCode, _): throw BackendError.fromUndocumented(statusCode)
+        }
+    }
+
+    /// Deletes an account and all its data server-side (transactions + their items/overrides), then mirrors the
+    /// hard-delete locally (the account + its cached transactions).
+    func deleteAccount(id: UUID) async throws {
+        let output = try await client.delete_account_accounts__account_id__delete(
+            path: .init(account_id: id.uuidString))
+        switch output {
+        case .noContent:
+            for txn in try context.fetch(FetchDescriptor<Transaction>(
+                predicate: #Predicate { $0.accountId == id })) { context.delete(txn) }
+            if let account = try context.fetch(
+                FetchDescriptor<Account>(predicate: #Predicate { $0.id == id })).first {
+                context.delete(account)
+            }
+            try context.save()
+        case let .unprocessableContent(error): throw BackendError.validation(BackendError.validationMessage(try? error.body.json))
+        case let .undocumented(statusCode, _): throw BackendError.fromUndocumented(statusCode)
+        }
+    }
+
     /// Creates a manual transaction (source=manual) and caches it.
     @discardableResult
     func createTransaction(_ draft: TransactionDraft) async throws -> UUID {

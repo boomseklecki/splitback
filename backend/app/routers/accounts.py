@@ -3,7 +3,7 @@ from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -181,6 +181,9 @@ async def delete_account(
     if account is None:
         raise HTTPException(status_code=404, detail="Account not found")
     assert_owner(account.owner_identifier, caller)
+    # Delete the account's transactions too (their items + per-user overrides cascade via FK) — a real
+    # "delete all data for this account", not orphaning them with a null account_id.
+    await session.execute(delete(Transaction).where(Transaction.account_id == account_id))
     await session.delete(account)
     await session.commit()
 

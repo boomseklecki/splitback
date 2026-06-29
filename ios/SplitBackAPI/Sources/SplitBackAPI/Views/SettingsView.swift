@@ -165,12 +165,11 @@ struct SettingsView: View {
 
                 Section("Plaid") {
                     NavigationLink {
-                        LinkedBanksView(items: $items)
+                        ManageAccountsView(items: $items)
                     } label: {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Linked Banks")
-                            Text("\(items.count) Bank\(items.count == 1 ? "" : "s")")
-                                .font(.caption).foregroundStyle(.secondary)
+                            Text("Accounts")
+                            Text("Banks, imported & manual").font(.caption).foregroundStyle(.secondary)
                         }
                     }
                     Button(action: linkBank) {

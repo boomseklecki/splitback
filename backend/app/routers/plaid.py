@@ -3,7 +3,7 @@ import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -14,7 +14,7 @@ from app.db import get_session
 from app.integrations.plaid import client as plaid_client
 from app.integrations.plaid import mapper
 from app.integrations.plaid import sync as plaid_sync
-from app.models import Account, PlaidItem
+from app.models import Account, PlaidItem, Transaction
 from app.schemas.plaid import (
     ExchangeRequest,
     ExchangeResponse,
@@ -158,8 +158,9 @@ async def delete_item(
     caller: str | None = Depends(require_auth),
     session: AsyncSession = Depends(get_session),
 ) -> None:
-    # Unlink: revoke the token at Plaid (best-effort), then delete locally — cascades the item's
-    # accounts; their transactions keep with a null account_id.
+    # Unlink: revoke the token at Plaid (best-effort), then delete locally — cascades the item's accounts.
+    # Also delete those accounts' transactions (items + overrides cascade) so unlink removes all the bank's
+    # data, not orphaning transactions with a null account_id.
     item = await session.get(PlaidItem, item_id)
     if item is None:
         raise HTTPException(status_code=404, detail="Plaid item not found")
@@ -168,5 +169,7 @@ async def delete_item(
         await asyncio.to_thread(plaid_client.make_client().item_remove, item.access_token)
     except Exception:
         pass
+    await session.execute(delete(Transaction).where(
+        Transaction.account_id.in_(select(Account.id).where(Account.plaid_item_id == item_id))))
     await session.delete(item)
     await session.commit()

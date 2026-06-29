@@ -444,6 +444,11 @@ enum Mapping {
         )
     }
 
+    static func accountCreate(name: String, type: String?, balance: Decimal,
+                              currency: String?) -> Components.Schemas.AccountCreate {
+        .init(name: name, _type: type, balance: decimalString(balance), currency: currency)
+    }
+
     static func accountUpdate(displayName: String? = nil, kind: String? = nil,
                               includeInSpending: Bool? = nil, includeInCashFlow: Bool? = nil,
                               shareLevel: String? = nil)
