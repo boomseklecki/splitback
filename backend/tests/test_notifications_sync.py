@@ -184,6 +184,23 @@ async def test_push_mute_splitwise_source_keeps_feed_drops_push():
         await _purge()
 
 
+async def test_resync_preserves_user_hide():
+    await _purge()
+    try:
+        # The owner hid a Splitwise row; re-fetching it must NOT unhide it (the upsert never sets hidden).
+        async with async_session() as s:
+            s.add(Notification(owner_identifier=OWNER, source=NotificationSource.splitwise,
+                               splitwise_id="h-1", content="Old content", hidden=True))
+            await s.commit()
+        await _sync([_note("h-1", "Updated content")], push=False)   # same id re-synced (content changes)
+        async with async_session() as s:
+            row = await s.scalar(select(Notification).where(
+                Notification.owner_identifier == OWNER, Notification.splitwise_id == "h-1"))
+        assert row.hidden is True and row.content == "Updated content"   # stays hidden, content refreshed
+    finally:
+        await _purge()
+
+
 async def test_fetch_count_capped_at_max_fetch():
     await _purge()
     try:

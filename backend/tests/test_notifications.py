@@ -8,7 +8,7 @@ from sqlalchemy import delete
 from app.db import async_session
 from app.models import Notification
 from app.models.enums import NotificationSource
-from app.routers.notifications import list_notifications, mark_read
+from app.routers.notifications import hide_notification, list_notifications, mark_all_read, mark_read
 
 ALICE, BOB = "ntf-alice", "ntf-bob"
 
@@ -78,6 +78,44 @@ async def test_mark_read_missing_404():
             raise AssertionError("expected 404")
         except HTTPException as e:
             assert e.status_code == 404
+
+
+async def test_hide_excludes_from_list_owner_only():
+    await _purge(); await _seed()
+    try:
+        async with async_session() as s:
+            target = (await list_notifications(caller=ALICE, session=s))[0]
+        async with async_session() as s:
+            await hide_notification(target.id, caller=ALICE, session=s)
+        async with async_session() as s:
+            remaining = await list_notifications(caller=ALICE, session=s)
+            assert target.id not in {n.id for n in remaining}      # hidden row gone from the feed
+            assert len(remaining) == 1
+        # Cross-owner hide is forbidden.
+        async with async_session() as s:
+            other = (await list_notifications(caller=ALICE, session=s))[0]
+        async with async_session() as s:
+            try:
+                await hide_notification(other.id, caller=BOB, session=s)
+                raise AssertionError("expected 403")
+            except HTTPException as e:
+                assert e.status_code == 403
+    finally:
+        await _purge()
+
+
+async def test_mark_all_read():
+    await _purge(); await _seed()
+    try:
+        async with async_session() as s:
+            result = await mark_all_read(caller=ALICE, session=s)
+            assert result["updated"] == 2                          # both Alice's, none of Bob's
+        async with async_session() as s:
+            assert all(n.read for n in await list_notifications(caller=ALICE, session=s))
+        async with async_session() as s:
+            assert not any(n.read for n in await list_notifications(caller=BOB, session=s))   # Bob untouched
+    finally:
+        await _purge()
 
 
 if __name__ == "__main__":

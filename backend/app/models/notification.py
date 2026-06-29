@@ -43,3 +43,6 @@ class Notification(UUIDMixin, Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     read: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Per-owner hide: the owner swiped this row away. Filtered from their feed; preserved across re-sync
+    # (the Splitwise upsert never touches it). Each row is per-owner, so this affects only their feed.
+    hidden: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"), default=False)

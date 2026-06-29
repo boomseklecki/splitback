@@ -3895,7 +3895,7 @@
           "notifications"
         ],
         "summary": "List Notifications",
-        "description": "The caller's notifications across all sources (Splitwise + app), newest first.",
+        "description": "The caller's notifications across all sources (Splitwise + app), newest first. Hidden rows excluded.",
         "operationId": "list_notifications_notifications_get",
         "responses": {
           "200": {
@@ -3920,6 +3920,35 @@
         ]
       }
     },
+    "/notifications/read-all": {
+      "post": {
+        "tags": [
+          "notifications"
+        ],
+        "summary": "Mark All Read",
+        "description": "Marks all of the caller's unread notifications read. Returns the count updated.",
+        "operationId": "mark_all_read_notifications_read_all_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Mark All Read Notifications Read All Post"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/notifications/{notification_id}/read": {
       "post": {
         "tags": [
@@ -3928,6 +3957,55 @@
         "summary": "Mark Read",
         "description": "Marks a notification read (owner only).",
         "operationId": "mark_read_notifications__notification_id__read_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "notification_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Notification Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/notifications/{notification_id}/hide": {
+      "post": {
+        "tags": [
+          "notifications"
+        ],
+        "summary": "Hide Notification",
+        "description": "Hides a notification from the owner's feed for good (owner only). Preserved across re-sync.",
+        "operationId": "hide_notification_notifications__notification_id__hide_post",
         "security": [
           {
             "HTTPBearer": []

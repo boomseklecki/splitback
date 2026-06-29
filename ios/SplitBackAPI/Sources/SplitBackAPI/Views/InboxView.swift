@@ -36,7 +36,7 @@ struct InboxView: View {
                 if !activity.isEmpty {
                     Section("Activity") {
                         ForEach(activity.prefix(6), id: \.id) { n in
-                            ActivityRow(n: n, onMarkRead: { markRead(n) })
+                            ActivityRow(n: n, onMarkRead: { markRead(n) }, onHide: { hideActivity(n) })
                         }
                         if activity.count > 6 {
                             NavigationLink {
@@ -60,7 +60,6 @@ struct InboxView: View {
             }
             .navigationDestination(for: FriendRow.self) { FriendDetailView(friend: $0) }
             .navigationDestination(for: Goal.self) { GoalDetailView(goal: $0) }
-            .navigationDestination(for: NotificationTarget.self) { NotificationTargetView(target: $0) }
             .sheet(item: $budgetPrefill) { p in
                 GoalEditView(prefillCategory: p.category, prefillAmount: p.amount, prefillShared: true)
             }
@@ -220,13 +219,16 @@ struct InboxView: View {
 
     private func markRead(_ n: Components.Schemas.NotificationResponse) {
         guard !n.read, let id = try? Mapping.uuid(n.id, field: "Notification.id") else { return }
-        Task {
-            try? await env.notifications.markRead(id: id)
-            if let all = try? await env.notifications.list() {
-                activity = all.filter { !NotificationPrefs.shared.isHidden(type: $0._type, source: $0.source) }
-            }
-            updateBadge()
-        }
+        if let i = activity.firstIndex(where: { $0.id == n.id }) { activity[i].read = true }  // optimistic
+        updateBadge()
+        Task { try? await env.notifications.markRead(id: id) }
+    }
+
+    private func hideActivity(_ n: Components.Schemas.NotificationResponse) {
+        guard let id = try? Mapping.uuid(n.id, field: "Notification.id") else { return }
+        activity.removeAll { $0.id == n.id }                       // optimistic — gone from the feed + preview
+        updateBadge()
+        Task { try? await env.notifications.hide(id: id) }
     }
 
     private func updateBadge() {
