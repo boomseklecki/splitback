@@ -92,9 +92,9 @@ async def test_plaid_item_list_and_unlink():
         async with async_session() as session:
             assert await session.scalar(select(PlaidItem).where(PlaidItem.plaid_item_id == ITEM)) is None
             assert await session.scalar(select(Account).where(Account.plaid_account_id == ACC)) is None
-            # transaction survives with its account link nulled
+            # the item's accounts' transactions are hard-deleted too (no longer orphaned with account_id null)
             tx = await session.scalar(select(Transaction).where(Transaction.plaid_transaction_id == TX))
-            assert tx is not None and tx.account_id is None
+            assert tx is None
     finally:
         await _cleanup_plaid()
 
