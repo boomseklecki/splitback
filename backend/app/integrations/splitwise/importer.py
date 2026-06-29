@@ -528,7 +528,16 @@ async def sync_notifications(
         NotificationMute.owner_identifier == owner_identifier,
         NotificationMute.token.like("push:%")))) if push else set()
     splitwise_muted = "push:source:splitwise" in muted
-    to_push: list[str] = []
+    # Resolve each notification's Splitwise expense (source = {"type": "Expense", "id": <sw expense id>}) to a
+    # local Expense so the row + push can deep-link. One batch query over the unique splitwise_expense_id.
+    sw_expense_ids = {note["source_id"] for note in notifications
+                      if (note.get("source_type") or "").lower() == "expense" and note.get("source_id")}
+    local_by_sw: dict[str, str] = {}
+    if sw_expense_ids:
+        rows = await session.execute(select(Expense.splitwise_expense_id, Expense.id).where(
+            Expense.splitwise_expense_id.in_(sw_expense_ids)))
+        local_by_sw = {sw: str(local) for sw, local in rows}
+    to_push: list[tuple[str, dict | None]] = []  # (content, deep-link target | None)
     newest = watermark
     for note in notifications:
         swid = note.get("splitwise_id")
@@ -536,10 +545,17 @@ async def sync_notifications(
             continue
         content = note.get("content") or ""
         created = mapper._parse_datetime(note.get("created_at"))
+        # Deep-link target: a local expense matching this notification's Splitwise expense source.
+        entity_type = entity_id = None
+        if (note.get("source_type") or "").lower() == "expense":
+            local = local_by_sw.get(note.get("source_id"))
+            if local is not None:
+                entity_type, entity_id = "expense", local
         if (push and watermark is not None and created is not None and created > watermark
                 and not content.lower().startswith("you ")
                 and not splitwise_muted and f"push:{note.get('type')}" not in muted):
-            to_push.append(content)  # genuinely new (after the watermark), not my own action, not muted → alert
+            target = {"type": entity_type, "id": entity_id} if entity_id else None
+            to_push.append((content, target))  # new (after watermark), not mine, not muted → alert
         if created is not None and (newest is None or created > newest):
             newest = created
         values = {
@@ -549,6 +565,8 @@ async def sync_notifications(
             "type": note.get("type"),
             "content": content,
             "created_at": created,
+            "entity_type": entity_type,
+            "entity_id": entity_id,
         }
         stmt = (
             pg_insert(Notification)
@@ -556,7 +574,9 @@ async def sync_notifications(
             .on_conflict_do_update(
                 index_elements=[Notification.owner_identifier, Notification.source, Notification.splitwise_id],
                 index_where=text("splitwise_id IS NOT NULL"),
-                set_={"type": values["type"], "content": values["content"]},
+                # Backfill the entity ref on re-sync once the expense has synced locally.
+                set_={"type": values["type"], "content": values["content"],
+                      "entity_type": entity_type, "entity_id": entity_id},
             )
         )
         await session.execute(stmt)
@@ -580,8 +600,8 @@ async def sync_notifications(
     await session.commit()
     if to_push:  # after the commit — best-effort, mirrors notify(); no-op when the owner has no device token
         if len(to_push) <= 3:
-            for body in to_push:
-                push_enqueue({owner_identifier}, "SplitBack", body)
+            for body, target in to_push:
+                push_enqueue({owner_identifier}, "SplitBack", body, target=target)  # tap → the expense
         else:
             n = len(to_push)
             body = (f"{n} new updates in your shared groups" if n <= 9

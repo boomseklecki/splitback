@@ -494,18 +494,26 @@ def _clean_content(raw: str | None) -> str:
 
 
 def _normalize_notification_obj(n) -> dict:
+    source = _method(n, "getSource")
     return {
         "splitwise_id": _str_or_none(_method(n, "getId")),
         "type": _str_or_none(_method(n, "getType")),
         "content": _clean_content(_method(n, "getContent")),
         "created_at": _method(n, "getCreatedAt"),
+        # The referenced entity (e.g. {"Expense", <splitwise_expense_id>}) — used to deep-link the row.
+        "source_type": _str_or_none(_method(source, "getType")) if source is not None else None,
+        "source_id": _str_or_none(_method(source, "getId")) if source is not None else None,
     }
 
 
 def _normalize_notification_dict(n: dict) -> dict:
+    source = n.get("source") or {}
     return {
         "splitwise_id": _str_or_none(n.get("id")),
         "type": _str_or_none(n.get("type")),
         "content": _clean_content(n.get("content")),
         "created_at": n.get("created_at"),
+        # The referenced entity ({"type": "Expense", "id": <splitwise_expense_id>}) — for deep-linking.
+        "source_type": _str_or_none(source.get("type")),
+        "source_id": _str_or_none(source.get("id")),
     }

@@ -1,13 +1,14 @@
 """Splitwise notification sync: HTML cleanup + the delta push (new, non-self activity pushes; backfill and
 own actions don't). DB-backed; fakes the Splitwise fetch + captures push.enqueue."""
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from decimal import Decimal
 
 from sqlalchemy import delete, select
 
 from app.db import async_session
 from app.integrations.splitwise import importer
 from app.integrations.splitwise.client import _clean_content
-from app.models import Notification, NotificationMute, SplitwiseToken
+from app.models import BackendType, Expense, Group, Notification, NotificationMute, SplitwiseToken
 from app.models.enums import NotificationSource
 from app.services import sync
 
@@ -52,8 +53,8 @@ def _fake_fetch(notes, limit_holder=None):
 async def _sync(notes, *, push, retention=100, capture=None, limit_holder=None):
     orig_fetch, orig_push = importer.sw_client.fetch_notifications, importer.push_enqueue
     importer.sw_client.fetch_notifications = _fake_fetch(notes, limit_holder)
-    importer.push_enqueue = (lambda owners, title, body: capture.append((owners, body))) if capture is not None \
-        else (lambda *a, **k: None)
+    importer.push_enqueue = (lambda owners, title, body, target=None: capture.append((owners, body, target))) \
+        if capture is not None else (lambda *a, **k: None)
     try:
         async with async_session() as s:
             return await importer.sync_notifications(
@@ -62,8 +63,9 @@ async def _sync(notes, *, push, retention=100, capture=None, limit_holder=None):
         importer.sw_client.fetch_notifications, importer.push_enqueue = orig_fetch, orig_push
 
 
-def _note(swid, content, created="2026-06-20T12:00:00Z"):
-    return {"splitwise_id": swid, "type": "expense_added", "content": content, "created_at": created}
+def _note(swid, content, created="2026-06-20T12:00:00Z", source_type=None, source_id=None):
+    return {"splitwise_id": swid, "type": "expense_added", "content": content, "created_at": created,
+            "source_type": source_type, "source_id": source_id}
 
 
 def test_clean_content_strips_html_and_entities():
@@ -125,6 +127,40 @@ async def test_no_repush_of_pruned_then_refetched():
         await _sync(batch, push=True, capture=captured)         # exact same batch, all ≤ watermark
         assert captured == []                                   # never re-pushed
     finally:
+        await _purge()
+
+
+async def test_splitwise_expense_source_deep_links_to_local_expense():
+    await _purge()
+    async with async_session() as s:
+        g = Group(name="SW-grp", backend_type=BackendType.splitwise)
+        s.add(g); await s.flush()
+        e = Expense(group_id=g.id, splitwise_expense_id="SW123", description="Dinner",
+                    amount=Decimal("10.00"), date=date(2026, 6, 20))
+        s.add(e); await s.commit()
+        eid, gid = str(e.id), g.id
+    try:
+        await _seed_token(watermark=_dt(19))
+        captured: list = []
+        # A Splitwise notification whose source is the expense SW123 → resolves to the local expense.
+        await _sync([_note("n-1", "Alex added Dinner", _dt(20).isoformat(),
+                           source_type="Expense", source_id="SW123"),
+                     # …and one referencing an expense we don't have locally → stays unlinked.
+                     _note("n-2", "Sam added Lunch", _dt(20).isoformat(),
+                           source_type="Expense", source_id="SW-UNKNOWN")],
+                    push=True, capture=captured)
+        async with async_session() as s:
+            rows = {n.splitwise_id: n for n in await s.scalars(select(Notification).where(
+                Notification.owner_identifier == OWNER))}
+        assert rows["n-1"].entity_type == "expense" and rows["n-1"].entity_id == eid   # deep-linked
+        assert rows["n-2"].entity_type is None and rows["n-2"].entity_id is None       # not local → null
+        # The individual push for n-1 carries the matching deep-link target.
+        n1 = next(c for c in captured if c[1] == "Alex added Dinner")
+        assert n1[2] == {"type": "expense", "id": eid}
+    finally:
+        async with async_session() as s:
+            await s.execute(delete(Group).where(Group.id == gid))   # cascades the expense
+            await s.commit()
         await _purge()
 
 
