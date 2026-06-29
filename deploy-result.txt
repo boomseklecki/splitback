@@ -1,45 +1,51 @@
 SplitBack backend deploy verification (uplink / Linux full-stack)
 ================================================================
 
-Commit tested:  f303b2a  (main HEAD)
+Commit tested:  24e3c5b  (main HEAD)
 Date (UTC):     2026-06-29
-Migration head: 0043_notifications_pushed_at   (unchanged — NO new migration)
+Migration head: 0044_notification_hidden   (NEW — upgraded 0043 -> 0044)
 
-Change in scope (backend-only, single commit; NO migration, NO OpenAPI/relay change):
-  f303b2a  Deep-link Splitwise activity rows to their expense
-    - client.py normalizers now capture the notification's source ({type, id}) as
-      source_type / source_id.
-    - importer.sync_notifications resolves an Expense-source notification's source_id to the local
-      Expense (by splitwise_expense_id) and stamps Notification.entity_type='expense' / entity_id;
-      on-conflict backfills; the individual Splitwise push carries the matching deep-link target.
-    - tests/test_notifications_sync.py: new test_splitwise_expense_source_deep_links_to_local_expense
-      (+ source_type/source_id on _note).
+Change in scope (backend + iOS contract, single commit; NO relay change):
+  24e3c5b  Activity rows: fix nested deep-link nav + two-stage swipe (read/hide) + Mark All Read
+    - migration 0044_notification_hidden (down_revision 0043_notifications_pushed_at): adds
+      notifications.hidden (bool, default false). Revision id 24 chars (<=32 OK).
+    - routers/notifications.py: POST /notifications/{id}/hide (owner-only) + POST
+      /notifications/read-all (bulk); list_notifications now filters hidden.
+    - importer upsert preserves hidden across re-sync (set_ omits it).
+    - new tests: test_notifications (hide excludes from list + owner-scoping, mark_all_read) +
+      test_notifications_sync (re-sync preserves user hide).
+    - regenerated ios/openapi.json + iOS (closure-based deep-link nav, two-stage swipe, Mark All Read).
 
 BUILD / RESTART:  OK
-  - git merge --ff-only origin/main -> f303b2a (clean).
+  - git merge --ff-only origin/main -> 24e3c5b (clean).
   - docker compose build api api-test -> built.
   - Recreated api (real, :8000) + db-test/api-test. Up.
-  - alembic current -> 0043_notifications_pushed_at (head); no migration applied.
 
-MIGRATION: none (head 0043 unchanged).
-RELAY:     UNTOUCHED  (git diff relay/ empty).
-OPENAPI:   UNCHANGED  (git diff ios/openapi.json empty).
+MIGRATION:  APPLIED on BOTH databases
+  - REAL api db:  0043_notifications_pushed_at -> 0044_notification_hidden  (head: 0044_notification_hidden)
+  - TEST db:      0043_notifications_pushed_at -> 0044_notification_hidden  (head: 0044_notification_hidden)
+    "notifications.hidden (per-owner hide)"
+
+RELAY:  UNTOUCHED  (git diff relay/ empty).
 
 IMPORT / WIRING SANITY (api-test):
-  - app.main + splitwise client/importer import clean.
+  - app.main imports clean.
+  - Notification model carries hidden column.
+  - Routes live in /openapi.json: POST /notifications/{id}/hide, POST /notifications/read-all.
 
 TEST RUN (api-test stack, incl. HTTP/MinIO-dependent tests):  PASS
-  TOTAL passing: 228   FAIL: 0   (all modules green)
+  TOTAL passing: 231   FAIL: 0   (all modules green)
 
 Watch-list (all PASS):
-  test_notifications_sync ...... 10  (incl. NEW
-                                       test_splitwise_expense_source_deep_links_to_local_expense,
+  test_notifications ........... 6   (hide excludes from list + owner-scoping incl.
+                                       test_mark_read_other_owner_forbidden, mark_all_read)
+  test_notifications_sync ...... 11  (re-sync preserves user hide;
                                        test_sync_notifications_all_per_token_isolation)
 
 FAILURES: none.
 
-SUMMARY: PASS. f303b2a builds, restarts, and passes the full backend suite (228/228) on the running
-stack. Migration head 0043 (untouched); no relay/OpenAPI change. Splitwise expense-source deep-linking
-verified: source_type/source_id captured, resolved to the local Expense by splitwise_expense_id,
-Notification entity stamped + push deep-link target. No Linux-side code changes; this file is the only
+SUMMARY: PASS. 24e3c5b builds, migrates 0043 -> 0044 on both real and test DBs, restarts, and passes
+the full backend suite (231/231). Activity hide / mark-all-read verified: notifications.hidden column,
+owner-only POST /notifications/{id}/hide, bulk POST /notifications/read-all, list filters hidden, and
+re-sync preserves the user hide. No relay change. No Linux-side code changes; this file is the only
 commit from here.
