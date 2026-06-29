@@ -1,47 +1,45 @@
 SplitBack backend deploy verification (uplink / Linux full-stack)
 ================================================================
 
-Commit tested:  d620809  (main HEAD)
+Commit tested:  f303b2a  (main HEAD)
 Date (UTC):     2026-06-29
-Migration head: 0043_notifications_pushed_at   (NEW — upgraded 0042 -> 0043)
+Migration head: 0043_notifications_pushed_at   (unchanged — NO new migration)
 
-Change in scope (backend + iOS, single commit; NO relay change, NO OpenAPI change):
-  d620809  Inbox refinements: fix churning push (watermark), All-Activity screen, transaction deep-link
-    - migration 0043_notifications_pushed_at (down_revision 0042_notification_entity): adds
-      splitwise_tokens.notifications_pushed_at (push watermark). Revision id 28 chars (<=32 OK).
-    - importer.sync_notifications: push churn fix — push only notifications newer than the per-token
-      watermark, advance it every sync (decoupled from the retention prune). Softened summary wording.
-    - tests/test_notifications_sync.py reworked for the watermark (incl. a no-repush regression test).
-    - iOS-only: ActivityView (All-Activity screen) + transaction deep-link target.
+Change in scope (backend-only, single commit; NO migration, NO OpenAPI/relay change):
+  f303b2a  Deep-link Splitwise activity rows to their expense
+    - client.py normalizers now capture the notification's source ({type, id}) as
+      source_type / source_id.
+    - importer.sync_notifications resolves an Expense-source notification's source_id to the local
+      Expense (by splitwise_expense_id) and stamps Notification.entity_type='expense' / entity_id;
+      on-conflict backfills; the individual Splitwise push carries the matching deep-link target.
+    - tests/test_notifications_sync.py: new test_splitwise_expense_source_deep_links_to_local_expense
+      (+ source_type/source_id on _note).
 
 BUILD / RESTART:  OK
-  - git merge --ff-only origin/main -> d620809 (clean).
+  - git merge --ff-only origin/main -> f303b2a (clean).
   - docker compose build api api-test -> built.
   - Recreated api (real, :8000) + db-test/api-test. Up.
+  - alembic current -> 0043_notifications_pushed_at (head); no migration applied.
 
-MIGRATION:  APPLIED on BOTH databases
-  - REAL api db:  0042_notification_entity -> 0043_notifications_pushed_at  (head: 0043_notifications_pushed_at)
-  - TEST db:      0042_notification_entity -> 0043_notifications_pushed_at  (head: 0043_notifications_pushed_at)
-    "splitwise_tokens.notifications_pushed_at (push watermark)"
-
-RELAY:    UNTOUCHED  (git diff relay/ empty).
-OPENAPI:  UNCHANGED  (git diff ios/openapi.json empty).
+MIGRATION: none (head 0043 unchanged).
+RELAY:     UNTOUCHED  (git diff relay/ empty).
+OPENAPI:   UNCHANGED  (git diff ios/openapi.json empty).
 
 IMPORT / WIRING SANITY (api-test):
-  - app.main imports clean.
-  - SplitwiseToken model carries notifications_pushed_at column.
+  - app.main + splitwise client/importer import clean.
 
 TEST RUN (api-test stack, incl. HTTP/MinIO-dependent tests):  PASS
-  TOTAL passing: 227   FAIL: 0   (all modules green)
+  TOTAL passing: 228   FAIL: 0   (all modules green)
 
 Watch-list (all PASS):
-  test_notifications_sync ...... 9   (reworked for the watermark; incl.
-                                       test_resync_updates_content_without_repush no-repush regression,
+  test_notifications_sync ...... 10  (incl. NEW
+                                       test_splitwise_expense_source_deep_links_to_local_expense,
                                        test_sync_notifications_all_per_token_isolation)
 
 FAILURES: none.
 
-SUMMARY: PASS. d620809 builds, migrates 0042 -> 0043 on both real and test DBs, restarts, and passes
-the full backend suite (227/227). Push-churn fix verified: per-token notifications_pushed_at watermark
-column + watermark-gated push (no-repush regression green). No relay change, no OpenAPI change. No
-Linux-side code changes; this file is the only commit from here.
+SUMMARY: PASS. f303b2a builds, restarts, and passes the full backend suite (228/228) on the running
+stack. Migration head 0043 (untouched); no relay/OpenAPI change. Splitwise expense-source deep-linking
+verified: source_type/source_id captured, resolved to the local Expense by splitwise_expense_id,
+Notification entity stamped + push deep-link target. No Linux-side code changes; this file is the only
+commit from here.
