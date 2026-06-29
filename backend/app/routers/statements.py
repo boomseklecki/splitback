@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import require_auth
 from app.db import get_session
 from app.integrations.statements import ofx
-from app.integrations.statements.institutions import resolve_domain
+from app.integrations.statements.institutions import resolve_institution
 from app.models import Account, Transaction
 from app.models.enums import TransactionSource
 from app.schemas.statement import StatementImportResult
@@ -52,7 +52,8 @@ async def import_ofx(session: AsyncSession, caller: str | None, data: bytes,
     # surface the conflict so the caller can confirm (force=True to import anyway). Match on the one safe
     # cross-source signal: owner + last-4 mask + institution domain.
     mask = (parsed.acctid or "")[-4:] or None
-    domain = resolve_domain(parsed.org)
+    inst = resolve_institution(parsed.org)
+    domain = inst.domain if inst else None
     if not force and mask and domain:
         plaid_match = await session.scalar(select(Account).where(
             Account.owner_identifier == caller, Account.plaid_account_id.is_not(None),
@@ -84,8 +85,8 @@ async def import_ofx(session: AsyncSession, caller: str | None, data: bytes,
         account.external_account_id = parsed.acctid     # set / backfill the stable key
     account.name = name
     account.mask = (parsed.acctid or "")[-4:] or None   # short display tag — the end of the ACCTID
-    account.institution_name = parsed.org
-    account.institution_domain = resolve_domain(parsed.org)
+    account.institution_name = inst.name if inst else parsed.org   # canonical FIDIR name when matched
+    account.institution_domain = domain
 
     # Balances reflect the statement's as-of date — only adopt them when this statement is newer (so importing
     # an older statement later can't regress the balance). LEDGERBAL is negative-when-owed → flip to

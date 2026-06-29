@@ -133,6 +133,35 @@ async def test_plaid_linked_card_guards_then_forces():
         await _purge()
 
 
+# An OFX whose <ORG> exactly matches a FIDIR dataset entry (not the curated Apple override) — branding
+# should resolve from institutions_data.json: canonical name + domain, no longer null.
+_AMEX_OFX = b"""OFXHEADER:100
+<OFX>
+<SIGNONMSGSRSV1><SONRS><FI><ORG>American Express</ORG><FID>3101</FID></FI></SONRS></SIGNONMSGSRSV1>
+<CREDITCARDMSGSRSV1><CCSTMTTRNRS><CCSTMTRS>
+<CURDEF>USD
+<CCACCTFROM><ACCTID>xxxxxxxxxxxx9001</ACCTID></CCACCTFROM>
+<BANKTRANLIST>
+<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20260601<TRNAMT>-12.00<FITID>AX-1<NAME>COFFEE</STMTTRN>
+</BANKTRANLIST>
+</CCSTMTRS></CCSTMTTRNRS></CREDITCARDMSGSRSV1>
+</OFX>
+"""
+
+
+async def test_branding_resolves_from_fidir_dataset():
+    await _purge()
+    try:
+        async with async_session() as s:
+            result = await import_ofx(s, OWNER, _AMEX_OFX)
+        async with async_session() as s:
+            acct = await s.get(Account, result.account_id)
+            assert acct.institution_domain == "americanexpress.com"   # from FIDIR dataset, not null
+            assert acct.institution_name == "American Express"        # canonical FIDIR name
+    finally:
+        await _purge()
+
+
 async def test_balance_follows_newest_statement():
     await _purge()
     try:
