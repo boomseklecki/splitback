@@ -23,6 +23,7 @@ _OVERRIDES: dict[str, str] = {
 class Institution:
     name: str
     domain: str
+    home_url: str = ""
 
 
 def _normalize(org: str) -> str:
@@ -30,13 +31,38 @@ def _normalize(org: str) -> str:
 
 
 @lru_cache(maxsize=1)
-def _by_name() -> dict[str, Institution]:
-    """normalized FIDIR name → {name, domain}, loaded once. Missing data file → empty (overrides still work)."""
+def _dataset() -> list[Institution]:
+    """The FIDIR Web Connect institutions, loaded once. Missing data file → empty (overrides still work)."""
     try:
         rows = json.loads(_DATA.read_text(encoding="utf-8"))
     except FileNotFoundError:
-        return {}
-    return {_normalize(r["name"]): Institution(r["name"], r["domain"]) for r in rows}
+        return []
+    return [Institution(r["name"], r["domain"], r.get("home_url", "")) for r in rows]
+
+
+@lru_cache(maxsize=1)
+def _by_name() -> dict[str, Institution]:
+    """normalized FIDIR name → institution (first wins on collisions, matching the dataset's dedup)."""
+    index: dict[str, Institution] = {}
+    for inst in _dataset():
+        index.setdefault(_normalize(inst.name), inst)
+    return index
+
+
+def search(query: str, limit: int = 50) -> list[Institution]:
+    """Case-insensitive name search over the dataset, ranked prefix-before-substring, then alphabetical."""
+    q = _normalize(query)
+    if not q:
+        return []
+    prefix: list[Institution] = []
+    other: list[Institution] = []
+    for inst in _dataset():
+        name = inst.name.lower()
+        if name.startswith(q):
+            prefix.append(inst)
+        elif q in name:
+            other.append(inst)
+    return (prefix + other)[:limit]
 
 
 def resolve_institution(org: str | None) -> Institution | None:

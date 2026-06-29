@@ -229,6 +229,7 @@ public final class AppEnvironment {
     var invites: InviteRepository { .init(client: client) }
     var connections: ConnectionRepository { .init(client: client) }
     var notifications: NotificationRepository { .init(client: client) }
+    var institutions: InstitutionRepository { .init(client: client) }
     var devices: DeviceRepository { .init(client: client) }
     func statements(_ context: ModelContext) -> StatementRepository { .init(client: client, context: context) }
 

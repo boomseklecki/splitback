@@ -18,6 +18,7 @@ from app.routers import (
     goals,
     groups,
     health,
+    institutions,
     invites,
     logos,
     notifications,
@@ -87,6 +88,7 @@ app.include_router(connections.router, dependencies=_protected)
 app.include_router(devices.router, dependencies=_protected)
 app.include_router(notifications.router, dependencies=_protected)
 app.include_router(preferences.router, dependencies=_protected)
+app.include_router(institutions.router, dependencies=_protected)  # reference data (OFX-importable banks)
 app.include_router(backups.router)  # each route self-gates with require_admin
 app.include_router(invites.router)  # self-gates: require_can_invite (admin, or any member when allowed)
 app.include_router(server_settings.router)  # self-gates: GET require_auth, PATCH require_admin

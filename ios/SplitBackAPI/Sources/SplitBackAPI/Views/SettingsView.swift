@@ -217,6 +217,11 @@ struct SettingsView: View {
                     Button("Import Statement (.ofx)", systemImage: "doc.badge.plus") {
                         importingStatement = true
                     }.disabled(statementBusy)
+                    NavigationLink {
+                        SupportedBanksView()
+                    } label: {
+                        Label("Find your bank", systemImage: "magnifyingglass")
+                    }
                     if let statementSummary {
                         Text(statementSummary).font(.caption).foregroundStyle(.secondary)
                     }

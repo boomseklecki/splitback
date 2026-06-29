@@ -4058,6 +4058,73 @@
         }
       }
     },
+    "/institutions": {
+      "get": {
+        "tags": [
+          "institutions"
+        ],
+        "summary": "List Institutions",
+        "description": "Search the OFX-importable institution directory (Intuit FIDIR Web Connect banks). Reference data \u2014\nno user scope.",
+        "operationId": "list_institutions_institutions_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "case-insensitive name search",
+              "default": "",
+              "title": "Q"
+            },
+            "description": "case-insensitive name search"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/InstitutionResponse"
+                  },
+                  "title": "Response List Institutions Institutions Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/backups": {
       "get": {
         "tags": [
@@ -5599,6 +5666,30 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "InstitutionResponse": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "domain": {
+            "type": "string",
+            "title": "Domain"
+          },
+          "home_url": {
+            "type": "string",
+            "title": "Home Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "domain",
+          "home_url"
+        ],
+        "title": "InstitutionResponse",
+        "description": "A bank/credit institution that supports OFX file (Web Connect) export \u2014 for the in-app\n\"banks you can import from\" directory. Sourced from Intuit's FIDIR list."
       },
       "InviteCreate": {
         "properties": {

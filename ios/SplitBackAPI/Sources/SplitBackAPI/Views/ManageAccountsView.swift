@@ -23,6 +23,7 @@ struct ManageAccountsView: View {
     @State private var statementSummary: String?
     @State private var showingNewAccount = false
     @State private var showingManualTxn = false
+    @State private var showingSupportedBanks = false
     @State private var pendingImport: PendingImport?
 
     struct UnlinkTarget: Identifiable { let id: String; let name: String }
@@ -119,6 +120,7 @@ struct ManageAccountsView: View {
                     Button("Link Bank", systemImage: "building.columns") { linkBank() }
                         .disabled(linking || env.currentUser == nil)
                     Button("Import Statement (.ofx)", systemImage: "doc.badge.plus") { importingStatement = true }
+                    Button("Find Your Bank", systemImage: "magnifyingglass") { showingSupportedBanks = true }
                     Button("New Manual Account", systemImage: "plus.square") { showingNewAccount = true }
                 } label: {
                     Image(systemName: linking ? "ellipsis" : "plus")
@@ -137,6 +139,9 @@ struct ManageAccountsView: View {
                     linkSession = nil; PlaidLinkSession.shared.finish(); env.prewarmPlaidLinkToken(context)
                 })
                 .ignoresSafeArea()
+        }
+        .sheet(isPresented: $showingSupportedBanks) {
+            NavigationStack { SupportedBanksView() }
         }
         .sheet(isPresented: $showingNewAccount) { NewAccountView() }
         .sheet(isPresented: $showingManualTxn) { ManualTransactionView() }
