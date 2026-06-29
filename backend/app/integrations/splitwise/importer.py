@@ -7,7 +7,7 @@ import asyncio
 import logging
 from uuid import UUID
 
-from sqlalchemy import case, delete, func, select, text
+from sqlalchemy import case, delete, func, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -25,6 +25,7 @@ from app.models import (
     Notification,
     NotificationMute,
     Split,
+    SplitwiseToken,
     User,
 )
 from app.models.enums import NotificationSource, UserSource
@@ -517,35 +518,37 @@ async def sync_notifications(
     never pushes."""
     fetch_n = min(retention, _MAX_FETCH)
     notifications = await asyncio.to_thread(sw_client.fetch_notifications, client, access_token, fetch_n)
-    # Which splitwise_ids do we already have? Anything not here is new this sync (the push delta). When the
-    # owner has none yet, this is a cold start — land the rows but don't push the whole historical batch.
-    existing = set(await session.scalars(
-        select(Notification.splitwise_id).where(
-            Notification.owner_identifier == owner_identifier,
-            Notification.source == NotificationSource.splitwise,
-            Notification.splitwise_id.is_not(None))))
-    first_sync = not existing
+    # Push watermark (the newest notification created_at we've already accounted for). Pushing only items
+    # *newer* than it — and advancing it every sync — keeps pruned-then-refetched old rows from re-pushing.
+    # Null watermark = first sync → no push. Decoupled from the storage prune below.
+    watermark = await session.scalar(select(SplitwiseToken.notifications_pushed_at).where(
+        SplitwiseToken.user_identifier == owner_identifier))
     # The owner's PUSH mutes (feed rows are written regardless). source:splitwise mutes all; per-type too.
     muted = set(await session.scalars(select(NotificationMute.token).where(
         NotificationMute.owner_identifier == owner_identifier,
         NotificationMute.token.like("push:%")))) if push else set()
     splitwise_muted = "push:source:splitwise" in muted
     to_push: list[str] = []
+    newest = watermark
     for note in notifications:
         swid = note.get("splitwise_id")
         if not swid:
             continue
         content = note.get("content") or ""
-        if (push and not first_sync and swid not in existing and not content.lower().startswith("you ")
+        created = mapper._parse_datetime(note.get("created_at"))
+        if (push and watermark is not None and created is not None and created > watermark
+                and not content.lower().startswith("you ")
                 and not splitwise_muted and f"push:{note.get('type')}" not in muted):
-            to_push.append(content)  # new partner activity (not my own action), not push-muted → alert
+            to_push.append(content)  # genuinely new (after the watermark), not my own action, not muted → alert
+        if created is not None and (newest is None or created > newest):
+            newest = created
         values = {
             "owner_identifier": owner_identifier,
             "source": NotificationSource.splitwise,
             "splitwise_id": swid,
             "type": note.get("type"),
             "content": content,
-            "created_at": mapper._parse_datetime(note.get("created_at")),
+            "created_at": created,
         }
         stmt = (
             pg_insert(Notification)
@@ -557,7 +560,12 @@ async def sync_notifications(
             )
         )
         await session.execute(stmt)
-    # Prune to the newest `retention` rows for this owner.
+    # Advance the watermark to the newest seen (every sync, even push=False) so already-seen activity never
+    # re-alerts. Then prune storage to the newest `retention` rows (a cap only — not the alert signal).
+    if newest is not None and newest != watermark:
+        await session.execute(update(SplitwiseToken)
+                              .where(SplitwiseToken.user_identifier == owner_identifier)
+                              .values(notifications_pushed_at=newest))
     keep = (
         select(Notification.id)
         .where(Notification.owner_identifier == owner_identifier)
@@ -575,7 +583,10 @@ async def sync_notifications(
             for body in to_push:
                 push_enqueue({owner_identifier}, "SplitBack", body)
         else:
-            push_enqueue({owner_identifier}, "SplitBack", f"{len(to_push)} new updates in your shared groups")
+            n = len(to_push)
+            body = (f"{n} new updates in your shared groups" if n <= 9
+                    else "Several new updates in your shared groups")
+            push_enqueue({owner_identifier}, "SplitBack", body)
     return {"notifications": len(notifications)}
 
 

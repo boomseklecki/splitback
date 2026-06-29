@@ -19,3 +19,6 @@ class SplitwiseToken(UUIDMixin, TimestampMixin, Base):
     # Incremental-sync cursor: start time of the last successful expense sync; the next sync
     # passes updated_after=this. Null until the first import/sync stamps it.
     expenses_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Push watermark: the newest Splitwise notification `created_at` already accounted for. Only items
+    # strictly newer push; advanced every sync. Null = first sync (no push). Decoupled from the storage prune.
+    notifications_pushed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

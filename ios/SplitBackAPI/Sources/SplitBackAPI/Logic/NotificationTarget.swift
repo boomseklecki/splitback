@@ -5,11 +5,12 @@ import SwiftUI
 /// or a push's `userInfo["target"]` (a tapped push). `id` selectors are backend UUIDs except `friend`, which
 /// is a person identifier.
 enum NotificationTarget: Hashable, Identifiable {
-    case expense(UUID), account(UUID), goal(UUID), group(UUID), friend(String)
+    case expense(UUID), transaction(UUID), account(UUID), goal(UUID), group(UUID), friend(String)
 
     var id: String {
         switch self {
         case .expense(let u): return "expense:\(u)"
+        case .transaction(let u): return "transaction:\(u)"
         case .account(let u): return "account:\(u)"
         case .goal(let u): return "goal:\(u)"
         case .group(let u): return "group:\(u)"
@@ -21,11 +22,12 @@ enum NotificationTarget: Hashable, Identifiable {
     init?(type: String?, id: String?) {
         guard let type, let id, !id.isEmpty else { return nil }
         switch type {
-        case "expense": guard let u = UUID(uuidString: id) else { return nil }; self = .expense(u)
-        case "account": guard let u = UUID(uuidString: id) else { return nil }; self = .account(u)
-        case "goal":    guard let u = UUID(uuidString: id) else { return nil }; self = .goal(u)
-        case "group":   guard let u = UUID(uuidString: id) else { return nil }; self = .group(u)
-        case "friend":  self = .friend(id)
+        case "expense":     guard let u = UUID(uuidString: id) else { return nil }; self = .expense(u)
+        case "transaction": guard let u = UUID(uuidString: id) else { return nil }; self = .transaction(u)
+        case "account":     guard let u = UUID(uuidString: id) else { return nil }; self = .account(u)
+        case "goal":        guard let u = UUID(uuidString: id) else { return nil }; self = .goal(u)
+        case "group":       guard let u = UUID(uuidString: id) else { return nil }; self = .group(u)
+        case "friend":      self = .friend(id)
         default: return nil
         }
     }
@@ -46,6 +48,8 @@ struct NotificationTargetView: View {
         switch target {
         case .expense(let id):
             if let e = fetchExpense(id) { ExpenseDetailView(expense: e) } else { unavailable }
+        case .transaction(let id):
+            if let t = fetchTransaction(id) { TransactionDetailView(transaction: t) } else { unavailable }
         case .account(let id):
             if let a = fetchAccount(id) { TransactionsView(account: a) } else { unavailable }
         case .goal(let id):
@@ -66,6 +70,9 @@ struct NotificationTargetView: View {
 
     private func fetchExpense(_ id: UUID) -> Expense? {
         (try? context.fetch(FetchDescriptor<Expense>(predicate: #Predicate { $0.id == id })))?.first
+    }
+    private func fetchTransaction(_ id: UUID) -> Transaction? {
+        (try? context.fetch(FetchDescriptor<Transaction>(predicate: #Predicate { $0.id == id })))?.first
     }
     private func fetchAccount(_ id: UUID) -> Account? {
         (try? context.fetch(FetchDescriptor<Account>(predicate: #Predicate { $0.id == id })))?.first

@@ -34,7 +34,18 @@ struct InboxView: View {
                     Section("Suggestions") { ForEach(suggestions) { row($0) } }
                 }
                 if !activity.isEmpty {
-                    Section("Activity") { ForEach(activity, id: \.id) { activityRow($0) } }
+                    Section("Activity") {
+                        ForEach(activity.prefix(6), id: \.id) { n in
+                            ActivityRow(n: n, onMarkRead: { markRead(n) })
+                        }
+                        if activity.count > 6 {
+                            NavigationLink {
+                                ActivityView()
+                            } label: {
+                                Label("See All Activity", systemImage: "list.bullet.rectangle")
+                            }
+                        }
+                    }
                 }
                 if suggestions.isEmpty && activity.isEmpty {
                     ContentUnavailableView("Nothing new", systemImage: "tray",
@@ -122,33 +133,6 @@ struct InboxView: View {
 
     private func dismissButton(_ s: Suggestion) -> some View {
         Button("Dismiss", role: .destructive) { dismiss(s, false) }
-    }
-
-    @ViewBuilder
-    private func activityRow(_ n: Components.Schemas.NotificationResponse) -> some View {
-        // App-native rows carry a deep-link target → tap drills into the entity (and marks read). Splitwise
-        // rows (no entity ref) keep the plain tap-to-read behavior.
-        if let target = NotificationTarget(type: n.entity_type, id: n.entity_id) {
-            NavigationLink(value: target) { activityRowContent(n) }
-                .simultaneousGesture(TapGesture().onEnded { markRead(n) })
-        } else {
-            activityRowContent(n).contentShape(Rectangle()).onTapGesture { markRead(n) }
-        }
-    }
-
-    private func activityRowContent(_ n: Components.Schemas.NotificationResponse) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: n.source == "splitwise" ? "dollarsign.circle" : "bell")
-                .font(.title3).foregroundStyle(n.read ? Color.secondary : Color.accentColor).frame(width: 28)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(n.content).font(.subheadline)
-                    .foregroundStyle(n.read ? .secondary : .primary).lineLimit(3)
-                Text(n.created_at.formatted(date: .abbreviated, time: .shortened))
-                    .font(.caption2).foregroundStyle(.tertiary)
-            }
-            Spacer()
-            if !n.read { Circle().fill(.tint).frame(width: 8, height: 8) }
-        }
     }
 
     /// Progressive load: paint cached cards instantly, then stream in the activity feed, AI-derived cards, and

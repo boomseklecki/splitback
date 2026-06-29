@@ -1,5 +1,7 @@
 """Splitwise notification sync: HTML cleanup + the delta push (new, non-self activity pushes; backfill and
 own actions don't). DB-backed; fakes the Splitwise fetch + captures push.enqueue."""
+from datetime import datetime, timezone
+
 from sqlalchemy import delete, select
 
 from app.db import async_session
@@ -16,7 +18,26 @@ async def _purge():
     async with async_session() as s:
         await s.execute(delete(Notification).where(Notification.owner_identifier == OWNER))
         await s.execute(delete(NotificationMute).where(NotificationMute.owner_identifier == OWNER))
+        await s.execute(delete(SplitwiseToken).where(SplitwiseToken.user_identifier == OWNER))
         await s.commit()
+
+
+async def _seed_token(watermark: datetime | None = None):
+    """The owner's Splitwise token holds the push watermark; sync_notifications reads + advances it."""
+    async with async_session() as s:
+        await s.execute(delete(SplitwiseToken).where(SplitwiseToken.user_identifier == OWNER))
+        s.add(SplitwiseToken(user_identifier=OWNER, access_token="x", notifications_pushed_at=watermark))
+        await s.commit()
+
+
+async def _watermark() -> datetime | None:
+    async with async_session() as s:
+        return await s.scalar(select(SplitwiseToken.notifications_pushed_at).where(
+            SplitwiseToken.user_identifier == OWNER))
+
+
+def _dt(day: int) -> datetime:
+    return datetime(2026, 6, day, 12, 0, tzinfo=timezone.utc)
 
 
 def _fake_fetch(notes, limit_holder=None):
@@ -50,26 +71,23 @@ def test_clean_content_strips_html_and_entities():
     assert _clean_content(None) == ""
 
 
-async def test_push_only_new_non_self():
+async def test_push_only_after_watermark_non_self():
     await _purge()
     try:
-        # Pre-existing row → not a delta. Then sync a mix: a new partner add, a new self action, the existing one.
-        async with async_session() as s:
-            s.add(Notification(owner_identifier=OWNER, source=NotificationSource.splitwise,
-                               splitwise_id="sw-old", content="Sam added Coffee"))
-            await s.commit()
+        await _seed_token(watermark=_dt(19))   # already accounted for everything up to the 19th
         captured: list = []
         holder: list = []
-        await _sync([_note("sw-new", "Alex added Dinner"),
-                     _note("sw-self", "You added Lunch"),
-                     _note("sw-old", "Sam added Coffee")],
+        await _sync([_note("sw-new", "Alex added Dinner", _dt(20).isoformat()),   # after watermark → alert
+                     _note("sw-self", "You added Lunch", _dt(20).isoformat()),    # self → no
+                     _note("sw-old", "Sam added Coffee", _dt(18).isoformat())],   # before watermark → no
                     push=True, capture=captured, limit_holder=holder)
         assert holder == [100]                                  # fetch count tracks retention (min(100,100))
         assert len(captured) == 1 and captured[0][1] == "Alex added Dinner"   # only the new, non-self note
         async with async_session() as s:
             ids = set(await s.scalars(select(Notification.splitwise_id).where(
                 Notification.owner_identifier == OWNER)))
-        assert ids == {"sw-old", "sw-new", "sw-self"}            # all in the feed (full log incl. self)
+        assert ids == {"sw-old", "sw-new", "sw-self"}           # all in the feed (full log incl. self)
+        assert await _watermark() == _dt(20)                    # advanced to the newest seen
     finally:
         await _purge()
 
@@ -77,19 +95,35 @@ async def test_push_only_new_non_self():
 async def test_cold_start_lands_rows_without_pushing():
     await _purge()
     try:
-        # Owner has zero prior splitwise notifications → first sync must NOT push the historical batch,
-        # even with push=True; the rows still land. A later sync pushes genuinely new partner activity.
+        # Null watermark = first sync → no push even with push=True; rows still land + the watermark advances.
+        await _seed_token(watermark=None)
         captured: list = []
-        await _sync([_note("c-1", "Alex added Dinner"), _note("c-2", "Sam added Coffee")],
+        await _sync([_note("c-1", "Alex added Dinner", _dt(18).isoformat()),
+                     _note("c-2", "Sam added Coffee", _dt(19).isoformat())],
                     push=True, capture=captured)
         assert captured == []                                   # cold start: no flood
-        async with async_session() as s:
-            ids = set(await s.scalars(select(Notification.splitwise_id).where(
-                Notification.owner_identifier == OWNER)))
-        assert ids == {"c-1", "c-2"}
-        await _sync([_note("c-1", "Alex added Dinner"), _note("c-3", "Pat added Tea")],
+        assert await _watermark() == _dt(19)
+        # A later sync pushes only what's genuinely newer than the (now-advanced) watermark.
+        await _sync([_note("c-1", "Alex added Dinner", _dt(18).isoformat()),
+                     _note("c-3", "Pat added Tea", _dt(20).isoformat())],
                     push=True, capture=captured)
-        assert len(captured) == 1 and captured[0][1] == "Pat added Tea"   # only the new one, now non-cold
+        assert len(captured) == 1 and captured[0][1] == "Pat added Tea"
+    finally:
+        await _purge()
+
+
+async def test_no_repush_of_pruned_then_refetched():
+    # The original bug: an old notification pruned from storage, re-fetched, re-counted as "new" → re-pushed.
+    # With the watermark it must NOT re-push once seen.
+    await _purge()
+    try:
+        await _seed_token(watermark=None)
+        batch = [_note("r-1", "Alex added Dinner", _dt(18).isoformat()),
+                 _note("r-2", "Sam added Coffee", _dt(19).isoformat())]
+        captured: list = []
+        await _sync(batch, push=True, capture=captured)         # cold start → no push, watermark → 19th
+        await _sync(batch, push=True, capture=captured)         # exact same batch, all ≤ watermark
+        assert captured == []                                   # never re-pushed
     finally:
         await _purge()
 
@@ -97,14 +131,13 @@ async def test_cold_start_lands_rows_without_pushing():
 async def test_push_mute_splitwise_source_keeps_feed_drops_push():
     await _purge()
     try:
+        await _seed_token(watermark=_dt(19))
         async with async_session() as s:
-            # Seed a prior row (so it's not a cold start) + a source:splitwise PUSH mute.
-            s.add(Notification(owner_identifier=OWNER, source=NotificationSource.splitwise,
-                               splitwise_id="m-old", content="Sam added Coffee"))
             s.add(NotificationMute(owner_identifier=OWNER, token="push:source:splitwise"))
             await s.commit()
         captured: list = []
-        await _sync([_note("m-new", "Alex added Dinner"), _note("m-old", "Sam added Coffee")],
+        await _sync([_note("m-new", "Alex added Dinner", _dt(20).isoformat()),
+                     _note("m-old", "Sam added Coffee", _dt(18).isoformat())],
                     push=True, capture=captured)
         assert captured == []                                   # push muted for splitwise → no alert
         async with async_session() as s:
