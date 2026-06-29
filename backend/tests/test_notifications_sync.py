@@ -164,6 +164,34 @@ async def test_splitwise_expense_source_deep_links_to_local_expense():
         await _purge()
 
 
+async def test_splitwise_group_source_deep_links_to_local_group():
+    await _purge()
+    async with async_session() as s:
+        g = Group(name="SW-grp", backend_type=BackendType.splitwise, splitwise_group_id="SWG1")
+        s.add(g); await s.commit()
+        gid = str(g.id)
+    try:
+        await _seed_token(watermark=_dt(19))
+        captured: list = []
+        await _sync([_note("g-1", "Alex created the group", _dt(20).isoformat(),
+                           source_type="Group", source_id="SWG1"),
+                     _note("g-2", "Sam joined an unknown group", _dt(20).isoformat(),
+                           source_type="Group", source_id="SWG-UNKNOWN")],
+                    push=True, capture=captured)
+        async with async_session() as s:
+            rows = {n.splitwise_id: n for n in await s.scalars(select(Notification).where(
+                Notification.owner_identifier == OWNER))}
+        assert rows["g-1"].entity_type == "group" and rows["g-1"].entity_id == gid   # deep-linked
+        assert rows["g-2"].entity_type is None and rows["g-2"].entity_id is None     # not local → null
+        n1 = next(c for c in captured if c[1] == "Alex created the group")
+        assert n1[2] == {"type": "group", "id": gid}
+    finally:
+        async with async_session() as s:
+            await s.execute(delete(Group).where(Group.splitwise_group_id == "SWG1"))
+            await s.commit()
+        await _purge()
+
+
 async def test_push_mute_splitwise_source_keeps_feed_drops_push():
     await _purge()
     try:

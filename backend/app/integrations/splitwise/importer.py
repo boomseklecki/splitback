@@ -528,15 +528,24 @@ async def sync_notifications(
         NotificationMute.owner_identifier == owner_identifier,
         NotificationMute.token.like("push:%")))) if push else set()
     splitwise_muted = "push:source:splitwise" in muted
-    # Resolve each notification's Splitwise expense (source = {"type": "Expense", "id": <sw expense id>}) to a
-    # local Expense so the row + push can deep-link. One batch query over the unique splitwise_expense_id.
-    sw_expense_ids = {note["source_id"] for note in notifications
-                      if (note.get("source_type") or "").lower() == "expense" and note.get("source_id")}
+    # Resolve each notification's Splitwise source ({"type": "Expense"/"Group", "id": <sw id>}) to a local
+    # entity so the row + push can deep-link. One batch query per kind over the (unique) splitwise ids.
+    def _src_ids(kind: str) -> set[str]:
+        return {note["source_id"] for note in notifications
+                if (note.get("source_type") or "").lower() == kind and note.get("source_id")}
+
     local_by_sw: dict[str, str] = {}
+    sw_expense_ids = _src_ids("expense")
     if sw_expense_ids:
         rows = await session.execute(select(Expense.splitwise_expense_id, Expense.id).where(
             Expense.splitwise_expense_id.in_(sw_expense_ids)))
         local_by_sw = {sw: str(local) for sw, local in rows}
+    local_group_by_sw: dict[str, str] = {}
+    sw_group_ids = _src_ids("group")
+    if sw_group_ids:
+        rows = await session.execute(select(Group.splitwise_group_id, Group.id).where(
+            Group.splitwise_group_id.in_(sw_group_ids)))
+        local_group_by_sw = {sw: str(local) for sw, local in rows}
     to_push: list[tuple[str, dict | None]] = []  # (content, deep-link target | None)
     newest = watermark
     for note in notifications:
@@ -545,12 +554,17 @@ async def sync_notifications(
             continue
         content = note.get("content") or ""
         created = mapper._parse_datetime(note.get("created_at"))
-        # Deep-link target: a local expense matching this notification's Splitwise expense source.
+        # Deep-link target: the local entity matching this notification's Splitwise source.
         entity_type = entity_id = None
-        if (note.get("source_type") or "").lower() == "expense":
+        src_type = (note.get("source_type") or "").lower()
+        if src_type == "expense":
             local = local_by_sw.get(note.get("source_id"))
             if local is not None:
                 entity_type, entity_id = "expense", local
+        elif src_type == "group":
+            local = local_group_by_sw.get(note.get("source_id"))
+            if local is not None:
+                entity_type, entity_id = "group", local
         if (push and watermark is not None and created is not None and created > watermark
                 and not content.lower().startswith("you ")
                 and not splitwise_muted and f"push:{note.get('type')}" not in muted):
