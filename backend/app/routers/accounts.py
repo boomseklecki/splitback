@@ -229,8 +229,8 @@ async def list_transactions(
     return rows
 
 
-# Override columns -> response. `category` surfaces as `category_override`; include flags pass through.
-_TXN_OVERRIDE_FIELDS = ("category", "include_in_spending", "include_in_cash_flow")
+# Override columns -> response. `category` surfaces as `category_override`; include flags + refined pass through.
+_TXN_OVERRIDE_FIELDS = ("category", "include_in_spending", "include_in_cash_flow", "refined_category")
 
 
 async def _attach_overrides(
@@ -254,6 +254,7 @@ async def _attach_overrides(
         t.category_override = o.category if o is not None else None
         t.include_in_spending = o.include_in_spending if o is not None else None
         t.include_in_cash_flow = o.include_in_cash_flow if o is not None else None
+        t.refined_category = o.refined_category if o is not None else None
 
 
 async def _load_transaction(
@@ -344,7 +345,7 @@ async def _apply_txn_override(
         session.add(override)
     if set_category:
         override.category = fields.get("category")
-    for field in ("include_in_spending", "include_in_cash_flow"):
+    for field in ("include_in_spending", "include_in_cash_flow", "refined_category"):
         if field in fields:
             setattr(override, field, fields[field])
     if all(getattr(override, field) is None for field in _TXN_OVERRIDE_FIELDS):

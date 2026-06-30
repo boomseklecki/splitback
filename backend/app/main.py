@@ -12,6 +12,7 @@ from app.routers import (
     auth,
     backups,
     balances,
+    categories,
     connections,
     devices,
     expenses,
@@ -92,6 +93,7 @@ app.include_router(devices.router, dependencies=_protected)
 app.include_router(notifications.router, dependencies=_protected)
 app.include_router(notification_mutes.router, dependencies=_protected)
 app.include_router(preferences.router, dependencies=_protected)
+app.include_router(categories.router, dependencies=_protected)
 app.include_router(institutions.router, dependencies=_protected)  # reference data (OFX-importable banks)
 app.include_router(backups.router)  # each route self-gates with require_admin
 app.include_router(invites.router)  # self-gates: require_can_invite (admin, or any member when allowed)

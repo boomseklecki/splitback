@@ -25,6 +25,10 @@ class TransactionOverride(UUIDMixin, TimestampMixin, Base):
     )
     # Canonical-category override applied over the local label map; null = auto.
     category: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # Per-transaction on-device AI refinement (provenance .aiRefined) for vague rows — synced so a
+    # non-AI-capable device inherits it. Distinct from `category` (the explicit user override): read at a
+    # lower precedence rank and never promoted to override.
+    refined_category: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Per-user budget inclusion; null = the default (derive from the account). Excludes this transaction from
     # spending / cash-flow analytics.
     include_in_spending: Mapped[bool | None] = mapped_column(Boolean, nullable=True)

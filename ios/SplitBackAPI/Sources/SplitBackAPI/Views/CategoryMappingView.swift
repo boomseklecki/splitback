@@ -97,6 +97,9 @@ struct BankCategoriesView: View {
             transaction.refinedCategory = refined[transaction.id]
         }
         do { try context.save() } catch { errorText = errorMessage(error) }
+        // Mirror the new refinements to the backend so this user's other devices inherit them.
+        let entries = refined.map { (id: $0.key, refined: $0.value) }
+        try? await env.accounts(context).setRefinedCategory(entries)
     }
 }
 

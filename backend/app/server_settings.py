@@ -36,6 +36,9 @@ REGISTRY: dict[str, tuple[type, object]] = {
     # Fast notifications-only poll cadence (minutes); 0 = off. Makes Splitwise partner-activity pushes
     # near-real-time instead of waiting for the slow full-sync interval.
     "notifications_poll_minutes": (int, 0),
+    # Server-side budget push: after a sync, notify a solo spend-goal owner once per month when their spend
+    # crosses 85% (nearing) / 100% (over). Off by default — enable once validated (no redeploy needed).
+    "budget_push_enabled": (bool, False),
 }
 
 

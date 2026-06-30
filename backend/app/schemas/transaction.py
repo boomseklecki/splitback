@@ -50,6 +50,9 @@ class TransactionOverrideUpdate(BaseModel):
     # clears that field (revert to the account default). Toggles, never touch balances.
     include_in_spending: bool | None = None
     include_in_cash_flow: bool | None = None
+    # The on-device AI category refinement to mirror server-side (provenance .aiRefined). Synced through this
+    # row so other devices inherit it; distinct from the explicit `category_override`.
+    refined_category: str | None = None
 
 
 class TransactionResponse(BaseModel):
@@ -70,6 +73,8 @@ class TransactionResponse(BaseModel):
     category_override: str | None = None
     include_in_spending: bool | None = None
     include_in_cash_flow: bool | None = None
+    # The on-device AI refinement mirrored from `transaction_overrides` (provenance .aiRefined). null = none.
+    refined_category: str | None = None
     pending: bool
     items: list[TransactionItemResponse] = []
     created_at: datetime

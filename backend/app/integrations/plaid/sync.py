@@ -16,6 +16,7 @@ from app.integrations.storage import minio_client
 from app.models import (
     Account, Expense, PlaidItem, Transaction, TransactionItem, TransactionOverride, TransactionSource,
 )
+from app.services import spend as spend_svc
 
 _INSTITUTION_FIELDS = (
     "institution_name", "institution_domain", "institution_color", "institution_status",
@@ -154,6 +155,12 @@ async def apply_sync(
 
     item.transactions_cursor = sync_result["cursor"]
     await session.commit()
+
+    # After the sync is durably committed, evaluate this owner's solo spend budgets and fire a
+    # nearing/over push (once per month). Self-isolated + best-effort — never affects the sync result.
+    if item.user_identifier:
+        await spend_svc.evaluate_budget_push(session, {item.user_identifier})
+
     return {
         "accounts": len(accounts),
         "added": len(sync_result["added"]),

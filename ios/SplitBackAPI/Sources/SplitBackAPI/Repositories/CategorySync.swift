@@ -12,12 +12,16 @@ struct CategorySnapshot: Codable {
     struct Map: Codable { var rawCategory: String; var canonicalCategory: String; var source: String }
 }
 
-/// Backs up the locally-authoritative categories + maps to the per-owner backend preferences blob and
-/// restores them on a new device. Push on edit, pull on launch. Last-write-wins by the blob's `updated_at`
-/// vs a locally-stored watermark, so a freshly-seeded new install restores the backup instead of clobbering
-/// it (pull runs before any push at launch).
+/// Syncs the locally-authoritative categories + maps to the per-owner backend **relational** store
+/// (`GET/PUT /categories`) and restores them on a new device. Push on edit, pull on launch. Last-write-wins
+/// by the server's `updated_at` vs a locally-stored watermark, so a freshly-seeded new install restores the
+/// backup instead of clobbering it (pull runs before any push at launch). The old opaque `categories.v1`
+/// preferences blob remains a one-time **transition fallback**: if the relational store is empty but a legacy
+/// blob exists, import it and seed the relational store from it.
 enum CategorySync {
-    static let key = "categories.v1"
+    /// Legacy preferences-blob key — read only as a transition fallback (the server backfills it relationally;
+    /// Phase 5 deletes it). No longer written.
+    static let blobKey = "categories.v1"
     private static let syncedAtKey = "categories.syncedAt"
 
     /// When categories were last pushed to / restored from the backup blob (nil if never).
@@ -31,9 +35,12 @@ enum CategorySync {
     /// back up this device's local categories. Best-effort; never throws.
     @MainActor
     static func syncNow(_ context: ModelContext, client: Client) async {
+        let config = try? await client.get_categories_categories_get().ok.body.json
         let rows = await Preferences.fetchAll(client)
-        if applyIfNewer(from: rows, context: context) { return }  // applied a newer remote → already in sync
-        await pushBestEffort(context, client: client)             // else back up local
+        if await applyIfNewer(config: config, blobRows: rows, context: context, client: client) {
+            return  // applied a newer remote → already in sync
+        }
+        await pushBestEffort(context, client: client)  // else back up local
     }
 
     @MainActor
@@ -50,30 +57,63 @@ enum CategorySync {
             })
     }
 
-    /// Encode the current categories + maps and store them under the caller's `categories.v1` key. Best-effort:
-    /// an offline failure is swallowed (the next edit or launch retries).
+    /// Replace-set the caller's categories + maps in the relational store (`PUT /categories`) and record the
+    /// server's `updated_at` as the local watermark. Best-effort: an offline failure is swallowed (the next
+    /// edit or launch retries).
     @MainActor
     static func pushBestEffort(_ context: ModelContext, client: Client) async {
-        guard let snap = try? snapshot(context),
-              let data = try? JSONEncoder().encode(snap) else { return }
-        if let updatedAt = await Preferences.put(key, String(decoding: data, as: UTF8.self), client: client) {
-            UserDefaults.standard.set(updatedAt.timeIntervalSince1970, forKey: syncedAtKey)
-        }
+        guard let snap = try? snapshot(context) else { return }
+        let body = Components.Schemas.CategoryConfigUpsert(
+            categories: snap.categories.map {
+                .init(name: $0.name, icon: $0.icon, position: $0.position, builtin: $0.builtin)
+            },
+            maps: snap.maps.map {
+                .init(raw_category: $0.rawCategory, canonical_category: $0.canonicalCategory, source: $0.source)
+            })
+        guard let output = try? await client.put_categories_categories_put(body: .json(body)),
+              case let .ok(ok) = output, let cfg = try? ok.body.json, let updatedAt = cfg.updated_at
+        else { return }
+        UserDefaults.standard.set(updatedAt.timeIntervalSince1970, forKey: syncedAtKey)
     }
 
-    /// Restore from a prefetched preferences set when the `categories.v1` blob is newer than what we last
-    /// applied (e.g. a new phone). Returns whether it applied a restore. No-op when there's no backup or we're
-    /// already up to date.
+    /// Restore when the server has a newer set than we last applied (e.g. a new phone). Relational store is
+    /// authoritative; the legacy `categories.v1` blob is a one-time fallback — if relational is empty but a
+    /// newer blob exists, import it and seed the relational store from it. Returns whether it applied a restore.
     @MainActor
     @discardableResult
-    static func applyIfNewer(from rows: [String: (value: String, updatedAt: Date)],
-                             context: ModelContext) -> Bool {
-        guard let row = rows[key], row.updatedAt.timeIntervalSince1970 > UserDefaults.standard.double(
-            forKey: syncedAtKey) else { return false }
-        guard let snap = try? JSONDecoder().decode(CategorySnapshot.self, from: Data(row.value.utf8)),
+    static func applyIfNewer(config: Components.Schemas.CategoryConfig?,
+                             blobRows: [String: (value: String, updatedAt: Date)],
+                             context: ModelContext, client: Client) async -> Bool {
+        let watermark = UserDefaults.standard.double(forKey: syncedAtKey)
+        // 1) Relational store is authoritative when it has data.
+        if let config, !(config.categories ?? []).isEmpty {
+            guard let updatedAt = config.updated_at,
+                  updatedAt.timeIntervalSince1970 > watermark else { return false }
+            guard (try? apply(snapshot(from: config), context)) != nil else { return false }
+            UserDefaults.standard.set(updatedAt.timeIntervalSince1970, forKey: syncedAtKey)
+            return true
+        }
+        // 2) Transition fallback: no relational data yet, but a newer legacy blob exists → import + seed server.
+        guard let row = blobRows[blobKey], row.updatedAt.timeIntervalSince1970 > watermark,
+              let snap = try? JSONDecoder().decode(CategorySnapshot.self, from: Data(row.value.utf8)),
               (try? apply(snap, context)) != nil else { return false }
         UserDefaults.standard.set(row.updatedAt.timeIntervalSince1970, forKey: syncedAtKey)
+        await pushBestEffort(context, client: client)  // seed the relational store from the imported blob
         return true
+    }
+
+    /// Convert a server `CategoryConfig` into the local `CategorySnapshot` (reuses `apply`).
+    private static func snapshot(from config: Components.Schemas.CategoryConfig) -> CategorySnapshot {
+        CategorySnapshot(
+            categories: (config.categories ?? []).compactMap { c in
+                guard !c.name.isEmpty else { return nil }
+                return .init(name: c.name, icon: c.icon, position: c.position ?? 0, builtin: c.builtin ?? false)
+            },
+            maps: (config.maps ?? []).compactMap { m in
+                guard !m.raw_category.isEmpty, !m.canonical_category.isEmpty else { return nil }
+                return .init(rawCategory: m.raw_category, canonicalCategory: m.canonical_category,
+                             source: m.source ?? "manual")
+            })
     }
 
     /// Replace local categories + maps with the snapshot, then forward-fill any built-in missing from an

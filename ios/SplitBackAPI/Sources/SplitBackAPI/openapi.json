@@ -4208,6 +4208,78 @@
         }
       }
     },
+    "/categories": {
+      "get": {
+        "tags": [
+          "categories"
+        ],
+        "summary": "Get Categories",
+        "description": "The caller's category taxonomy + raw\u2192canonical map (empty in open mode). `updated_at` is the newest\nrow timestamp \u2014 the client's last-write-wins watermark, replacing the old `categories.v1` blob's.",
+        "operationId": "get_categories_categories_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryConfig"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "categories"
+        ],
+        "summary": "Put Categories",
+        "description": "Idempotent owner-scoped replace-set: the caller's taxonomy + map become exactly the payload (rows\nabsent from it are deleted), in one transaction \u2014 mirroring the old whole-blob snapshot semantics\nrelationally. Device-authoritative; the app owns the set and pushes it after local edits.",
+        "operationId": "put_categories_categories_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CategoryConfigUpsert"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryConfig"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/institutions": {
       "get": {
         "tags": [
@@ -4926,6 +4998,79 @@
           "net"
         ],
         "title": "BalanceEntry"
+      },
+      "CategoryConfig": {
+        "properties": {
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/SpendCategoryItem"
+            },
+            "type": "array",
+            "title": "Categories",
+            "default": []
+          },
+          "maps": {
+            "items": {
+              "$ref": "#/components/schemas/CategoryMapItem"
+            },
+            "type": "array",
+            "title": "Maps",
+            "default": []
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "title": "CategoryConfig",
+        "description": "The caller's full category taxonomy + raw\u2192canonical map \u2014 the relational successor to the\n`categories.v1` blob. `updated_at` is the max row timestamp, the last-write-wins watermark the client\ncompares against its local sync watermark."
+      },
+      "CategoryConfigUpsert": {
+        "properties": {
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/SpendCategoryItem"
+            },
+            "type": "array",
+            "title": "Categories",
+            "default": []
+          },
+          "maps": {
+            "items": {
+              "$ref": "#/components/schemas/CategoryMapItem"
+            },
+            "type": "array",
+            "title": "Maps",
+            "default": []
+          }
+        },
+        "type": "object",
+        "title": "CategoryConfigUpsert"
+      },
+      "CategoryMapItem": {
+        "properties": {
+          "raw_category": {
+            "type": "string",
+            "title": "Raw Category"
+          },
+          "canonical_category": {
+            "type": "string",
+            "title": "Canonical Category"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source",
+            "default": "manual"
+          }
+        },
+        "type": "object",
+        "required": [
+          "raw_category",
+          "canonical_category"
+        ],
+        "title": "CategoryMapItem"
       },
       "ConnectionCreate": {
         "properties": {
@@ -6517,6 +6662,33 @@
         "title": "ServerSettingsUpdate",
         "description": "Any subset of the registry; only provided keys change (PATCH semantics)."
       },
+      "SpendCategoryItem": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "icon": {
+            "type": "string",
+            "title": "Icon"
+          },
+          "position": {
+            "type": "integer",
+            "title": "Position",
+            "default": 0
+          },
+          "builtin": {
+            "type": "boolean",
+            "title": "Builtin",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "SpendCategoryItem"
+      },
       "SplitInput": {
         "properties": {
           "user_identifier": {
@@ -6937,6 +7109,10 @@
           "include_in_cash_flow": {
             "type": "boolean",
             "title": "Include In Cash Flow"
+          },
+          "refined_category": {
+            "type": "string",
+            "title": "Refined Category"
           }
         },
         "type": "object",
@@ -6998,6 +7174,10 @@
           "include_in_cash_flow": {
             "type": "boolean",
             "title": "Include In Cash Flow"
+          },
+          "refined_category": {
+            "type": "string",
+            "title": "Refined Category"
           },
           "pending": {
             "type": "boolean",

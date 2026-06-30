@@ -1,5 +1,6 @@
 from app.models.account import Account
 from app.models.account_override import AccountOverride
+from app.models.category_map import CategoryMap
 from app.models.connection import Connection
 from app.models.enums import (
     BackendType,
@@ -15,6 +16,7 @@ from app.models.expense_item import ExpenseItem
 from app.models.expense_override import ExpenseOverride
 from app.models.friend import Friend
 from app.models.goal import Goal
+from app.models.goal_budget_notification import GoalBudgetNotification
 from app.models.group import Group
 from app.models.group_member import GroupMember
 from app.models.group_override import GroupOverride
@@ -25,6 +27,7 @@ from app.models.oauth_state import SplitwiseOAuthState
 from app.models.plaid_item import PlaidItem
 from app.models.receipt import Receipt
 from app.models.server_setting import ServerSetting
+from app.models.spend_category import SpendCategory
 from app.models.split import Split
 from app.models.splitwise_token import SplitwiseToken
 from app.models.transaction import Transaction
@@ -37,6 +40,7 @@ __all__ = [
     "Account",
     "AccountOverride",
     "BackendType",
+    "CategoryMap",
     "Connection",
     "ConnectionStatus",
     "DeviceToken",
@@ -44,6 +48,7 @@ __all__ = [
     "ExpenseOverride",
     "Friend",
     "Goal",
+    "GoalBudgetNotification",
     "ExpenseItem",
     "Group",
     "GroupMember",
@@ -56,6 +61,7 @@ __all__ = [
     "Receipt",
     "ServerSetting",
     "ShareLevel",
+    "SpendCategory",
     "Split",
     "SplitwiseOAuthState",
     "SplitwiseToken",

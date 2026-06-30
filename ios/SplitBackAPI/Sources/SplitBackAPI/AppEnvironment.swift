@@ -288,12 +288,14 @@ public final class AppEnvironment {
     func bootstrapPreferences(_ context: ModelContext) async {
         CategorySeed.ensureBuiltins(context)
         let rows = await Preferences.fetchAll(client)
-        CategorySync.applyIfNewer(from: rows, context: context)
+        let categoryConfig = try? await client.get_categories_categories_get().ok.body.json
+        await CategorySync.applyIfNewer(config: categoryConfig, blobRows: rows, context: context, client: client)
         SuggestionSync.applyIfNewer(from: rows, context: context)
         OrderPreference.tabs.applyIfNewer(from: rows)
         OrderPreference.goals.applyIfNewer(from: rows)
         LinkSensitivitySync.applyIfNewer(from: rows)
         if let tokens = try? await notificationPrefs.fetch() { NotificationPrefs.shared.apply(tokens) }
+        await accounts(context).backfillRefinedCategories()  // one-time: seed server from local refinements
     }
 
     /// Manual "Sync now" from Categories settings: restore a newer backup, else back up local.

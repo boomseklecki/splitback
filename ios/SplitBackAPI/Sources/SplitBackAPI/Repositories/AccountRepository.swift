@@ -285,18 +285,70 @@ struct AccountRepository {
                 existing.date = try Mapping.dateOnly(r.date, field: "Transaction.date")
                 existing.category = r.category
                 existing.categoryOverride = r.category_override
+                // Refined is device-derived but now mirrored server-side: adopt the server's value when it
+                // has one, else keep any local value (this device may have computed it and not pushed yet) —
+                // never clobber a non-nil local refinement to nil on a plain re-sync.
+                if let refined = r.refined_category, !refined.isEmpty { existing.refinedCategory = refined }
                 existing.pending = r.pending
                 existing.createdAt = r.created_at
                 existing.updatedAt = r.updated_at
                 transaction = existing
             } else {
                 let new = try Mapping.transaction(r)
+                if let refined = r.refined_category, !refined.isEmpty { new.refinedCategory = refined }
                 context.insert(new)
                 transaction = new
             }
             try reconcileItems(transaction, r.items ?? [])
         }
         try context.save()
+    }
+
+    /// Mirrors the on-device AI refinement to the backend (provenance .aiRefined) so other devices inherit it.
+    /// Best-effort and **concurrent + single-save** like `setCategoryOverride(ids:)`: a card's worth of newly
+    /// refined rows push in parallel and cache in one write. A transaction the server no longer has (404) is
+    /// skipped. Distinct from the explicit category override — this never changes precedence.
+    func setRefinedCategory(_ entries: [(id: UUID, refined: String)]) async throws {
+        guard !entries.isEmpty else { return }
+        let client = self.client
+        let responses = try await withThrowingTaskGroup(
+            of: Components.Schemas.TransactionResponse?.self
+        ) { group in
+            for entry in entries {
+                group.addTask {
+                    let output = try await client
+                        .update_transaction_override_transactions__transaction_id__override_patch(
+                            path: .init(transaction_id: entry.id.uuidString),
+                            body: .json(.init(refined_category: entry.refined)))
+                    switch output {
+                    case let .ok(ok): return try ok.body.json
+                    case let .unprocessableContent(error):
+                        throw BackendError.validation(BackendError.validationMessage(try? error.body.json))
+                    case .undocumented(404, _): return nil  // gone (pending posted & reaped) — skip
+                    case let .undocumented(statusCode, _): throw BackendError.fromUndocumented(statusCode)
+                    }
+                }
+            }
+            var out: [Components.Schemas.TransactionResponse] = []
+            for try await r in group { if let r { out.append(r) } }
+            return out
+        }
+        try upsertTransactions(responses)
+    }
+
+    /// One-time push of every locally-computed refinement to the backend, so a user who refined before this
+    /// feature existed seeds the server (and thus their other devices). Gated by a UserDefaults flag; runs once
+    /// per device. Best-effort — a failure leaves the flag unset so it retries next launch.
+    func backfillRefinedCategories() async {
+        let flag = "categories.refinedBackfilled"
+        guard !UserDefaults.standard.bool(forKey: flag) else { return }
+        let local = (try? context.fetch(FetchDescriptor<Transaction>(
+            predicate: #Predicate { $0.refinedCategory != nil }))) ?? []
+        let entries = local.compactMap { t in t.refinedCategory.map { (id: t.id, refined: $0) } }
+        do {
+            try await setRefinedCategory(entries)
+            UserDefaults.standard.set(true, forKey: flag)
+        } catch { /* leave the flag unset; retry next launch */ }
     }
 
     /// Upserts a transaction's line items by id (preserving object identity for unchanged rows), inserting
