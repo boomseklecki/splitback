@@ -1,42 +1,57 @@
 SplitBack backend deploy verification (uplink / Linux full-stack)
 ================================================================
 
-Commit tested:  27c2271  (main HEAD)
-Date (UTC):     2026-06-29
-Migration head: 0044_notification_hidden   (unchanged — NO new migration)
+Commit tested:  8c382a1  (main HEAD)
+Date (UTC):     2026-06-30
+Migration head: 0048_goal_budget_notify   (NEW — upgraded 0044 -> 0048, four migrations)
 
-Change in scope (backend-only, single commit; NO migration, NO OpenAPI/relay/iOS change):
-  27c2271  Deep-link Group-source Splitwise notifications
-    - importer.sync_notifications: extends the source resolution — source.type 'Group' now resolves
-      to a local Group by splitwise_group_id and stamps entity_type='group' / entity_id (the iOS
-      .group target already exists). Mirrors the expense-source resolution.
-    - tests/test_notifications_sync.py: new test_splitwise_group_source_deep_links_to_local_group.
+Change in scope (backend + iOS-ships-separately, single commit):
+  8c382a1  Category-aware backend: relational categories, refinedCategory sync, server-side budget push
+    - 0045_category_tables ......... new spend_categories + category_maps (per-owner taxonomy +
+                                     raw->canonical map). rev id 20 chars.
+    - 0046_txn_refined_category .... add refined_category column to transaction_overrides. rev 25.
+    - 0047_categories_backfill ..... parse existing categories.v1 preference blobs into the new tables;
+                                     non-destructive (blobs untouched, malformed skipped, per-owner
+                                     try/except, downgrade no-op). rev 24.
+    - 0048_goal_budget_notify ...... goal_budget_notifications marker table (fire budget push once per
+                                     goal/month/threshold). rev 23.
+    All four rev ids <=32 chars; chain 0044 -> 0045 -> 0046 -> 0047 -> 0048 clean.
+
+SAFETY:
+  - Pre-migration pg_dump of the prod DB captured before applying (2.6 MB, exit 0) — held in the session
+    scratchpad as a rollback reference. Migrations are additive (new tables + one nullable column) and
+    0047 is read-only on existing data, so no restore was needed.
 
 BUILD / RESTART:  OK
-  - git merge --ff-only origin/main -> 27c2271 (clean).
+  - git merge --ff-only origin/main -> 8c382a1 (clean).
   - docker compose build api api-test -> built.
-  - Recreated api (real, :8000) + db-test/api-test. Up.
-  - alembic current -> 0044_notification_hidden (head); no migration applied.
+  - Recreated api (real prod, :8000) + db-test/api-test. Up.
 
-MIGRATION: none (head 0044 unchanged).
-RELAY:     UNTOUCHED  (git diff relay/ empty).
-OPENAPI/iOS: UNCHANGED  (git diff ios/ empty; .group target already existed).
+MIGRATION:  APPLIED on BOTH databases (0044 -> 0048)
+  - REAL prod db:  head 0048_goal_budget_notify
+  - TEST db:       head 0048_goal_budget_notify
+  - 0047 backfill on prod: "categories.v1 backfill: migrated 1/1 owners" (the real owner's blob parsed
+    into spend_categories + category_maps; categories.v1 blob left intact).
+  - Schema verified present on prod: spend_categories, category_maps, goal_budget_notifications tables
+    + transaction_overrides.refined_category column.
 
-IMPORT / WIRING SANITY (api-test):
-  - app.main + splitwise importer import clean.
+BUDGET PUSH GATE (left dormant per instruction — NOT enabled):
+  - Code default: app/server_settings.py -> "budget_push_enabled": (bool, False).
+  - No override row in server_settings (raw query empty).
+  - Authoritative resolve on prod: server_settings.get(... 'budget_push_enabled') -> False.
+  - spend.py gate early-exits when off. Confirmed OFF; not touched.
 
 TEST RUN (api-test stack, incl. HTTP/MinIO-dependent tests):  PASS
-  TOTAL passing: 232   FAIL: 0   (all modules green)
+  TOTAL passing: 257   FAIL: 0   (all modules green; was 232 pre-category-work)
 
 Watch-list (all PASS):
-  test_notifications_sync ...... 12  (incl. NEW
-                                       test_splitwise_group_source_deep_links_to_local_group,
-                                       test_sync_notifications_all_per_token_isolation)
+  test_spend ............. 5   (incl. test_spend_by_category_solo_and_account_default)
+  test_category_builtin .. 14  (incl. test_splitwise_canonical_parity)
 
 FAILURES: none.
 
-SUMMARY: PASS. 27c2271 builds, restarts, and passes the full backend suite (232/232) on the running
-stack. Migration head 0044 (untouched); no relay/OpenAPI/iOS change. Group-source deep-linking
-verified: source.type 'Group' resolves to the local Group by splitwise_group_id and stamps
-entity_type='group'/entity_id (mirrors the expense-source path). No Linux-side code changes; this file
-is the only commit from here.
+SUMMARY: PASS. 8c382a1 builds, migrates 0044 -> 0048 (four migrations) on both real prod and test DBs,
+restarts, and passes the full backend suite (257/257). 0047 backfill migrated 1/1 owners
+non-destructively. The server-side budget push remains gated OFF (budget_push_enabled default False, no
+override) exactly as instructed. iOS ships separately; no server-side iOS action. This file is the only
+commit from here.
