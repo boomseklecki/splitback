@@ -15,13 +15,9 @@ struct CategorySnapshot: Codable {
 /// Syncs the locally-authoritative categories + maps to the per-owner backend **relational** store
 /// (`GET/PUT /categories`) and restores them on a new device. Push on edit, pull on launch. Last-write-wins
 /// by the server's `updated_at` vs a locally-stored watermark, so a freshly-seeded new install restores the
-/// backup instead of clobbering it (pull runs before any push at launch). The old opaque `categories.v1`
-/// preferences blob remains a one-time **transition fallback**: if the relational store is empty but a legacy
-/// blob exists, import it and seed the relational store from it.
+/// backup instead of clobbering it (pull runs before any push at launch). (The legacy `categories.v1`
+/// preferences blob was retired in Phase 5 — the relational store is the only sync path now.)
 enum CategorySync {
-    /// Legacy preferences-blob key — read only as a transition fallback (the server backfills it relationally;
-    /// Phase 5 deletes it). No longer written.
-    static let blobKey = "categories.v1"
     private static let syncedAtKey = "categories.syncedAt"
 
     /// When categories were last pushed to / restored from the backup blob (nil if never).
@@ -36,11 +32,8 @@ enum CategorySync {
     @MainActor
     static func syncNow(_ context: ModelContext, client: Client) async {
         let config = try? await client.get_categories_categories_get().ok.body.json
-        let rows = await Preferences.fetchAll(client)
-        if await applyIfNewer(config: config, blobRows: rows, context: context, client: client) {
-            return  // applied a newer remote → already in sync
-        }
-        await pushBestEffort(context, client: client)  // else back up local
+        if applyIfNewer(config: config, context: context) { return }  // newer remote → already in sync
+        await pushBestEffort(context, client: client)                 // else back up local
     }
 
     @MainActor
@@ -76,29 +69,17 @@ enum CategorySync {
         UserDefaults.standard.set(updatedAt.timeIntervalSince1970, forKey: syncedAtKey)
     }
 
-    /// Restore when the server has a newer set than we last applied (e.g. a new phone). Relational store is
-    /// authoritative; the legacy `categories.v1` blob is a one-time fallback — if relational is empty but a
-    /// newer blob exists, import it and seed the relational store from it. Returns whether it applied a restore.
+    /// Restore when the relational store has a newer set than we last applied (e.g. a new phone). No-op when
+    /// it's empty or we're already up to date. Returns whether it applied a restore.
     @MainActor
     @discardableResult
     static func applyIfNewer(config: Components.Schemas.CategoryConfig?,
-                             blobRows: [String: (value: String, updatedAt: Date)],
-                             context: ModelContext, client: Client) async -> Bool {
-        let watermark = UserDefaults.standard.double(forKey: syncedAtKey)
-        // 1) Relational store is authoritative when it has data.
-        if let config, !(config.categories ?? []).isEmpty {
-            guard let updatedAt = config.updated_at,
-                  updatedAt.timeIntervalSince1970 > watermark else { return false }
-            guard (try? apply(snapshot(from: config), context)) != nil else { return false }
-            UserDefaults.standard.set(updatedAt.timeIntervalSince1970, forKey: syncedAtKey)
-            return true
-        }
-        // 2) Transition fallback: no relational data yet, but a newer legacy blob exists → import + seed server.
-        guard let row = blobRows[blobKey], row.updatedAt.timeIntervalSince1970 > watermark,
-              let snap = try? JSONDecoder().decode(CategorySnapshot.self, from: Data(row.value.utf8)),
-              (try? apply(snap, context)) != nil else { return false }
-        UserDefaults.standard.set(row.updatedAt.timeIntervalSince1970, forKey: syncedAtKey)
-        await pushBestEffort(context, client: client)  // seed the relational store from the imported blob
+                             context: ModelContext) -> Bool {
+        guard let config, !(config.categories ?? []).isEmpty,
+              let updatedAt = config.updated_at,
+              updatedAt.timeIntervalSince1970 > UserDefaults.standard.double(forKey: syncedAtKey),
+              (try? apply(snapshot(from: config), context)) != nil else { return false }
+        UserDefaults.standard.set(updatedAt.timeIntervalSince1970, forKey: syncedAtKey)
         return true
     }
 

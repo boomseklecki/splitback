@@ -15,7 +15,8 @@ async def list_preferences(
     caller: str | None = Depends(require_auth), session: AsyncSession = Depends(get_session)
 ) -> list[UserPreference]:
     """Every preference blob belonging to the caller (empty in open mode). Each is an opaque JSON string
-    the client decodes itself — e.g. the per-user category config under key `categories.v1`."""
+    the client decodes itself — e.g. the suggestion templates/decisions under key `suggestions.v1`. (The old
+    `categories.v1` blob was retired in migration 0049; categories now sync via `/categories`.)"""
     if caller is None:
         return []
     rows = await session.scalars(

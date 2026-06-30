@@ -289,7 +289,7 @@ public final class AppEnvironment {
         CategorySeed.ensureBuiltins(context)
         let rows = await Preferences.fetchAll(client)
         let categoryConfig = try? await client.get_categories_categories_get().ok.body.json
-        await CategorySync.applyIfNewer(config: categoryConfig, blobRows: rows, context: context, client: client)
+        CategorySync.applyIfNewer(config: categoryConfig, context: context)
         SuggestionSync.applyIfNewer(from: rows, context: context)
         OrderPreference.tabs.applyIfNewer(from: rows)
         OrderPreference.goals.applyIfNewer(from: rows)

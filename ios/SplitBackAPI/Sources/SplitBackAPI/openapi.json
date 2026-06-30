@@ -4125,7 +4125,7 @@
           "preferences"
         ],
         "summary": "List Preferences",
-        "description": "Every preference blob belonging to the caller (empty in open mode). Each is an opaque JSON string\nthe client decodes itself \u2014 e.g. the per-user category config under key `categories.v1`.",
+        "description": "Every preference blob belonging to the caller (empty in open mode). Each is an opaque JSON string\nthe client decodes itself \u2014 e.g. the suggestion templates/decisions under key `suggestions.v1`. (The old\n`categories.v1` blob was retired in migration 0049; categories now sync via `/categories`.)",
         "operationId": "list_preferences_preferences_get",
         "responses": {
           "200": {

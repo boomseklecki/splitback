@@ -89,6 +89,29 @@ def test_categories_backfill_migration():
         _clean()
 
 
+def test_categories_blob_retired_0049():
+    """Migration 0049 deletes only the categories.v1 preference rows, leaving other keys intact."""
+    cfg = Config("alembic.ini")
+    _clean()
+    asyncio.run(_run([
+        ("INSERT INTO user_preferences (owner_identifier, key, value) VALUES (:o, 'categories.v1', '{}')",
+         {"o": OWNER_GOOD}),
+        ("INSERT INTO user_preferences (owner_identifier, key, value) VALUES (:o, 'suggestions.v1', '{}')",
+         {"o": OWNER_GOOD}),
+    ]))
+    try:
+        command.downgrade(cfg, "0048_goal_budget_notify")
+        command.upgrade(cfg, "0049_drop_categories_blob")
+        keys = asyncio.run(_run([
+            ("SELECT key FROM user_preferences WHERE owner_identifier = :o ORDER BY key",
+             {"o": OWNER_GOOD})]))
+        assert [r[0] for r in keys] == ["suggestions.v1"]  # categories.v1 gone, suggestions.v1 kept
+    finally:
+        command.upgrade(cfg, "head")
+        asyncio.run(_run([
+            ("DELETE FROM user_preferences WHERE owner_identifier = :o", {"o": OWNER_GOOD})]))
+
+
 if __name__ == "__main__":
     from tests._runner import run
 
