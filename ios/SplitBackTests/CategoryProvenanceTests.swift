@@ -73,6 +73,20 @@ final class CategoryProvenanceTests: XCTestCase {
         XCTAssertEqual(r.inspectorString, "Dining out = Dining")  // "=" = deterministic
     }
 
+    func testInspectorHumanizesPlaidRaw() {
+        // The raw side is cleaned: SCREAMING_SNAKE Plaid → Title Case (Splitwise labels stay as-is above).
+        let r = CategoryMapping.resolve(for: txn("FOOD_AND_DRINK_GROCERIES"), lookup: [:])
+        XCTAssertEqual(r.inspectorString, "Food And Drink Groceries = Groceries")
+    }
+
+    func testDisplayLabel() {
+        XCTAssertEqual(PlaidCategory.displayLabel("GENERAL_SERVICES"), "General Services")
+        XCTAssertEqual(PlaidCategory.displayLabel("INCOME"), "Income")
+        XCTAssertEqual(PlaidCategory.displayLabel("Dining out"), "Dining out")   // Splitwise — untouched
+        XCTAssertEqual(PlaidCategory.displayLabel("Gas/fuel"), "Gas/fuel")       // untouched
+        XCTAssertEqual(PlaidCategory.displayLabel("TV/Phone/Internet"), "TV/Phone/Internet")
+    }
+
     func testBadges() {
         XCTAssertEqual(CategoryOrigin.mappedByAI.badgeLabel, "AI")
         XCTAssertEqual(CategoryOrigin.aiRefined.badgeLabel, "AI")

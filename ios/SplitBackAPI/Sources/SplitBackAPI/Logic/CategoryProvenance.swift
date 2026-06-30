@@ -16,10 +16,10 @@ extension CategoryOrigin {
     /// SF Symbol paired with the badge.
     var badgeSymbol: String {
         switch self {
-        case .override, .mappedByYou, .explicit: return "person.fill"
-        case .mappedByAI, .aiRefined: return "sparkles"
-        case .deterministic: return "wand.and.stars"
-        case .raw: return "tag"
+        case .override, .mappedByYou, .explicit: return "pencil"            // you set it
+        case .mappedByAI, .aiRefined: return "apple.intelligence"           // on-device Apple Intelligence
+        case .deterministic: return "arrow.triangle.branch"                // routed via a built-in rule
+        case .raw: return "tag"                                            // unmapped passthrough (hidden)
         }
     }
 
@@ -41,8 +41,9 @@ extension CategoryOrigin {
 }
 
 extension CategoryResolution {
-    /// "<raw> <op> <canonical>" — a one-line provenance trace for the debug inspector.
+    /// "<raw> <op> <canonical>" — a one-line provenance trace for the debug inspector. The raw side is cleaned
+    /// (Plaid SCREAMING_SNAKE → Title Case; Splitwise/manual labels pass through) so it reads naturally.
     var inspectorString: String {
-        "\(raw ?? "—") \(source.inspectorOperator) \(category ?? "—")"
+        "\(raw.map(PlaidCategory.displayLabel) ?? "—") \(source.inspectorOperator) \(category ?? "—")"
     }
 }

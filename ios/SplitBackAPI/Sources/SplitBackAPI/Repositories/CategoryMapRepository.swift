@@ -2,8 +2,8 @@ import Foundation
 import SwiftData
 
 /// The raw-Plaid → canonical category map. Local-authoritative (per user): the map is computed on-device
-/// (see `CategoryMapper`) or chosen manually, written to SwiftData, then backed up to the per-owner
-/// preferences blob via `CategorySync`.
+/// (see `CategoryMapper`) or chosen manually, written to SwiftData, then synced to the per-owner relational
+/// backend (`/categories`) via `CategorySync`.
 @MainActor
 struct CategoryMapRepository {
     let client: Client

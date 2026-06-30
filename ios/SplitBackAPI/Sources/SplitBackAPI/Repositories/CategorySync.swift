@@ -20,7 +20,7 @@ struct CategorySnapshot: Codable {
 enum CategorySync {
     private static let syncedAtKey = "categories.syncedAt"
 
-    /// When categories were last pushed to / restored from the backup blob (nil if never).
+    /// When categories were last pushed to / restored from the backend (nil if never).
     @MainActor
     static var lastSyncedAt: Date? {
         let t = UserDefaults.standard.double(forKey: syncedAtKey)

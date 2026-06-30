@@ -368,18 +368,21 @@ struct ExpenseEditView: View {
                 }
 
                 if mode != .reimbursement && mode != .settleUp {
-                    Section("Line Items") {
+                    Section {
                         ForEach(items.indices, id: \.self) { index in itemRow(index) }
                             .onDelete { items.remove(atOffsets: $0) }
                         Button { items.append(ItemDraft(name: "", price: 0)) } label: {
                             Label("Add Item", systemImage: "plus")
                         }
-                        if CategoryMapper.isAvailable && items.contains(where: { !$0.name.isEmpty }) {
-                            Button { Task { await categorizeItems() } } label: {
-                                Label(categorizingItems ? "Categorizing…" : "Categorize Items",
-                                      systemImage: "sparkles")
+                    } header: {
+                        HStack {
+                            Text("Line Items")
+                            Spacer()
+                            if CategoryMapper.isAvailable && items.contains(where: { !$0.name.isEmpty }) {
+                                AICategorizeButton(running: categorizingItems) {
+                                    Task { await categorizeItems() }
+                                }
                             }
-                            .disabled(categorizingItems)
                         }
                     }
                 }

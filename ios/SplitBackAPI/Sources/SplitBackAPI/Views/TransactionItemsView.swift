@@ -52,6 +52,15 @@ struct TransactionItemsView: View {
                     Button { items.append(ItemDraft(name: "", price: 0)) } label: {
                         Label("Add Item", systemImage: "plus")
                     }
+                } header: {
+                    HStack {
+                        Text("Items")
+                        Spacer()
+                        if aiAvailable {
+                            AICategorizeButton(running: categorizing) { Task { await categorizeItems() } }
+                                .disabled(items.allSatisfy { $0.name.isEmpty })
+                        }
+                    }
                 } footer: {
                     totalsFooter
                 }
@@ -62,13 +71,6 @@ struct TransactionItemsView: View {
                     }
                     PhotosPicker(selection: $receiptPhoto, matching: .images) {
                         Label("Receipt from Photo", systemImage: "photo")
-                    }
-                    if aiAvailable {
-                        Button { Task { await categorizeItems() } } label: {
-                            Label(categorizing ? "Categorizing…" : "Categorize with Apple Intelligence",
-                                  systemImage: "sparkles")
-                        }
-                        .disabled(categorizing || items.allSatisfy { $0.name.isEmpty })
                     }
                 } footer: {
                     Text("A receipt's items fill in below — review categories before saving.")

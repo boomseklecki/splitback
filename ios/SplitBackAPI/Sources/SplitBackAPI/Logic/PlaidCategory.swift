@@ -21,6 +21,16 @@ enum PlaidCategory {
         raw.split(separator: "_").map { $0.lowercased().capitalized }.joined(separator: " ")
     }
 
+    /// A readable form of any raw category label: SCREAMING_SNAKE Plaid labels are humanized; already-readable
+    /// labels (Splitwise "Dining out", "Gas/fuel", or a manual value) pass through unchanged so they're not
+    /// mangled. Used wherever the bank's raw category is shown to the user.
+    static func displayLabel(_ raw: String) -> String {
+        let isPlaidFormat = !raw.isEmpty
+            && raw.allSatisfy { $0.isUppercase || $0 == "_" || $0.isNumber }
+            && raw.contains(where: \.isLetter)
+        return isPlaidFormat ? humanized(raw) : raw
+    }
+
     /// Plaid's 16 primary categories → canonical.
     private static let primaryMap: [String: String] = [
         "INCOME": "Income",

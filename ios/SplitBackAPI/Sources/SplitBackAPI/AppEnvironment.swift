@@ -282,9 +282,10 @@ public final class AppEnvironment {
         try await goals(context).refresh()
     }
 
-    /// On launch: ensure built-in categories exist, then restore any per-user preference blobs (categories,
-    /// tab order) that are newer than what this device last applied — a new phone gets them back. One fetch
-    /// serves all consumers; apply-if-newer never clobbers a device that's ahead.
+    /// On launch: ensure built-in categories exist, then restore per-user state that's newer than what this
+    /// device last applied — a new phone gets it back. Categories come from the relational `/categories` store;
+    /// the remaining settings (suggestions, tab/goals order, link sensitivity) ride the preferences blobs (one
+    /// `fetchAll` serves them). Apply-if-newer never clobbers a device that's ahead.
     func bootstrapPreferences(_ context: ModelContext) async {
         CategorySeed.ensureBuiltins(context)
         let rows = await Preferences.fetchAll(client)

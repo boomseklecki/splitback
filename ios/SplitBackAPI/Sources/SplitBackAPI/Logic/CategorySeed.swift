@@ -1,9 +1,10 @@
 import Foundation
 import SwiftData
 
-/// Seeds the built-in canonical categories into local storage when they're missing. Categories are now
-/// local-authoritative (per user, backed up via the preferences blob), so a fresh install needs the
-/// built-ins on device; this also forward-fills any built-in added in a newer app version after a restore.
+/// Seeds the built-in canonical categories into local storage when they're missing. Categories are
+/// local-authoritative (per user, synced to the relational backend via `CategorySync`), so a fresh install
+/// needs the built-ins on device; this also forward-fills any built-in added in a newer app version after a
+/// restore.
 enum CategorySeed {
     @MainActor
     static func ensureBuiltins(_ context: ModelContext) {

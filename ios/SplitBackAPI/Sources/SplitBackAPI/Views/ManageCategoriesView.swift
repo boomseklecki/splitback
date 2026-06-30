@@ -79,8 +79,8 @@ struct ManageCategoriesView: View {
                 }
                 .disabled(syncing)
             } footer: {
-                Text("Your categories live on this device and back up to your account. Sync to restore them on "
-                     + "a new device or pick up changes made on another."
+                Text("Your categories sync with your account, so they're on all your devices. Sync now to pick "
+                     + "up changes made on another device."
                      + (CategorySync.lastSyncedAt.map { " Last synced \($0.formatted(.relative(presentation: .named)))." } ?? ""))
             }
         }

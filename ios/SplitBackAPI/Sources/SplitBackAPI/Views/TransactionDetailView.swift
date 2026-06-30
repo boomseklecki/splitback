@@ -88,17 +88,10 @@ struct TransactionDetailView: View {
                 LabeledContent("Updated", value: transaction.updatedAt.relativeUpdated)
             }
 
-            Section("Category") {
-                if aiAvailable {
-                    Button {
-                        Task { await categorizeWithAI() }
-                    } label: {
-                        Label(categorizing ? "Categorizing…" : "Categorize with Apple Intelligence",
-                              systemImage: "sparkles")
-                    }
-                    .disabled(categorizing)
-                }
-                if transaction.categoryOverride != nil {
+            // The AI categorize action moved to the header card's top-right icon; this section now only
+            // offers the reset, so it shows only when there's an override to clear.
+            if transaction.categoryOverride != nil {
+                Section("Category") {
                     Button("Reset to Automatic", role: .destructive) {
                         setOverride(nil)
                     }
@@ -279,6 +272,9 @@ struct TransactionDetailView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
+            if aiAvailable {
+                AICategorizeButton(running: categorizing) { Task { await categorizeWithAI() } }
+            }
         }
         .padding(.vertical, 4)
     }
