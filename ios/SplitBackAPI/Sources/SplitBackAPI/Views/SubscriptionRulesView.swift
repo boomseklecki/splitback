@@ -4,6 +4,7 @@ import SwiftData
 /// Manage manual subscription rules — merchants you've force-included or excluded from detection. Swipe a
 /// rule away to revert that merchant to automatic. Reached from Subscriptions → toolbar.
 struct SubscriptionRulesView: View {
+    @Environment(AppEnvironment.self) private var env
     @Environment(\.modelContext) private var context
     @Query(sort: \SubscriptionRule.displayName) private var rules: [SubscriptionRule]
 
@@ -43,5 +44,6 @@ struct SubscriptionRulesView: View {
     private func delete(_ list: [SubscriptionRule], _ offsets: IndexSet) {
         for index in offsets { context.delete(list[index]) }
         try? context.save()
+        env.pushSuggestionsSync(context)
     }
 }

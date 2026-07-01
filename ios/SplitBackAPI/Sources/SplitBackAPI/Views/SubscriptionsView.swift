@@ -143,7 +143,7 @@ struct SubscriptionsView: View {
     private func addRule(merchantKey: String, amount: Decimal, displayName: String, isSubscription: Bool) {
         context.insert(SubscriptionRule(merchantKey: merchantKey, amount: amount,
                                         isSubscription: isSubscription, displayName: displayName))
-        do { try context.save() } catch { errorText = errorMessage(error) }
+        do { try context.save(); env.pushSuggestionsSync(context) } catch { errorText = errorMessage(error) }
     }
 
     /// Decline a candidate through the same path the Inbox uses, so the two areas stay in lockstep:

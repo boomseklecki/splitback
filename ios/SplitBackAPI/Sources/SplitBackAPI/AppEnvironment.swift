@@ -309,6 +309,12 @@ public final class AppEnvironment {
         await LinkSensitivitySync.pushBestEffort(client: client)
     }
 
+    /// Best-effort backup of the review-queue state (split templates, dismissals, subscription rules) to the
+    /// `suggestions.v1` blob. Fire-and-forget; call after a view mutates a `SubscriptionRule` directly.
+    func pushSuggestionsSync(_ context: ModelContext) {
+        Task { await SuggestionSync.pushBestEffort(context, client: client) }
+    }
+
     /// Persist a new main-tab order locally (the TabView re-renders) and back it up to the preferences blob.
     func setTabOrder(_ order: [MainTab]) async {
         OrderPreference.tabs.write(order)

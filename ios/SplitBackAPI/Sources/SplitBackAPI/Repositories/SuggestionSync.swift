@@ -1,12 +1,15 @@
 import Foundation
 import SwiftData
 
-/// Portable snapshot of the local-only review-queue state (split templates + dismissal decisions), so they
-/// follow the user across devices. ids/timestamps are regenerated on restore.
+/// Portable snapshot of the local-only review-queue state (split templates + dismissal decisions +
+/// subscription rules), so they follow the user across devices. ids are regenerated on restore.
 struct SuggestionSnapshot: Codable {
     var version: Int = 1
     var templates: [Template]
     var decisions: [Decision]
+    /// Optional so a legacy blob (no `rules` key) still decodes — a missing key on a non-optional would throw
+    /// and break templates/decisions restore too.
+    var rules: [Rule]?
 
     struct Template: Codable {
         var merchantKey: String
@@ -21,6 +24,13 @@ struct SuggestionSnapshot: Codable {
         var decision: String
         var snoozedUntil: Date?
     }
+    struct Rule: Codable {
+        var merchantKey: String
+        var amount: Decimal
+        var isSubscription: Bool
+        var displayName: String
+        var createdAt: Date
+    }
 }
 
 /// Backs up `SplitTemplate` + `SuggestionDecision` to the per-owner preferences blob and restores on a new
@@ -34,6 +44,7 @@ enum SuggestionSync {
     static func snapshot(_ context: ModelContext) throws -> SuggestionSnapshot {
         let templates = try context.fetch(FetchDescriptor<SplitTemplate>())
         let decisions = try context.fetch(FetchDescriptor<SuggestionDecision>())
+        let rules = try context.fetch(FetchDescriptor<SubscriptionRule>())
         return SuggestionSnapshot(
             templates: templates.map {
                 .init(merchantKey: $0.merchantKey, groupId: $0.groupId, category: $0.category,
@@ -41,6 +52,10 @@ enum SuggestionSync {
             },
             decisions: decisions.map {
                 .init(key: $0.key, decision: $0.decision, snoozedUntil: $0.snoozedUntil)
+            },
+            rules: rules.map {
+                .init(merchantKey: $0.merchantKey, amount: $0.amount, isSubscription: $0.isSubscription,
+                      displayName: $0.displayName, createdAt: $0.createdAt)
             })
     }
 
@@ -68,12 +83,18 @@ enum SuggestionSync {
     static func apply(_ snap: SuggestionSnapshot, _ context: ModelContext) throws {
         for t in try context.fetch(FetchDescriptor<SplitTemplate>()) { context.delete(t) }
         for d in try context.fetch(FetchDescriptor<SuggestionDecision>()) { context.delete(d) }
+        for r in try context.fetch(FetchDescriptor<SubscriptionRule>()) { context.delete(r) }
         for t in snap.templates {
             context.insert(SplitTemplate(merchantKey: t.merchantKey, groupId: t.groupId, category: t.category,
                                          sharesJSON: t.sharesJSON, source: t.source, displayName: t.displayName))
         }
         for d in snap.decisions {
             context.insert(SuggestionDecision(key: d.key, decision: d.decision, snoozedUntil: d.snoozedUntil))
+        }
+        for r in snap.rules ?? [] {
+            context.insert(SubscriptionRule(merchantKey: r.merchantKey, amount: r.amount,
+                                            isSubscription: r.isSubscription, displayName: r.displayName,
+                                            createdAt: r.createdAt))
         }
         try context.save()
     }

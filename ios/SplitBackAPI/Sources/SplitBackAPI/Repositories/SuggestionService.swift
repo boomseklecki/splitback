@@ -145,6 +145,7 @@ struct SuggestionService {
             context.insert(SubscriptionRule(merchantKey: key, amount: s.amount ?? 0,
                                             isSubscription: true, displayName: s.title))
             try context.save()
+            pushSync()
         case .recurringSplit:
             try await acceptRecurringSplit(s)
         case .sharedBudgetCandidate, .settleUp, .overspend, .nearingBudget:
