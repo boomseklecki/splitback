@@ -65,7 +65,7 @@ enum SuggestionEngine {
             return Suggestion(
                 id: "cat:\(g.title.lowercased()):\(g.suggested)", kind: .categorize,
                 title: g.title, subtitle: "\(g.current ?? "Uncategorized") → \(g.suggested)\(suffix)",
-                icon: "sparkles", acceptLabel: "Use \(g.suggested)",
+                icon: "sparkles", acceptLabel: "Categorize",
                 transactionId: g.ids.first, transactionIds: g.ids,
                 category: g.suggested, currentCategory: g.current,
                 merchantKey: SubscriptionDetector.merchantKey(g.title),  // enables "Never for this merchant"

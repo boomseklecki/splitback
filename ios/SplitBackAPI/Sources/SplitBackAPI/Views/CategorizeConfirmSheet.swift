@@ -1,7 +1,7 @@
 import SwiftData
 import SwiftUI
 
-/// Confirmation before accepting a "Use {category}" suggestion — the on-device AI disagrees with a
+/// Confirmation before accepting a categorize suggestion — the on-device AI disagrees with a
 /// transaction's current category. Shows the transaction and the current → chosen change, with a tappable
 /// category avatar (the same affordance as Find Related Transactions) so the user can **correct** a wrong
 /// guess before it becomes an override. `onConfirm` receives the chosen category (InboxView → setCategoryOverride).
@@ -63,7 +63,7 @@ struct CategorizeConfirmSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(chosen.map { "Use \($0)" } ?? suggestion.acceptLabel) {
+                    Button("Categorize") {
                         if let chosen { onConfirm(chosen); dismiss() }
                     }
                     .disabled(transactions.isEmpty || chosen == nil)
