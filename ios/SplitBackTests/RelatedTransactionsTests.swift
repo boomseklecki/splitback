@@ -72,6 +72,7 @@ final class RelatedTransactionsTests: XCTestCase {
         XCTAssertEqual(names(.fuzzy), ["TRADER JOES #123", "JOES CRAB SHACK", "TRADER VICS"])
         XCTAssertEqual(names(.balanced), ["TRADER JOES #123"])
         XCTAssertEqual(names(.strict), ["TRADER JOES #123"])
+        XCTAssertEqual(names(.exact), ["TRADER JOES #123"])   // same merchant key
     }
 
     /// Two-of-three shared words: Balanced keeps it (0.667 > 0.5), Strict drops it (neither set is a subset).
@@ -88,20 +89,53 @@ final class RelatedTransactionsTests: XCTestCase {
         XCTAssertTrue(RelatedTransactions.group(seedDescription: "TRADER JOES", in: all).isEmpty)
     }
 
-    /// The user's Apple Card case: a recurring $9.99 subscription lumped with one-off charges under the same
-    /// "APPLE.COM" description. Strict groups every Apple row; Exact (merchant + amount) isolates the $9.99s;
-    /// Exact with no seed amount falls back to Strict.
-    func testExactMatchIsolatesByAmount() {
+    // MARK: - Exact merchant + amount axis
+
+    /// The leak the user hit: seeding "APPLE STORE", a different merchant sharing only the generic word
+    /// "store" ("STORE 24") leaks in under Strict (symmetric subset) but is excluded by Exact (merchant key).
+    func testExactMerchantExcludesGenericWordLeak() {
+        let all = [txn("APPLE STORE #123"), txn("STORE 24"), txn("APPLE STORE #456")]
+        let strict = Set(RelatedTransactions.group(seedDescription: "APPLE STORE", in: all,
+                                                   strictness: .strict).map(\.details))
+        XCTAssertTrue(strict.contains("STORE 24"))                       // the old leak
+        let exact = Set(RelatedTransactions.group(seedDescription: "APPLE STORE", in: all,
+                                                  strictness: .exact).map(\.details))
+        XCTAssertEqual(exact, ["APPLE STORE #123", "APPLE STORE #456"])  // no leak
+    }
+
+    /// Amount is now its own axis, independent of the merchant level: Any keeps all same-merchant rows
+    /// (the user's varying-amount OFX case), Equal isolates the identical charge, Close keeps within-tolerance.
+    func testAmountAxisIndependentOfMerchant() {
         let all = [txn("APPLE.COM/BILL", 9.99, daysAgo: 0), txn("APPLE.COM/BILL", 9.99, daysAgo: 30),
-                   txn("APPLE.COM/BILL", 4.99, daysAgo: 5)]
-        XCTAssertEqual(RelatedTransactions.group(seedDescription: "APPLE.COM/BILL", in: all,
-                                                 strictness: .strict).count, 3)
-        let exact = RelatedTransactions.group(seedDescription: "APPLE.COM/BILL", seedAmount: 9.99, in: all,
-                                              strictness: .exact)
-        XCTAssertEqual(exact.count, 2)
-        XCTAssertTrue(exact.allSatisfy { $0.amount == 9.99 })
-        // No seed amount → behaves like Strict (no amount filter).
-        XCTAssertEqual(RelatedTransactions.group(seedDescription: "APPLE.COM/BILL", seedAmount: nil, in: all,
-                                                 strictness: .exact).count, 3)
+                   txn("APPLE.COM/BILL", 10.49, daysAgo: 10), txn("APPLE.COM/BILL", 4.99, daysAgo: 5)]
+        func amounts(_ m: RelatedTransactions.AmountMatch) -> Set<Decimal> {
+            Set(RelatedTransactions.group(seedDescription: "APPLE.COM/BILL", seedAmount: 9.99, in: all,
+                                          strictness: .exact, amount: m).map(\.amount))
+        }
+        XCTAssertEqual(amounts(.any), [9.99, 10.49, 4.99])   // exact merchant, all amounts
+        XCTAssertEqual(amounts(.equal), [9.99])              // identical only
+        XCTAssertEqual(amounts(.close), [9.99, 10.49])       // within $1; not the $4.99
+    }
+
+    func testAmountsClose() {
+        XCTAssertTrue(RelatedTransactions.amountsClose(9.99, 10.49))   // within $1
+        XCTAssertTrue(RelatedTransactions.amountsClose(100, 120))      // within 25%
+        XCTAssertTrue(RelatedTransactions.amountsClose(1.00, 1.50))    // small amounts (within $1)
+        XCTAssertFalse(RelatedTransactions.amountsClose(9.99, 4.99))   // > $1 and > 25%
+        XCTAssertFalse(RelatedTransactions.amountsClose(100, 130))     // 30% apart
+    }
+
+    /// The matcher is generic over `RelatedItem` (both `Transaction` and `Expense` conform), so the expense
+    /// "Find Related Expenses" path groups identically — covered here without constructing SwiftData models.
+    func testGenericGroupingOverRelatedItem() {
+        struct Item: RelatedItem { let details: String; let amount: Decimal; let date: Date }
+        let all = [Item(details: "UBER TRIP", amount: 12, date: date(0)),
+                   Item(details: "UBER EATS", amount: 30, date: date(1)),
+                   Item(details: "LYFT RIDE", amount: 12, date: date(2))]
+        let fuzzy = RelatedTransactions.group(seedDescription: "UBER", in: all, strictness: .fuzzy)
+        XCTAssertEqual(Set(fuzzy.map(\.details)), ["UBER TRIP", "UBER EATS"])   // share "uber"
+        let equalAmt = RelatedTransactions.group(seedDescription: "UBER", seedAmount: 12, in: all,
+                                                 strictness: .fuzzy, amount: .equal)
+        XCTAssertEqual(Set(equalAmt.map(\.details)), ["UBER TRIP"])            // uber + $12 only
     }
 }

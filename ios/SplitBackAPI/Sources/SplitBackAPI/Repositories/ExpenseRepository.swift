@@ -85,6 +85,40 @@ struct ExpenseRepository {
         }
     }
 
+    /// Applies the same category to many expenses at once (bulk recategorize from "Find Related Expenses").
+    /// The PATCHes run **concurrently** and every response is cached in a **single** save — mirroring
+    /// `AccountRepository.setCategoryOverride(ids:)`. An expense the server no longer has (404) is skipped so
+    /// one stale member can't fail the batch. Each PATCH still pushes to Splitwise for synced expenses.
+    func updateCategory(ids: [UUID], category: String, updatedBy: String?) async throws {
+        guard !ids.isEmpty else { return }
+        let client = self.client
+        let responses = try await withThrowingTaskGroup(
+            of: Components.Schemas.ExpenseResponse?.self
+        ) { group in
+            for id in ids {
+                group.addTask {
+                    let output = try await client.update_expense_expenses__expense_id__patch(
+                        path: .init(expense_id: id.uuidString),
+                        body: .json(.init(
+                            group_id: nil, description: nil, amount: nil, currency: nil,
+                            date: nil, category: category, notes: nil, updated_by: updatedBy,
+                            transaction_id: nil, splits: nil, items: nil)))
+                    switch output {
+                    case let .ok(ok): return try ok.body.json
+                    case let .unprocessableContent(error):
+                        throw BackendError.validation(BackendError.validationMessage(try? error.body.json))
+                    case .undocumented(404, _): return nil  // expense gone — skip, apply to the rest
+                    case let .undocumented(statusCode, _): throw BackendError.fromUndocumented(statusCode)
+                    }
+                }
+            }
+            var out: [Components.Schemas.ExpenseResponse] = []
+            for try await r in group { if let r { out.append(r) } }
+            return out
+        }
+        try upsert(responses)
+    }
+
     /// Links this expense to a bank/manual transaction (or unlinks, with nil) so spending counts your
     /// owed share once instead of both the gross transaction and your share. Local-only — never pushed to
     /// Splitwise; splits/amount untouched.

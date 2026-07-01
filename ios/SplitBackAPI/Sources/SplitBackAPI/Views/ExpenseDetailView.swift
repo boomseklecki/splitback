@@ -209,13 +209,13 @@ struct ExpenseDetailView: View {
 
             Section {
                 NavigationLink {
-                    DescriptionDetailView(seedDescription: expense.details, seedCategory: expense.category,
-                                          seedAmount: expense.amount)
+                    RelatedExpensesView(seedDescription: expense.details, seedCategory: expense.category,
+                                        seedAmount: expense.amount)
                 } label: {
-                    Label("Find Related Transactions", systemImage: "text.magnifyingglass")
+                    Label("Find Related Expenses", systemImage: "text.magnifyingglass")
                 }
             } footer: {
-                Text("Group bank/manual transactions with a similar description and recategorize them together.")
+                Text("Group expenses with a similar description and recategorize them together.")
             }
 
             if let notes = expense.notes, !notes.isEmpty {
