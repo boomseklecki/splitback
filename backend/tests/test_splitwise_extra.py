@@ -55,11 +55,16 @@ def test_build_payload():
 
 def test_resolve_category_id():
     from app.integrations.splitwise import mapper
-    name_to_id = {"groceries": 12, "dining out": 13, "gas/fuel": 30, "entertainment": 1}
+    name_to_id = {"groceries": 12, "dining out": 13, "gas/fuel": 30, "entertainment": 1,
+                  "taxes": 40, "hotel": 41, "tv/phone/internet": 50}
     assert mapper.resolve_category_id("Groceries", name_to_id) == 12     # direct match
     assert mapper.resolve_category_id("Dining", name_to_id) == 13        # alias → "dining out"
     assert mapper.resolve_category_id("Fuel", name_to_id) == 30          # alias → "gas/fuel"
     assert mapper.resolve_category_id("Entertainment", name_to_id) == 1  # direct (parent name)
+    assert mapper.resolve_category_id("Fees", name_to_id) == 40          # alias → "taxes"
+    assert mapper.resolve_category_id("Travel", name_to_id) == 41        # alias → "hotel"
+    # Subscriptions is a cross-cutting app concept with no Splitwise home → pushes as "General".
+    assert mapper.resolve_category_id("Subscriptions", name_to_id) is None
     assert mapper.resolve_category_id("Settle-up", name_to_id) is None   # settle-ups push as payment
     assert mapper.resolve_category_id("Nonexistent", name_to_id) is None
     assert mapper.resolve_category_id(None, name_to_id) is None

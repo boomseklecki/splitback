@@ -9,9 +9,13 @@ NON_GROUP_SENTINEL = "0"
 NON_GROUP_NAME = "Non-group expenses"
 SETTLEUP_CATEGORY = "Settle-up"
 
-# Our canonical categories whose name differs from Splitwise's — map to the Splitwise subcategory name so we
+# Our canonical categories whose name differs from Splitwise's — map to the Splitwise (sub)category name so we
 # can resolve a category_id when pushing. Names that already match (Groceries, Rent, Insurance, Entertainment,
-# Utilities, Education, Gifts, Pets, Mortgage) resolve directly. Unmapped → no category (Splitwise default).
+# Utilities, Education, Gifts, Pets, Mortgage) resolve directly. Every alias here is symmetric with the import
+# map (SplitwiseCategory: the target label resolves back to the same canonical), so push and re-import agree.
+# Intentionally NOT mapped (push as Splitwise "General"): Subscriptions (a cross-cutting app concept, not a
+# Splitwise category — its "TV/Phone/Internet" is rightly Utilities on import), Personal Care (no Splitwise
+# category exists), Income/Transfer (neutral — no spend category), Other (General is correct).
 _CATEGORY_ALIASES = {
     "dining": "dining out",
     "fuel": "gas/fuel",
@@ -19,7 +23,8 @@ _CATEGORY_ALIASES = {
     "household": "household supplies",
     "transport": "car",
     "shopping": "clothing",
-    "subscriptions": "tv/phone/internet",
+    "fees": "taxes",
+    "travel": "hotel",
 }
 
 
