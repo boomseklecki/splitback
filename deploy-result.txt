@@ -1,53 +1,41 @@
 SplitBack backend deploy verification (uplink / Linux full-stack)
 ================================================================
 
-Commit tested:  2def084  (main HEAD)
-Date (UTC):     2026-06-30
-Migration head: 0049_drop_categories_blob   (NEW — upgraded 0048 -> 0049)
+Commit tested:  fa61807  (main HEAD)
+Date (UTC):     2026-07-01
+Migration head: 0049_drop_categories_blob   (unchanged — NO migration)
 
-Change in scope (backend + iOS-ships-separately, single commit):
-  2def084  Phase 5: retire the legacy categories.v1 preferences blob
-    - 0049_drop_categories_blob (down_revision 0048_goal_budget_notify): single statement
-      DELETE FROM user_preferences WHERE key = 'categories.v1'. Touches NO other key and NOT
-      spend_categories/category_maps. Downgrade no-op by design. Rev id 25 chars (<=32 OK).
-    - models/user_preference.py, routers/preferences.py: blob retired from the read/write path.
-    - new tests/test_categories_backfill.py (test_categories_blob_retired_0049).
-
-SAFETY:
-  - Pre-migration pg_dump of the prod DB captured before this destructive DELETE (2.66 MB, exit 0),
-    held in the session scratchpad as a rollback reference.
+Change in scope (backend-only; iOS ships separately):
+  fa61807  Splitwise push: map Fees->Taxes, Travel->Hotel; drop asymmetric Subscriptions alias
+    - app/integrations/splitwise/mapper.py: _CATEGORY_ALIASES gains "fees"->"taxes" and
+      "travel"->"hotel"; the old Subscriptions->"tv/phone/internet" alias is removed so Subscriptions
+      now pushes to Splitwise as "General" (intended — it's a cross-cutting app concept, not a
+      Splitwise category).
+    - tests/test_splitwise_extra.py::test_resolve_category_id updated to cover this.
+    - (all other files in the commit are iOS — ship separately, no server action.)
 
 BUILD / RESTART:  OK
-  - git merge --ff-only origin/main -> 2def084 (clean).
+  - git merge --ff-only origin/main -> fa61807 (clean).
   - docker compose build api api-test -> built.
   - Recreated api (real prod, :8000) + db-test/api-test. Up.
+  - alembic current -> 0049_drop_categories_blob (head); no migration applied.
 
-MIGRATION:  APPLIED on BOTH databases (0048 -> 0049)
-  - REAL prod db:  head 0049_drop_categories_blob
-  - TEST db:       head 0049_drop_categories_blob
+MIGRATION: none (head 0049 unchanged). No DB schema change.
 
-PROD DATA VERIFICATION (before -> after):
-  - categories.v1 rows ............... 1 -> 0   (deleted, as intended)
-  - other user_preferences rows ...... 3 -> 3   (UNCHANGED — survivors intact)
-  - surviving keys ................... goalsOrder.v1, suggestions.v1, tabOrder.v1  (all present)
-  - spend_categories rows ............ 24 -> 24  (UNCHANGED — relational taxonomy from 0047 intact)
-  - category_maps rows ............... 0 -> 0    (UNCHANGED — owner had no custom raw->canonical maps)
-  Confirmed: zero categories.v1 rows remain; spend_categories/category_maps counts unchanged; no other
-  preference key touched.
-
-BUDGET PUSH GATE (left dormant per instruction — NOT enabled):
-  - Authoritative resolve on prod: server_settings.get(... 'budget_push_enabled') -> False. Untouched.
+FUNCTIONAL CHECK (resolve_category_id against a Splitwise name->id taxonomy):
+  - Fees ........... -> Taxes    (via new "fees"->"taxes" alias)
+  - Travel ......... -> Hotel    (via new "travel"->"hotel" alias)
+  - Subscriptions .. -> General  (unmapped by design; Subscriptions alias removed)
 
 TEST RUN (api-test stack, incl. HTTP/MinIO-dependent tests):  PASS
   TOTAL passing: 258   FAIL: 0   (all modules green)
 
 Watch-list (all PASS):
-  test_categories_backfill ..... 2   (incl. test_categories_blob_retired_0049)
+  test_splitwise_extra ..... 14  (incl. updated test_resolve_category_id)
 
 FAILURES: none.
 
-SUMMARY: PASS. 2def084 builds, migrates 0048 -> 0049 on both real prod and test DBs, restarts, and
-passes the full backend suite (258/258). 0049 deleted the single categories.v1 blob on prod and nothing
-else: other preference keys (goalsOrder.v1, suggestions.v1, tabOrder.v1) and the relational category
-data (spend_categories 24, category_maps 0) are unchanged. budget_push_enabled remains OFF. Pre-migration
-prod pg_dump captured. iOS ships separately. This file is the only commit from here.
+SUMMARY: PASS. fa61807 builds, restarts, and passes the full backend suite (258/258) on the running
+stack. No migration, no schema change. Splitwise push category mapping verified functionally:
+Fees->Taxes, Travel->Hotel, Subscriptions->General (unmapped, intended). iOS ships separately. This
+file is the only commit from here.
