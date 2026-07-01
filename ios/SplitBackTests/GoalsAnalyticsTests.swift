@@ -50,12 +50,13 @@ final class GoalsAnalyticsTests: XCTestCase {
             for: txn(5, category: nil, account: checking), lookup: [:]))
     }
 
-    func testRefinementUsedOnlyForVagueRows() {
+    func testRefinementBeatsBuiltinButNotMapOrOverride() {
         let checking = account(type: "checking")
-        // Confident built-in mapping ignores any refinement.
+        // A (confident) AI refinement now outranks even a confident built-in Plaid mapping — it's only ever
+        // written when the model was clearly more accurate than the current category.
         let groceries = txn(20, category: "FOOD_AND_DRINK_GROCERIES", account: checking)
         groceries.refinedCategory = "Dining"
-        XCTAssertEqual(CategoryMapping.effectiveCategory(for: groceries, lookup: [:]), "Groceries")
+        XCTAssertEqual(CategoryMapping.effectiveCategory(for: groceries, lookup: [:]), "Dining")
         // A vague "Other" row uses the refinement when present.
         let vague = txn(20, category: "GENERAL_SERVICES_OTHER", account: checking)
         XCTAssertTrue(CategoryMapping.needsRefinement(vague, lookup: [:]))

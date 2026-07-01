@@ -88,16 +88,6 @@ struct TransactionDetailView: View {
                 LabeledContent("Updated", value: transaction.updatedAt.relativeUpdated)
             }
 
-            // The AI categorize action moved to the header card's top-right icon; this section now only
-            // offers the reset, so it shows only when there's an override to clear.
-            if transaction.categoryOverride != nil {
-                Section("Category") {
-                    Button("Reset to Automatic", role: .destructive) {
-                        setOverride(nil)
-                    }
-                }
-            }
-
             Section {
                 Toggle("Include in spending", isOn: Binding(
                     get: { transaction.includeInSpending ?? account?.countsInSpending ?? true },
@@ -211,7 +201,8 @@ struct TransactionDetailView: View {
             loadLinkedExpense()
         }
         .sheet(isPresented: $showingCategoryPicker) {
-            CategoryPickerView(current: effectiveCategory) { setOverride($0) }
+            CategoryPickerView(current: effectiveCategory,
+                               onReset: canReset ? { resetCategory() } : nil) { setOverride($0) }
         }
         // Re-resolve the linked expense after creating/linking one (no @Query to auto-update now).
         .sheet(isPresented: $showingCreate, onDismiss: handleSheetDismiss) {
@@ -306,6 +297,24 @@ struct TransactionDetailView: View {
         }
     }
 
+    /// Whether there's a per-row category signal (manual override or AI refinement) to reset.
+    private var canReset: Bool {
+        transaction.categoryOverride != nil || (transaction.refinedCategory.map { !$0.isEmpty } ?? false)
+    }
+
+    /// "Reset to Automatic": drop the override + AI refinement so the row falls back to its automatic category.
+    /// Optimistic local clear + best-effort server (see `AccountRepository.resetCategory`).
+    private func resetCategory() {
+        transaction.categoryOverride = nil
+        transaction.refinedCategory = nil
+        try? context.save()
+        let id = transaction.id
+        Task {
+            do { try await env.accounts(context).resetCategory(id: id) }
+            catch { await handleCustomizeError(error) }
+        }
+    }
+
     private func setFlags(includeInSpending: Bool? = nil, includeInCashFlow: Bool? = nil) {
         let id = transaction.id
         Task {
@@ -350,10 +359,20 @@ struct TransactionDetailView: View {
     private func categorizeWithAI() async {
         categorizing = true
         defer { categorizing = false }
+        // Anchor on the current effective category so `refine` only replaces a confident category when the
+        // model is *clearly* more accurate (its `changeIsClear` gate); an uncategorized/"Other" row (nil/vague
+        // anchor) is just classified. This keeps a good built-in mapping from being second-guessed.
         let item = CategoryMapper.Item(id: transaction.id, description: transaction.details,
-                                       rawCategory: transaction.category, current: nil)
+                                       rawCategory: transaction.category, current: effectiveCategory)
         let result = await CategoryMapper.refine([item], allowed: spendCategories.map(\.name))
         guard let category = result[transaction.id] else { return }  // keep prior if the model abstains
-        setOverride(category)
+        // AI categorization writes `refinedCategory` (provenance "AI"), not an override; clear any existing
+        // manual override so the explicitly-invoked AI result wins and shows.
+        let id = transaction.id
+        let hadOverride = transaction.categoryOverride != nil
+        do {
+            try await env.accounts(context).setRefinedCategory(id: id, category: category)
+            if hadOverride { try await env.accounts(context).setCategoryOverride(id: id, category: nil) }
+        } catch { await handleCustomizeError(error) }
     }
 }

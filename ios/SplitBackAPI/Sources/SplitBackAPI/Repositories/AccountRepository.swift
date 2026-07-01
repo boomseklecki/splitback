@@ -304,10 +304,10 @@ struct AccountRepository {
         try context.save()
     }
 
-    /// Mirrors the on-device AI refinement to the backend (provenance .aiRefined) so other devices inherit it.
-    /// Best-effort and **concurrent + single-save** like `setCategoryOverride(ids:)`: a card's worth of newly
-    /// refined rows push in parallel and cache in one write. A transaction the server no longer has (404) is
-    /// skipped. Distinct from the explicit category override — this never changes precedence.
+    /// Mirrors the on-device AI refinement to the backend (provenance .aiRefined → "AI" badge) so other devices
+    /// inherit it. Best-effort and **concurrent + single-save** like `setCategoryOverride(ids:)`: a card's worth
+    /// of newly refined rows push in parallel and cache in one write. A transaction the server no longer has
+    /// (404) is skipped. Outranks the built-in map but not an explicit override (see `CategoryMapping.resolve`).
     func setRefinedCategory(_ entries: [(id: UUID, refined: String)]) async throws {
         guard !entries.isEmpty else { return }
         let client = self.client
@@ -334,6 +334,22 @@ struct AccountRepository {
             return out
         }
         try upsertTransactions(responses)
+    }
+
+    /// Set the AI refinement on a single transaction (the manual "Categorize with Apple Intelligence" button).
+    func setRefinedCategory(id: UUID, category: String) async throws {
+        try await setRefinedCategory([(id: id, refined: category)])
+    }
+
+    /// "Reset to Automatic": clear both the AI refinement and the manual override so the row falls back to the
+    /// deterministic/map resolution. Best-effort + iOS-first — the caller optimistically nils both locally; the
+    /// server clear of `refinedCategory` is best-effort (an empty string transmits and is treated as cleared,
+    /// since `upsertTransactions` only adopts a non-empty server value). Refined is cleared **before** the
+    /// override so the override PATCH's response upsert doesn't re-adopt a still-set refined value.
+    func resetCategory(id: UUID) async throws {
+        _ = try? await client.update_transaction_override_transactions__transaction_id__override_patch(
+            path: .init(transaction_id: id.uuidString), body: .json(.init(refined_category: "")))
+        try await setCategoryOverride(id: id, category: nil)
     }
 
     /// One-time push of every locally-computed refinement to the backend, so a user who refined before this

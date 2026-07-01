@@ -132,8 +132,10 @@ struct SuggestionService {
         case .categorize:
             guard let category = s.category else { return }
             let ids = s.transactionIds.isEmpty ? [s.transactionId].compactMap { $0 } : s.transactionIds
+            // An accepted AI suggestion is AI-provenance: write `refinedCategory` (→ "AI" badge), which now
+            // outranks the built-in map so the accepted category wins on the card's deterministic/raw rows.
             try await AccountRepository(client: client, context: context)
-                .setCategoryOverride(ids: ids, category: category)
+                .setRefinedCategory(ids.map { (id: $0, refined: category) })
         case .link:
             guard let expenseId = s.expenseId, let txnId = s.transactionId else { return }
             try await ExpenseRepository(client: client, context: context)

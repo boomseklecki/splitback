@@ -57,6 +57,7 @@ struct ExpenseEditView: View {
     @State private var transactionId: UUID?
     @State private var categoryTarget: CategoryTarget?
     @State private var categorizingItems = false
+    @State private var categorizingExpense = false
     @State private var saving = false
     @State private var errorText: String?
 
@@ -288,6 +289,18 @@ struct ExpenseEditView: View {
         }
     }
 
+    /// Categorize the expense from its description (appears once a description is typed). Anchored on the
+    /// current pick so `refine` only changes a set category when clearly more accurate; an unset one is
+    /// classified. Expenses have a single `category` field (no AI-provenance badge, unlike transactions).
+    private func categorizeExpense() async {
+        categorizingExpense = true
+        defer { categorizingExpense = false }
+        let id = UUID()
+        let item = CategoryMapper.Item(id: id, description: details, rawCategory: nil, current: category)
+        let result = await CategoryMapper.refine([item], allowed: spendCategories.map(\.name))
+        if let picked = result[id] { category = picked }
+    }
+
     /// The trailing input for one participant, per split mode. Computed-only modes show the owed amount.
     @ViewBuilder
     private func splitInput(_ person: String) -> some View {
@@ -357,6 +370,12 @@ struct ExpenseEditView: View {
                         }
                         TextField("Description", text: $details)
                             .font(.title3)
+                        if mode != .reimbursement && mode != .settleUp
+                            && CategoryMapper.isAvailable && !details.isEmpty {
+                            AICategorizeButton(running: categorizingExpense) {
+                                Task { await categorizeExpense() }
+                            }
+                        }
                     }
                     HStack(spacing: 8) {
                         Text("$").font(.title2).foregroundStyle(.secondary)

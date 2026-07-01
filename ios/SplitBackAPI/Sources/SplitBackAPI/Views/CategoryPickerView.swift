@@ -7,6 +7,11 @@ struct CategoryPickerView: View {
     let current: String?
     /// When set, the source being mapped (a Bank/Splitwise label) — shown so you know what you're mapping.
     var subject: String? = nil
+    /// When set, a subtle "Reset to Automatic" row appears — clears the caller's per-row category signal
+    /// (override + AI refinement) so it falls back to the automatic category. Callers that have nothing to
+    /// reset pass nil (the default) and the row is hidden. (Declared before `onSelect` so trailing-closure
+    /// callers still bind to `onSelect`.)
+    var onReset: (() -> Void)? = nil
     let onSelect: (String) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -27,6 +32,17 @@ struct CategoryPickerView: View {
                             Text(subject).fontWeight(.semibold)
                             Image(systemName: "arrow.right").font(.caption).foregroundStyle(.secondary)
                             Text("pick a category").foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                if let onReset {
+                    Section {
+                        Button {
+                            onReset()
+                            dismiss()
+                        } label: {
+                            Label("Reset to Automatic", systemImage: "arrow.uturn.backward")
+                                .foregroundStyle(.secondary)
                         }
                     }
                 }

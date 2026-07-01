@@ -45,28 +45,33 @@ enum CategoryMapping {
     }
 
     /// A transaction's category **with provenance**. Precedence: an explicit per-transaction override →
-    /// a user/on-device entry in the local label map → a confident built-in Plaid mapping → the
-    /// per-transaction on-device refinement (for vague rows) → the built-in "Other"/raw string. Pass
-    /// `sources` (raw→"manual"/"ondevice") to tell a hand-mapped entry from an AI-written one.
+    /// a user/on-device entry in the local label map → the per-transaction on-device AI refinement → a
+    /// built-in Plaid mapping → the raw string. Pass `sources` (raw→"manual"/"ondevice") to tell a hand-mapped
+    /// entry from an AI-written one. `refinedCategory` outranks the built-in map because it's only ever written
+    /// when the on-device model was *confident it's clearly more accurate* than the current category
+    /// (`CategoryMapper.refine`'s anchored `changeIsClear` gate) — from the manual button, an accepted Inbox
+    /// card, or the vague-row pass. So a refined value already represents a high-confidence, description-aware
+    /// decision, not a blind override of Plaid's coarse label.
     static func resolve(for transaction: Transaction, lookup: [String: String],
                         sources: [String: String] = [:]) -> CategoryResolution {
         if let override = transaction.categoryOverride, !override.isEmpty {
             return CategoryResolution(category: override, source: .override, raw: transaction.category)
         }
+        let refined = transaction.refinedCategory.flatMap { $0.isEmpty ? nil : $0 }
         guard let raw = transaction.category, !raw.isEmpty else {
+            // Plaid never labeled it: an AI refinement is the only per-row signal that can categorize it.
+            if let refined {
+                return CategoryResolution(category: refined, source: .aiRefined, raw: transaction.category)
+            }
             return CategoryResolution(category: nil, source: .raw, raw: transaction.category)
         }
         if let mapped = lookup[raw] {
             return CategoryResolution(category: mapped, source: mappedSource(raw, sources), raw: raw)
         }
-        let builtin = PlaidCategory.canonical(raw)
-        if let builtin, builtin != "Other" {
-            return CategoryResolution(category: builtin, source: .deterministic, raw: raw)
-        }
-        if let refined = transaction.refinedCategory, !refined.isEmpty {
+        if let refined {
             return CategoryResolution(category: refined, source: .aiRefined, raw: raw)
         }
-        if let builtin {  // "Other"
+        if let builtin = PlaidCategory.canonical(raw) {
             return CategoryResolution(category: builtin, source: .deterministic, raw: raw)
         }
         return CategoryResolution(category: raw, source: passthroughSource(raw), raw: raw)

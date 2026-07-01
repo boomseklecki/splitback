@@ -49,6 +49,28 @@ final class CategoryProvenanceTests: XCTestCase {
         XCTAssertEqual(r.source, .aiRefined)
     }
 
+    func testRefinedBeatsConfidentDeterministic() {
+        // A deliberate AI refinement now outranks even a confident built-in Plaid mapping.
+        let r = CategoryMapping.resolve(for: txn("FOOD_AND_DRINK_GROCERIES", refined: "Dining"), lookup: [:])
+        XCTAssertEqual(r.category, "Dining")
+        XCTAssertEqual(r.source, .aiRefined)
+    }
+
+    func testRefinedOnRowWithNoRawCategory() {
+        // Plaid never labeled it (nil raw); the AI refinement is what categorizes it.
+        let r = CategoryMapping.resolve(for: txn(nil, refined: "Shopping"), lookup: [:])
+        XCTAssertEqual(r.category, "Shopping")
+        XCTAssertEqual(r.source, .aiRefined)
+    }
+
+    func testOverrideBeatsRefined() {
+        // A manual pick (override) still wins over an AI refinement.
+        let r = CategoryMapping.resolve(for: txn("FOOD_AND_DRINK", override: "Travel", refined: "Shopping"),
+                                        lookup: [:])
+        XCTAssertEqual(r.category, "Travel")
+        XCTAssertEqual(r.source, .override)
+    }
+
     func testRawPassthrough() {
         let r = CategoryMapping.resolve(for: txn("ZZZ_UNKNOWN_LABEL"), lookup: [:])
         XCTAssertEqual(r.category, "ZZZ_UNKNOWN_LABEL")
